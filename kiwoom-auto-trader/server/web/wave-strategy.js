@@ -6,8 +6,8 @@ const STATE_FILE = path.join(__dirname, "paper-state-wave.json");
 const HOT_HISTORY_FILE = path.join(__dirname, "hot-candidates-history.json");
 const OPEN_MARKET_FILE = path.join(__dirname, "open-market.json");
 
-const STRATEGY_VERSION = "1.5.4";
-const ANALYSIS_RULE_VERSION = "20260821-fast-holding-trigger-maintain-daily-pnl-v6";
+const STRATEGY_VERSION = "1.5.6";
+const ANALYSIS_RULE_VERSION = "20260826-live-rotation-money-volume-sanity-v8";
 const WATCH_CAP_DROP_REASON = "활성후보 상한 / 우선순위 밖";
 
 const SETTINGS = {
@@ -25,13 +25,20 @@ const SETTINGS = {
 
   // 후보평가는 5분 주기를 유지하되 보유종목 현재가 위험관리는 1분마다 우선 확인한다.
   holdingCheckMs: 60 * 1000,
-  holdingPriceTimeoutMs: 6 * 1000,
+  // 서버에서 진행 중인 1건(최대 8초) 뒤 SELL 2건이 순차 실행돼도 먼저 포기하지 않는다.
+  holdingPriceTimeoutMs: 20 * 1000,
   holdingPriceRetryCount: 1,
   holdingPriceRetryDelayMs: 500,
-  holdingPriceBatchSize: 3,
+  holdingPriceBatchSize: 2,
+  holdingMaxQuoteAgeMs: 5 * 1000,
+  candidateMaxQuoteAgeMs: 15 * 1000,
 
-  // 장중에는 TRIGGER → READY → 고득점 WATCH 순으로 먼저 재평가한다. TRIGGER는 다음 평가에서 재확인 후에만 매수한다.
+  // 장중에는 TRIGGER → READY → 고득점 WATCH를 우선 평가하되,
+  // 나머지 후보도 굶지 않도록 상위 8개 + 가장 오래 평가시도하지 않은 4개를 섞는다.
+  // TRIGGER는 다음 평가에서 재확인 후에만 매수한다.
   liveEvaluationBatchSize: 12,
+  livePriorityBatchSize: 8,
+  liveRotationBatchSize: 4,
 
   // 장 마감 후에는 활성 WATCH 전체를 1회 사전분석하고,
   // 다음 거래일 08:45 이후 장전자료 갱신 후 다시 1회 전체 재평가한다.
@@ -51,6 +58,8 @@ const SETTINGS = {
   hotMinChangeRate: 2.0,
   hotMaxChangeRate: 25.0,
   hotMinDetectionCount: 2,
+  // 기존 HOT 누적파일에 이미 비정상 거래량비율이 남아 있어도 WAVE 점수에 전파하지 않는다.
+  hotVolumeRatioSanityMax: 5000,
   watchMaxTradingDays: 12,
 
   // 점수: WHY 30 + MONEY 20 + SECTOR 15 + TREND 10 + PULLBACK 15 + REBOUND 10
@@ -85,10 +94,18 @@ const SETTINGS = {
   positionRatio: 0.10,
   maxHoldingCount: 5,
   maxDailyBuyCount: 2,
+  // OPEN 시장점수가 절대약세 구간이면 WAVE는 완전차단하지 않고 신규노출만 1종목으로 줄인다.
+  weakMarketScore: 25,
+  weakMarketMaxDailyBuyCount: 1,
 
   // 매도: 작은 흔들림은 허용하고 파동 종료를 잡는다.
   stopLossRate: -5.0,
   structureStopBufferRate: -1.5,
+  // 장기 시간청산 전에도 손실·추세약화·MA5 이탈이 겹치면 다음 갭 위험을 줄인다.
+  weakTrendSellEnabled: true,
+  weakTrendSellMinTradingDays: 1,
+  weakTrendSellMaxProfitRate: 0.0,
+  weakTrendSellMaxTrendScore: 4,
   protectStartProfitRate: 5.0,
   protectFloorProfitRate: 0.5,
   // 최고수익이 커질수록 최소 보존수익도 단계적으로 올린다.
@@ -152,6 +169,10 @@ function isKoreanWeekday() {
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, Number(value || 0)));
+}
+
+function sanitizeWaveHotVolumeRatio(value) {
+  return clamp(toNumber(value), 0, Number(SETTINGS.hotVolumeRatioSanityMax || 5000));
 }
 
 function toNumber(value, fallback = 0) {
@@ -401,7 +422,11 @@ function loadJson(filePath, fallback = {}) {
 }
 
 function inferSectorKey(text = "") {
-  const value = String(text || "").toLowerCase();
+  const value = String(text || "").toLowerCase().trim();
+  const tokens = value.split(/[\s,;/|()[\]{}]+/).filter(Boolean);
+  for (const key of ["semiconductor", "ai", "growth", "energy", "defensive"]) {
+    if (tokens.includes(key)) return key;
+  }
   if (/반도체|hbm|메모리|파운드리|웨이퍼|pcb|후공정|패키징|칩|semiconductor/.test(value)) return "semiconductor";
   if (/ai|인공지능|로봇|데이터센터|클라우드|소프트웨어|자율주행|스마트팩토리/.test(value)) return "ai";
   if (/2차전지|배터리|양극재|바이오|게임|인터넷|플랫폼|성장주|전기차/.test(value)) return "growth";
@@ -437,7 +462,9 @@ function makeCandidateBase({ code, name, source, snapshot = {}, priority = {} })
     hotScore: toNumber(snapshot.hotScore || snapshot.maxHotScore || 0),
     hotDetectionCount: toNumber(snapshot.detectionCount || snapshot.episodeDetectionCount || 0),
     hotMaxChangeRate: toNumber(snapshot.maxChangeRate || snapshot.changeRate || 0),
-    hotVolumeRatio: toNumber(snapshot.maxTradeVolumeRatio || snapshot.tradeVolumeRatio || 0),
+    hotVolumeRatio: sanitizeWaveHotVolumeRatio(
+      snapshot.maxTradeVolumeRatio || snapshot.tradeVolumeRatio || 0
+    ),
     hotMomentumScore: toNumber(snapshot.maxMomentumScore || snapshot.openMomentumScore || 0),
     sectorPeerCount: toNumber(snapshot.sectorPeerCount || 0),
     sectorPowerScore: toNumber(snapshot.sectorPowerScore || 0),
@@ -472,7 +499,10 @@ function upsertCandidate(state, incoming) {
   existing.hotScore = Math.max(toNumber(existing.hotScore), toNumber(incoming.hotScore));
   existing.hotDetectionCount = Math.max(toNumber(existing.hotDetectionCount), toNumber(incoming.hotDetectionCount));
   existing.hotMaxChangeRate = Math.max(toNumber(existing.hotMaxChangeRate), toNumber(incoming.hotMaxChangeRate));
-  existing.hotVolumeRatio = Math.max(toNumber(existing.hotVolumeRatio), toNumber(incoming.hotVolumeRatio));
+  existing.hotVolumeRatio = sanitizeWaveHotVolumeRatio(Math.max(
+    toNumber(existing.hotVolumeRatio),
+    toNumber(incoming.hotVolumeRatio)
+  ));
   existing.hotMomentumScore = Math.max(toNumber(existing.hotMomentumScore), toNumber(incoming.hotMomentumScore));
   existing.sectorPeerCount = Math.max(toNumber(existing.sectorPeerCount), toNumber(incoming.sectorPeerCount));
   existing.sectorPowerScore = Math.max(toNumber(existing.sectorPowerScore), toNumber(incoming.sectorPowerScore));
@@ -590,8 +620,30 @@ async function fetchJson(url, timeout = 12000) {
   }
 }
 
-async function getPrice(code, timeout = 12000) {
-  return fetchJson(`${API_BASE}/api/price?code=${encodeURIComponent(code)}&source=wave`, timeout);
+function validateWavePriceData(data = {}, maxQuoteAgeMs = 0, label = "WAVE") {
+  const currentPrice = toNumber(data.currentPrice);
+  if (currentPrice <= 0) throw new Error(`${label} 현재가 없음`);
+
+  const observedAtMs = toNumber(data.quoteObservedAtMs || data.cachedAtMs);
+  const quoteAgeMs = observedAtMs > 0 ? Math.max(0, Date.now() - observedAtMs) : 0;
+  data.waveQuoteAgeMs = quoteAgeMs;
+
+  if (maxQuoteAgeMs > 0 && observedAtMs > 0 && quoteAgeMs > maxQuoteAgeMs) {
+    throw new Error(
+      `${label} 시세 오래됨 ${Math.round(quoteAgeMs / 1000)}초 / ` +
+      `허용 ${Math.round(maxQuoteAgeMs / 1000)}초`
+    );
+  }
+  return data;
+}
+
+async function getPrice(code, timeout = 12000, source = "wave", maxQuoteAgeMs = SETTINGS.candidateMaxQuoteAgeMs) {
+  const normalizedSource = String(source || "wave").toLowerCase();
+  const data = await fetchJson(
+    `${API_BASE}/api/price?code=${encodeURIComponent(code)}&source=${encodeURIComponent(normalizedSource)}`,
+    timeout
+  );
+  return validateWavePriceData(data, maxQuoteAgeMs, normalizedSource === "sell" ? "WAVE 보유" : "WAVE 후보");
 }
 
 async function getHoldingPriceWithRetry(code) {
@@ -600,7 +652,12 @@ async function getHoldingPriceWithRetry(code) {
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
-      return await getPrice(code, SETTINGS.holdingPriceTimeoutMs);
+      return await getPrice(
+        code,
+        SETTINGS.holdingPriceTimeoutMs,
+        "sell",
+        SETTINGS.holdingMaxQuoteAgeMs
+      );
     } catch (err) {
       lastError = err;
       if (attempt < attempts) await sleep(SETTINGS.holdingPriceRetryDelayMs);
@@ -692,6 +749,20 @@ async function fetchStockNews(name) {
   }
 }
 
+function normalizeNewsMatchText(value = "") {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/(?:주식회사|㈜|\(주\))/g, "")
+    .replace(/[^0-9a-z가-힣]/g, "");
+}
+
+function headlineMentionsCandidate(title = "", candidateName = "") {
+  const normalizedTitle = normalizeNewsMatchText(title);
+  const normalizedName = normalizeNewsMatchText(candidateName);
+  if (normalizedName.length < 2) return false;
+  return normalizedTitle.includes(normalizedName);
+}
+
 function scoreWhy(candidate, newsItems = []) {
   // WAVE WHY는 단순 긍정 단어보다 "확정된 사실"을 우선한다.
   // 기대/전망/목표가/방송형 제목만으로 S급이 되는 것을 막는다.
@@ -703,9 +774,15 @@ function scoreWhy(candidate, newsItems = []) {
   const severeNegative = /횡령|배임|거래정지|상장폐지|감사의견|부도|회생절차|유상증자|전환사채|CB 발행|리콜|영업정지/i;
   const normalNegative = /적자|실적 부진|감소|악재|규제|급락|우려|하향|축소|중단/i;
 
+  // Google 검색은 따옴표 검색이어도 다른 종목 제목이 섞일 수 있다.
+  // 장전 우선종목 대표뉴스는 이미 종목 연결이 검증된 자료로 보고 유지하되,
+  // 일반 Google 뉴스는 제목에 후보명이 실제로 들어간 경우만 WHY 계산에 쓴다.
+  const matchedNewsItems = newsItems.filter(item =>
+    headlineMentionsCandidate(item?.title, candidate.name)
+  );
   const titles = [
     ...(candidate.representativeNews ? [{ title: candidate.representativeNews, source: "PRIORITY" }] : []),
-    ...newsItems.map(item => ({ ...item, source: "GOOGLE" }))
+    ...matchedNewsItems.map(item => ({ ...item, source: "GOOGLE" }))
   ];
 
   let score = 0;
@@ -787,17 +864,47 @@ function scoreWhy(candidate, newsItems = []) {
     severeNegativeCount,
     negativeCount,
     newsCount: titles.length,
+    unmatchedNewsCount: Math.max(0, newsItems.length - matchedNewsItems.length),
     headlines: titles.slice(0, 5).map(item => item.title)
   };
 }
 
-function scoreMoney(candidate, flowData = {}, dailyItems = []) {
+function scoreMoney(candidate, flowData = {}, dailyItems = [], priceData = {}) {
   const rows = Array.isArray(flowData.rows) ? flowData.rows.slice(-5) : [];
   const foreignSum = rows.reduce((sum, row) => sum + toNumber(row.foreignNetBuy), 0);
   const institutionSum = rows.reduce((sum, row) => sum + toNumber(row.institutionNetBuy), 0);
   const foreignPositiveDays = rows.filter(row => toNumber(row.foreignNetBuy) > 0).length;
   const institutionPositiveDays = rows.filter(row => toNumber(row.institutionNetBuy) > 0).length;
-  const latestTradeValue = rows.length ? toNumber(rows[rows.length - 1].tradingValueMillion) : 0;
+
+  // ka10060 acc_trde_prica가 일부 종목에서 누적거래량과 같은 숫자로 들어오는 사례가 있었다.
+  // 현재가 API의 누적거래량 × 현재가로 백만원 단위 거래대금을 교차검증하고,
+  // 명백한 단위/필드 오류일 때만 추정값으로 보정한다. 정상값은 그대로 유지한다.
+  const reportedTradeValueMillion = rows.length
+    ? toNumber(rows[rows.length - 1].tradingValueMillion)
+    : 0;
+  const currentPriceForTradeValue = toNumber(
+    priceData.currentPrice || candidate.lastPrice || candidate.discoveryPrice
+  );
+  const currentVolumeForTradeValue = toNumber(priceData.volume);
+  const estimatedTradeValueMillion =
+    currentPriceForTradeValue > 0 && currentVolumeForTradeValue > 0
+      ? (currentPriceForTradeValue * currentVolumeForTradeValue) / 1000000
+      : 0;
+
+  const sameAsVolume =
+    reportedTradeValueMillion > 0 &&
+    currentVolumeForTradeValue > 0 &&
+    Math.abs(reportedTradeValueMillion - currentVolumeForTradeValue) / currentVolumeForTradeValue <= 0.01;
+  const implausibleVsEstimate =
+    reportedTradeValueMillion > 0 &&
+    estimatedTradeValueMillion > 0 &&
+    (reportedTradeValueMillion > estimatedTradeValueMillion * 5 ||
+      reportedTradeValueMillion < estimatedTradeValueMillion / 5);
+  const tradeValueCorrected =
+    estimatedTradeValueMillion > 0 && (sameAsVolume || implausibleVsEstimate);
+  const latestTradeValue = tradeValueCorrected
+    ? estimatedTradeValueMillion
+    : reportedTradeValueMillion;
 
   let foreignScore = 0;
   if (foreignSum > 0) foreignScore += 2;
@@ -840,25 +947,45 @@ function scoreMoney(candidate, flowData = {}, dailyItems = []) {
     foreignPositiveDays,
     institutionPositiveDays,
     latestTradeValueMillion: latestTradeValue,
+    reportedTradeValueMillion,
+    estimatedTradeValueMillion,
+    tradeValueCorrected,
+    tradeValueCorrectionReason: tradeValueCorrected
+      ? (sameAsVolume ? "누적거래대금이 누적거래량과 동일" : "현재가×누적거래량 대비 5배 이상 괴리")
+      : null,
     flowAvailable: rows.length > 0
   };
 }
 
-function scoreSector(candidate, marketData = {}) {
-  const key = candidate.sectorKey || inferSectorKey(candidate.sector || "");
+function scoreSector(candidate, marketData = {}, newsItems = []) {
+  const matchedSectorNewsItems = newsItems.filter(item =>
+    headlineMentionsCandidate(item?.title, candidate.name)
+  );
+  const sectorEvidenceText = [
+    candidate.sectorKey,
+    candidate.sector,
+    candidate.priorityReason,
+    candidate.representativeNews,
+    ...matchedSectorNewsItems.map(item => item?.title)
+  ].filter(Boolean).join(" ");
+  const key = candidate.sectorKey || inferSectorKey(sectorEvidenceText);
   const sectorBias = key ? toNumber(marketData.sectorBias?.[key]) : 0;
   const newsBias = key ? toNumber(marketData.sectorNewsScores?.[key]) : 0;
 
   let marketScore = 0;
-  if (sectorBias >= 10) marketScore = 8;
-  else if (sectorBias >= 5) marketScore = 6;
-  else if (sectorBias >= 0) marketScore = 4;
-  else if (sectorBias > -5) marketScore = 2;
+  if (key) {
+    if (sectorBias >= 10) marketScore = 8;
+    else if (sectorBias >= 5) marketScore = 6;
+    else if (sectorBias >= 0) marketScore = 4;
+    else if (sectorBias > -5) marketScore = 2;
+  }
 
   let newsScore = 0;
-  if (newsBias >= 4) newsScore = 4;
-  else if (newsBias >= 1) newsScore = 3;
-  else if (newsBias >= 0) newsScore = 2;
+  if (key) {
+    if (newsBias >= 4) newsScore = 4;
+    else if (newsBias >= 1) newsScore = 3;
+    else if (newsBias >= 0) newsScore = 2;
+  }
 
   let breadthScore = 0;
   const sectorPower = toNumber(candidate.sectorPowerScore);
@@ -870,6 +997,7 @@ function scoreSector(candidate, marketData = {}) {
   return {
     score: clamp(marketScore + newsScore + breadthScore, 0, 15),
     sectorKey: key,
+    classified: Boolean(key),
     sectorBias,
     newsBias,
     marketScore,
@@ -1120,8 +1248,8 @@ async function analyzeCandidate(candidate, priceData, dailyData, flowData, newsI
   const dailyItems = Array.isArray(dailyData?.items) ? dailyData.items : [];
   const currentPrice = toNumber(priceData.currentPrice);
   const why = scoreWhy(candidate, newsItems);
-  const money = scoreMoney(candidate, flowData, dailyItems);
-  const sector = scoreSector(candidate, marketData);
+  const money = scoreMoney(candidate, flowData, dailyItems, priceData);
+  const sector = scoreSector(candidate, marketData, newsItems);
   const trend = scoreTrend(dailyItems, currentPrice);
   const pullback = scorePullback(candidate, dailyItems, currentPrice, trend);
   const rebound = scoreRebound(priceData, dailyItems, candidate);
@@ -1129,6 +1257,9 @@ async function analyzeCandidate(candidate, priceData, dailyData, flowData, newsI
   const foundationScore = why.score + money.score + sector.score;
   const totalScore = foundationScore + trend.score + pullback.score + rebound.score;
   const ageTradingDays = tradingDaysSince(dailyItems, candidate.discoveredDate);
+  const marketScore = toNumber(marketData.marketScore);
+  const marketType = String(marketData.marketType || "");
+  const weakMarketRiskLimited = marketScore > 0 && marketScore < SETTINGS.weakMarketScore;
 
   // 당일 급등은 "반등"이 아니라 1차 급등(IMPULSE)일 수 있다.
   // +10% 이상이면 READY를 막고 WATCH에서 눌림을 기다린다.
@@ -1207,6 +1338,9 @@ async function analyzeCandidate(candidate, priceData, dailyData, flowData, newsI
     foundationScore,
     totalScore,
     ageTradingDays,
+    marketScore,
+    marketType,
+    weakMarketRiskLimited,
     readyEligible,
     triggerEligible,
     triggerMaintainEligible,
@@ -1303,17 +1437,65 @@ function getWaveRunPhase() {
   return "OFF";
 }
 
+function getEffectiveDailyBuyLimit(analysis = {}) {
+  const marketScore = toNumber(analysis.marketScore);
+  if (marketScore > 0 && marketScore < SETTINGS.weakMarketScore) {
+    return Math.max(
+      0,
+      Math.min(SETTINGS.maxDailyBuyCount, SETTINGS.weakMarketMaxDailyBuyCount)
+    );
+  }
+  return SETTINGS.maxDailyBuyCount;
+}
+
+function logWaveBuyBlock(candidate, reason) {
+  const text = String(reason || "매수 실행조건 미충족");
+  const nowMs = Date.now();
+  if (
+    candidate.lastBuyBlockReason === text &&
+    nowMs - toNumber(candidate.lastBuyBlockAtMs) < SETTINGS.loopMs
+  ) return;
+  candidate.lastBuyBlockReason = text;
+  candidate.lastBuyBlockAt = nowText();
+  candidate.lastBuyBlockAtMs = nowMs;
+  console.log(`[WAVE 매수보류] ${candidate.name} / ${text}`);
+}
+
 function paperBuy(state, candidate, analysis) {
   const price = toNumber(analysis.currentPrice);
-  if (!price) return false;
-  if (state.holdings.some(item => item.code === candidate.code)) return false;
-  if (state.holdings.length >= SETTINGS.maxHoldingCount) return false;
-  if (getTodayBuyCount(state) >= SETTINGS.maxDailyBuyCount) return false;
+  if (!price) {
+    logWaveBuyBlock(candidate, "현재가 없음");
+    return false;
+  }
+  if (state.holdings.some(item => item.code === candidate.code)) {
+    logWaveBuyBlock(candidate, "동일종목 이미 보유중");
+    return false;
+  }
+  if (state.holdings.length >= SETTINGS.maxHoldingCount) {
+    logWaveBuyBlock(candidate, `보유한도 ${state.holdings.length}/${SETTINGS.maxHoldingCount}종목`);
+    return false;
+  }
+
+  const todayBuyCount = getTodayBuyCount(state);
+  const effectiveDailyBuyLimit = getEffectiveDailyBuyLimit(analysis);
+  if (todayBuyCount >= effectiveDailyBuyLimit) {
+    const weakMarketText = analysis.weakMarketRiskLimited
+      ? ` / 매우 약한 시장 ${toNumber(analysis.marketScore).toFixed(1)}점`
+      : "";
+    logWaveBuyBlock(
+      candidate,
+      `오늘 매수한도 ${todayBuyCount}/${effectiveDailyBuyLimit}종목${weakMarketText}`
+    );
+    return false;
+  }
 
   const targetAmount = toNumber(state.initialCapital) * SETTINGS.positionRatio;
   const buyAmount = Math.min(targetAmount, toNumber(state.totalCash));
   const qty = Math.floor(buyAmount / price);
-  if (qty <= 0) return false;
+  if (qty <= 0) {
+    logWaveBuyBlock(candidate, `가용현금 부족 / ${toNumber(state.totalCash).toLocaleString("ko-KR")}원`);
+    return false;
+  }
 
   const amount = qty * price;
   const holding = {
@@ -1356,6 +1538,8 @@ function paperBuy(state, candidate, analysis) {
     trendScore: analysis.trend.score,
     pullbackScore: analysis.pullback.score,
     reboundScore: analysis.rebound.score,
+    marketScore: toNumber(analysis.marketScore),
+    effectiveDailyBuyLimit,
     reason: analysis.buyReason
   });
 
@@ -1365,6 +1549,9 @@ function paperBuy(state, candidate, analysis) {
   candidate.buyPrice = price;
   candidate.buyScore = analysis.totalScore;
   candidate.pullbackLowPrice = toNumber(analysis.pullback.pullbackLowPrice);
+  candidate.lastBuyBlockReason = null;
+  candidate.lastBuyBlockAt = null;
+  candidate.lastBuyBlockAtMs = 0;
   ensureDailyStats(state).bought += 1;
 
   console.log(
@@ -1549,6 +1736,24 @@ function applyHoldingPriceRisk(state, holding, priceData = {}) {
   return { sold: false, price, profitRate, maxProfitRate, drawdownFromHigh };
 }
 
+function getWeakTrendExitDecision(holdingDaysValue, priceRisk = {}, trend = {}) {
+  const holdingDays = toNumber(holdingDaysValue);
+  const profitRate = toNumber(priceRisk.profitRate);
+  const price = toNumber(priceRisk.price);
+  const ma5 = toNumber(trend.ma5);
+  const trendScore = toNumber(trend.score);
+  const ma5Rate = ma5 > 0 && price > 0 ? ((price - ma5) / ma5) * 100 : 0;
+  const shouldSell =
+    SETTINGS.weakTrendSellEnabled === true &&
+    holdingDays >= SETTINGS.weakTrendSellMinTradingDays &&
+    profitRate < SETTINGS.weakTrendSellMaxProfitRate &&
+    trendScore <= SETTINGS.weakTrendSellMaxTrendScore &&
+    ma5 > 0 &&
+    price < ma5;
+
+  return { shouldSell, holdingDays, profitRate, trendScore, ma5, ma5Rate };
+}
+
 async function checkHoldingSell(state, holding, options = {}) {
   let priceData = options.priceData || null;
   if (!priceData) {
@@ -1578,6 +1783,20 @@ async function checkHoldingSell(state, holding, options = {}) {
   const holdingDays = tradingDaysSince(dailyItems, holding.buyDate);
   holding.holdingTradingDays = holdingDays;
   holding.trendScore = trend.score;
+  const weakTrendExit = getWeakTrendExitDecision(holdingDays, priceRisk, trend);
+  holding.ma5 = weakTrendExit.ma5;
+  holding.ma5Rate = weakTrendExit.ma5Rate;
+
+  if (weakTrendExit.shouldSell) {
+    return paperSell(
+      state,
+      holding,
+      priceRisk.price,
+      "WAVE_WEAK_TREND_SELL",
+      `초기 추세약화 / 보유 ${holdingDays}거래일 / 수익 ${priceRisk.profitRate.toFixed(2)}% / ` +
+      `추세 ${trend.score}점 / MA5 대비 ${weakTrendExit.ma5Rate.toFixed(2)}%`
+    );
+  }
 
   if (holdingDays >= SETTINGS.hardMaxHoldingTradingDays) {
     return paperSell(state, holding, priceRisk.price, "WAVE_MAX_TIME_SELL",
@@ -1720,8 +1939,48 @@ async function evaluateWatchCandidates(state, options = {}) {
     ? SETTINGS.liveEvaluationBatchSize
     : SETTINGS.preEvaluationBatchSize;
   const batchSize = Math.max(1, Number(options.batchSize || defaultBatchSize));
-  const batch = candidates.slice(0, batchSize);
-  const marketData = loadJson(OPEN_MARKET_FILE, {});
+
+  let batch;
+  if (mode === "LIVE" && candidates.length > batchSize) {
+    const prioritySize = Math.min(
+      batchSize,
+      Math.max(1, Number(SETTINGS.livePriorityBatchSize || Math.ceil(batchSize * 2 / 3)))
+    );
+    const rotationSize = Math.min(
+      batchSize - prioritySize,
+      Math.max(0, Number(SETTINGS.liveRotationBatchSize || (batchSize - prioritySize)))
+    );
+    const priorityRows = candidates.slice(0, prioritySize);
+    const priorityCodes = new Set(priorityRows.map(item => item.code));
+
+    // API 실패 후보도 '평가 시도' 시각을 기록한다. 성공한 시각(lastEvaluatedAtMs)만 보면
+    // 실패 후보가 영원히 가장 오래된 후보로 남아 순환 슬롯을 독점할 수 있다.
+    const rotationRows = candidates
+      .filter(item => !priorityCodes.has(item.code))
+      .sort((a, b) => {
+        const aAttempt = toNumber(
+          a.lastEvaluationAttemptAtMs || a.lastEvaluatedAtMs || a.discoveredAtMs
+        );
+        const bAttempt = toNumber(
+          b.lastEvaluationAttemptAtMs || b.lastEvaluatedAtMs || b.discoveredAtMs
+        );
+        if (aAttempt !== bAttempt) return aAttempt - bAttempt;
+        return toNumber(b.lastAnalysis?.totalScore) - toNumber(a.lastAnalysis?.totalScore);
+      })
+      .slice(0, rotationSize);
+
+    const selectedCodes = new Set([...priorityRows, ...rotationRows].map(item => item.code));
+    const fillRows = candidates
+      .filter(item => !selectedCodes.has(item.code))
+      .slice(0, Math.max(0, batchSize - priorityRows.length - rotationRows.length));
+    batch = [...priorityRows, ...rotationRows, ...fillRows];
+  } else {
+    batch = candidates.slice(0, batchSize);
+  }
+  const rawMarketData = loadJson(OPEN_MARKET_FILE, {});
+  const marketData = String(rawMarketData.date || "") === todayKey()
+    ? rawMarketData
+    : {};
   let evaluated = 0;
   let ready = 0;
   let trigger = 0;
@@ -1729,6 +1988,8 @@ async function evaluateWatchCandidates(state, options = {}) {
   let soldDuringEvaluation = 0;
 
   for (const candidate of batch) {
+    candidate.lastEvaluationAttemptAt = nowText();
+    candidate.lastEvaluationAttemptAtMs = Date.now();
     try {
       const [priceData, dailyData, flowData, newsItems] = await Promise.all([
         getPrice(candidate.code),
@@ -2415,6 +2676,11 @@ module.exports = {
   scoreRebound,
   analyzeCandidate,
   getTriggerReadiness,
+  inferSectorKey,
+  headlineMentionsCandidate,
+  validateWavePriceData,
+  getEffectiveDailyBuyLimit,
+  getWeakTrendExitDecision,
   applyHoldingPriceRisk,
   calculatePortfolioSnapshot,
   getWaveProtectFloorProfitRate

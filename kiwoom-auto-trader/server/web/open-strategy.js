@@ -75,12 +75,19 @@ const settings = {
 
   // OPEN 2.0: 장전 우선종목을 먼저 감시하고 일반검색은 보완용으로 순환
   openPriorityMaxCount: 20,
-openFallbackScanLimit: 200,
-openPriorityPriceDelayMs: 350,
+openFallbackScanLimit: 40,
+openPriorityPriceDelayMs: 50,
+
+// 한 번의 OPEN 후보 수집이 길어져 다음 관찰을 막지 않도록 총 수집시간을 제한한다.
+// 실제 매수조건은 바꾸지 않고 HOT·일반검색을 먼저 처리한 뒤 저순위 재조회를 순환한다.
+openCandidateScanBudgetMs: 20 * 1000,
+openPriceRequestTimeoutMs: 7 * 1000,
+openDiscoverRequestTimeoutMs: 8 * 1000,
+openMaxQuoteAgeMs: 15 * 1000,
 
 // 한번 발견한 OPEN 후보를 집중 재확인
 openFocusedCandidateMaxCount: 30,
-openFocusedPriceDelayMs: 150,
+openFocusedPriceDelayMs: 50,
 
 // 새로운 종목 유입을 위해 60초마다 일반검색도 다시 실행
 openFullRescanIntervalMs: 30 * 1000,
@@ -92,11 +99,11 @@ openPotentialEnabled: true,
 openPotentialMinScore: 7,
 openPotentialMaxCount: 30,
 // 상태에는 상위 20개를 유지하되 실제 현재가 재조회는 상위 10개만 수행
-openPotentialRecheckCount: 15,
+openPotentialRecheckCount: 10,
 openPotentialCheckIntervalMs: 5 * 1000,
 openPotentialMaxAgeSeconds: 900,
 // 키움 현재가 API 과호출 방지를 위한 종목 간 조회 간격
-openPotentialPriceDelayMs: 250,
+openPotentialPriceDelayMs: 50,
 
   openEnabled: true,
   openBuyStartTime: "09:00",
@@ -128,7 +135,7 @@ openPotentialPriceDelayMs: 250,
   openHotHistoryEnabled: true,
   openHotHistoryMaxAgeSeconds: 180,
   openHotHistoryMaxCount: 30,
-  openHotHistoryPriceDelayMs: 120,
+  openHotHistoryPriceDelayMs: 50,
   openPriorityScoreWeight: 0.30,
   openHotBonusMax: 50,
   openPriorityBonusMax: 30,
@@ -253,6 +260,14 @@ openFallbackMaxFirstPriceDropRate: -0.30,
 openFallbackMomentumRequired: true,
 // 8/19 삼성공조처럼 지속강도 40점대 후보가 보완매수되는 것을 막는다.
 openFallbackMinMomentumScore: 50,
+
+// 보완매수는 이미 장초반 급등이 완성된 종목을 뒤늦게 추격하지 않는다.
+// 엄격후보에는 적용하지 않고, 상승률·거래량·고가권·시가대비가 동시에 과열일 때만 차단한다.
+openFallbackChaseGuardEnabled: true,
+openFallbackChaseGuardMinChangeRate: 5.0,
+openFallbackChaseGuardMinTradeVolumeRatio: 300,
+openFallbackChaseGuardMinDayPositionRate: 85,
+openFallbackChaseGuardMinOpenPositionRate: 4.0,
 openLateFallbackStartTime: "09:12"
 };
 
@@ -391,6 +406,14 @@ function updateOpenLiveTracking(state, patch = {}, activityMessage = null, activ
     minObservationCount: Number(settings.openMinObservationCount || 0),
     fallbackStartTime: settings.openFallbackBuyStartTime,
     fallbackMinDiscoverScore: Number(settings.openFallbackMinDiscoverScore || 0),
+    generalMinDiscoverScore: Number(settings.openMinDiscoverScore || 0) + 1,
+    volumeRatioSteps: [
+      { label: "09:05 전", minimum: getOpenTimeVolumeRatio("09:04") },
+      { label: "09:10 전", minimum: getOpenTimeVolumeRatio("09:09") },
+      { label: "09:20 전", minimum: getOpenTimeVolumeRatio("09:19") },
+      { label: "이후", minimum: getOpenTimeVolumeRatio("09:20") }
+    ],
+    maxQuoteAgeSeconds: Math.round(Number(settings.openMaxQuoteAgeMs || 0) / 1000),
     maxHoldingCount: Number(settings.openMaxHoldingCount || 5),
     investmentRatio: Number(settings.openInvestmentRatio || 0.20)
   };
@@ -757,25 +780,39 @@ function buildDirectHotCandidates(hotData = {}) {
         hotDurationSeconds: Number(hot.hotDurationSeconds || 0),
         fromHotHistory: hot.fromHotHistory === true,
         hotLastDetectedAt: hot.lastDetectedAt || null,
-        hotLastDetectedAtMs: Number(hot.lastDetectedAtMs || 0)
+        hotLastDetectedAtMs: Number(hot.lastDetectedAtMs || 0),
+        quoteObservedAtMs: Number(
+          hot.quoteObservedAtMs || hot.hotDetectedAtMs || hot.lastDetectedAtMs || 0
+        ),
+        quoteAgeMs: Math.max(
+          0,
+          Date.now() - Number(
+            hot.quoteObservedAtMs || hot.hotDetectedAtMs || hot.lastDetectedAtMs || Date.now()
+          )
+        )
       };
     })
     .filter(Boolean);
 }
 
-async function enrichHistoricalHotCandidates(rows = []) {
+async function enrichHistoricalHotCandidates(rows = [], scanContext = null) {
   const enriched = [];
 
   for (const row of rows) {
     if (!row.fromHotHistory) {
       enriched.push(row);
+      if (scanContext?.requestedCodes) {
+        const code = normalizeOpenStockCode(row.code);
+        if (code) scanContext.requestedCodes.add(code);
+      }
       continue;
     }
 
+    if (!hasOpenScanBudget(scanContext, 1000)) break;
+    if (!reserveOpenScanCode(scanContext, row.code)) continue;
+
     try {
-      const data = await fetchJson(
-        `${API_BASE}/api/price?code=${encodeURIComponent(row.code)}`
-      );
+      const data = await fetchOpenPriceData(row.code);
       const scoreInfo = calculateOpenDiscoverScore(data);
       enriched.push({
         ...row,
@@ -1133,6 +1170,14 @@ function makeOpenCandidateLearningRecord(state, item, price, judged = {}) {
     observedAt: nowText(),
     observedAtMs,
     price: Number(price || 0),
+    quoteObservedAtMs: Number(item.quoteObservedAtMs || 0),
+    quoteAgeMs: Math.max(
+      0,
+      Number(item.quoteObservedAtMs || 0)
+        ? observedAtMs - Number(item.quoteObservedAtMs || 0)
+        : Number(item.quoteAgeMs || 0)
+    ),
+    staleQuoteFallback: item.isStaleFallback === true,
     discoverScore: Number(item.discoverScore || 0),
     changeRate,
     volumeRatio,
@@ -2500,14 +2545,68 @@ function checkDailyLossLimit(state) {
   };
 }
 
-async function fetchJson(url) {
-  const res = await fetch(url);
-  const text = await res.text();
-  let data = {};
-  try { data = text ? JSON.parse(text) : {}; }
-  catch { data = { rawText: text }; }
-  if (!res.ok) throw new Error(data.message || data.error || `API 오류 ${res.status}`);
-  return data;
+async function fetchJson(url, timeoutMs = 0) {
+  const controller = Number(timeoutMs || 0) > 0 ? new AbortController() : null;
+  const timer = controller
+    ? setTimeout(() => controller.abort(), Number(timeoutMs))
+    : null;
+
+  try {
+    const res = await fetch(url, { signal: controller?.signal });
+    const text = await res.text();
+    let data = {};
+    try { data = text ? JSON.parse(text) : {}; }
+    catch { data = { rawText: text }; }
+    if (!res.ok) throw new Error(data.message || data.error || `API 오류 ${res.status}`);
+    return data;
+  } catch (err) {
+    if (err?.name === "AbortError") {
+      const timeoutError = new Error(
+        `OPEN API 응답시간 초과 ${Math.round(Number(timeoutMs) / 1000)}초`
+      );
+      timeoutError.code = "OPEN_API_TIMEOUT";
+      timeoutError.requestUrl = url;
+      throw timeoutError;
+    }
+    throw err;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function hasOpenScanBudget(scanContext, reserveMs = 0) {
+  if (!scanContext?.deadlineAtMs) return true;
+  return Date.now() + Number(reserveMs || 0) < Number(scanContext.deadlineAtMs);
+}
+
+function reserveOpenScanCode(scanContext, codeValue) {
+  const code = normalizeOpenStockCode(codeValue);
+  if (!code) return false;
+  if (!scanContext?.requestedCodes) return true;
+  if (scanContext.requestedCodes.has(code)) return false;
+  scanContext.requestedCodes.add(code);
+  return true;
+}
+
+function markOpenQuoteTime(data = {}) {
+  const now = Date.now();
+  const cacheAgeMs = Math.max(0, Number(data.cacheAgeMs || 0));
+  const quoteObservedAtMs = Number(
+    data.quoteObservedAtMs || data.cachedAtMs || (now - cacheAgeMs) || now
+  );
+  return {
+    ...data,
+    quoteObservedAtMs,
+    quoteAgeMs: Math.max(0, now - quoteObservedAtMs)
+  };
+}
+
+async function fetchOpenPriceData(code, timeoutMs = settings.openPriceRequestTimeoutMs) {
+  const data = await fetchJson(
+    `${API_BASE}/api/price?code=${encodeURIComponent(code)}&source=open`,
+    timeoutMs
+  );
+  return markOpenQuoteTime(data);
 }
 
 async function postJson(url, body, timeoutMs = 0) {
@@ -2586,8 +2685,14 @@ function isRetryableOpenOrderError(err) {
   return /fetch failed|timeout|시간초과|시간 초과|ECONNRESET|ECONNREFUSED|EPIPE|UND_ERR|socket/i.test(text);
 }
 
-async function fetchPrice(code) {
-  const data = await fetchJson(`${API_BASE}/api/price?code=${code}`);
+async function fetchPrice(code, source = "open") {
+  const timeoutMs = String(source).toLowerCase() === "sell"
+    ? Math.max(8000, Number(settings.openPriceRequestTimeoutMs || 5000))
+    : Number(settings.openPriceRequestTimeoutMs || 5000);
+  const data = await fetchJson(
+    `${API_BASE}/api/price?code=${encodeURIComponent(code)}&source=${encodeURIComponent(source)}`,
+    timeoutMs
+  );
   return Math.abs(Number(
     data.currentPrice || data.price || data.curPrice || data.raw?.cur_prc || 0
   ));
@@ -2700,7 +2805,7 @@ function wasBoughtToday(state, code) {
   );
 }
 
-async function fetchPriorityCandidates(marketData = {}) {
+async function fetchPriorityCandidates(marketData = {}, scanContext = null) {
   const priorityStocks = Array.isArray(marketData.priorityStocks)
     ? marketData.priorityStocks.slice(0, settings.openPriorityMaxCount)
     : [];
@@ -2710,10 +2815,10 @@ async function fetchPriorityCandidates(marketData = {}) {
   const rows = [];
 
   for (const stock of priorityStocks) {
+    if (!hasOpenScanBudget(scanContext, 1000)) break;
+    if (!reserveOpenScanCode(scanContext, stock.code)) continue;
     try {
-      const data = await fetchJson(
-        `${API_BASE}/api/price?code=${encodeURIComponent(stock.code)}`
-      );
+      const data = await fetchOpenPriceData(stock.code);
 
       const item = {
         ...data,
@@ -2786,7 +2891,7 @@ function calculateOpenDiscoverScore(item = {}) {
   };
 }
 
-async function fetchFocusedCandidates(state) {
+async function fetchFocusedCandidates(state, scanContext = null) {
   const history = state.openCandidateHistory || {};
 
   const focusedList = Object.entries(history)
@@ -2819,10 +2924,10 @@ async function fetchFocusedCandidates(state) {
   const rows = [];
 
   for (const candidate of focusedList) {
+    if (!hasOpenScanBudget(scanContext, 1000)) break;
+    if (!reserveOpenScanCode(scanContext, candidate.code)) continue;
     try {
-      const data = await fetchJson(
-        `${API_BASE}/api/price?code=${encodeURIComponent(candidate.code)}`
-      );
+      const data = await fetchOpenPriceData(candidate.code);
 
       const item = {
         ...(candidate.itemSnapshot || {}),
@@ -3031,7 +3136,7 @@ function removeOpenPotentialCandidate(state, code, status = "REMOVED", reason = 
   );
 }
 
-async function fetchPotentialCandidates(state) {
+async function fetchPotentialCandidates(state, scanContext = null) {
   if (!settings.openPotentialEnabled) return [];
   if (!state.openPotentialCandidates || typeof state.openPotentialCandidates !== "object") {
     state.openPotentialCandidates = {};
@@ -3058,6 +3163,7 @@ async function fetchPotentialCandidates(state) {
 
   const rows = [];
   for (const candidate of active) {
+    if (!hasOpenScanBudget(scanContext, 1000)) break;
     const ageSeconds = (now - Number(candidate.firstSeenAtMs || now)) / 1000;
     if (ageSeconds > Number(settings.openPotentialMaxAgeSeconds || 180)) {
       removeOpenPotentialCandidate(
@@ -3069,10 +3175,10 @@ async function fetchPotentialCandidates(state) {
       continue;
     }
 
+    if (!reserveOpenScanCode(scanContext, candidate.code)) continue;
+
     try {
-      const data = await fetchJson(
-        `${API_BASE}/api/price?code=${encodeURIComponent(candidate.code)}`
-      );
+      const data = await fetchOpenPriceData(candidate.code);
       const item = {
         ...(candidate.itemSnapshot || {}),
         ...data,
@@ -3130,22 +3236,50 @@ async function fetchPotentialCandidates(state) {
   return rows;
 }
 
-async function fetchFallbackCandidates(state) {
+async function fetchFallbackCandidates(state, scanContext = null) {
+  if (!hasOpenScanBudget(scanContext, 1000)) return [];
   const offset = Number(state.openDiscoverOffset || 0);
+  const remainingMs = scanContext?.deadlineAtMs
+    ? Math.max(1000, Number(scanContext.deadlineAtMs) - Date.now())
+    : Number(settings.openDiscoverRequestTimeoutMs || 8000);
+  const timeoutMs = Math.min(
+    Number(settings.openDiscoverRequestTimeoutMs || 8000),
+    remainingMs
+  );
+  const discoverBudgetMs = Math.max(2000, Math.min(6000, remainingMs - 1000));
   const data = await fetchJson(
     `${API_BASE}/api/discover?offset=${offset}` +
     `&scanLimit=${settings.openFallbackScanLimit}` +
-    `&limit=${settings.discoverLimit}`
+    `&limit=${settings.discoverLimit}` +
+    `&source=open-discover` +
+    `&budgetMs=${discoverBudgetMs}`,
+    timeoutMs
   );
 
   state.openDiscoverOffset = Number(data.nextOffset || 0);
   state.lastOpenDiscoverAt = nowText();
 
-  return (data.items || []).map(item => ({ ...item, source: "FALLBACK" }));
+  const receivedAtMs = Date.now();
+  return (data.items || []).map(item => {
+    const quoteObservedAtMs = Number(
+      item.quoteObservedAtMs || item.cachedAtMs || receivedAtMs
+    );
+    return {
+      ...item,
+      source: "FALLBACK",
+      quoteObservedAtMs,
+      quoteAgeMs: Math.max(0, receivedAtMs - quoteObservedAtMs)
+    };
+  });
 }
 
 async function discoverCandidates(state, marketData = {}) {
   const now = Date.now();
+  const scanContext = {
+    startedAtMs: now,
+    deadlineAtMs: now + Number(settings.openCandidateScanBudgetMs || 20000),
+    requestedCodes: new Set()
+  };
   const hotData = loadHotCandidates();
 
   console.log(
@@ -3157,13 +3291,30 @@ async function discoverCandidates(state, marketData = {}) {
   );
 
   /*
-   * 이미 발견된 후보가 있으면 우선 빠르게 재확인한다.
+   * 현재 HOT은 추가 API 조회 없이 가장 먼저 평가대상에 넣는다.
+   * 최근 HOT 이력은 일반검색 뒤 남은 시간 안에서만 현재가를 보완한다.
    */
-  const potentialRows =
-    await fetchPotentialCandidates(state);
-
-  const focusedRows =
-    await fetchFocusedCandidates(state);
+  const directHotBaseRows = buildDirectHotCandidates(hotData);
+  const currentHotRows = [];
+  const historicalOrStaleHotRows = [];
+  for (const item of directHotBaseRows) {
+    const quoteObservedAtMs = Number(
+      item.quoteObservedAtMs || item.hotDetectedAtMs || item.lastDetectedAtMs || 0
+    );
+    const quoteAgeMs = quoteObservedAtMs > 0
+      ? Math.max(0, Date.now() - quoteObservedAtMs)
+      : Infinity;
+    if (
+      item.fromHotHistory === true ||
+      quoteAgeMs > Number(settings.openMaxQuoteAgeMs || 15000)
+    ) {
+      historicalOrStaleHotRows.push({ ...item, fromHotHistory: true });
+    } else {
+      currentHotRows.push(item);
+    }
+  }
+  // currentHotRows는 HOT 스냅샷을 읽은 것뿐 현재가 API를 새로 호출한 것이 아니다.
+  // 여기서 requestedCodes에 미리 넣으면 잠재/집중후보 실시간 재조회가 전부 건너뛰어진다.
 
   /*
    * 일반검색 실행 조건
@@ -3182,9 +3333,10 @@ async function discoverCandidates(state, marketData = {}) {
     ? Number(settings.openLateFullRescanIntervalMs || 60 * 1000)
     : Number(settings.openFullRescanIntervalMs || 30 * 1000);
 
+  const focusedStoredCount = Object.keys(state.openCandidateHistory || {}).length;
   const shouldRunFullScan =
     (
-      focusedRows.length === 0 ||
+      focusedStoredCount === 0 ||
       now - lastFullScanAtMs >=
         fullRescanIntervalMs
     );
@@ -3192,16 +3344,34 @@ async function discoverCandidates(state, marketData = {}) {
   let priorityRows = [];
   let fallbackRows = [];
 
-  if (shouldRunFullScan) {
-    priorityRows =
-      await fetchPriorityCandidates(marketData);
+  /*
+   * 이미 발견된 후보의 실시간 재확인이 OPEN의 핵심이다.
+   * 일반 전종목 검색보다 먼저 처리해 20초 수집예산을 일반검색이 모두 소모하지 않게 한다.
+   */
+  const potentialRows = await fetchPotentialCandidates(state, scanContext);
+  const focusedRows = await fetchFocusedCandidates(state, scanContext);
 
-    fallbackRows =
-      await fetchFallbackCandidates(state);
+  const historicalHotRows = await enrichHistoricalHotCandidates(
+    historicalOrStaleHotRows,
+    scanContext
+  );
+  const directHotRows = [...currentHotRows, ...historicalHotRows];
+
+  if (shouldRunFullScan && hasOpenScanBudget(scanContext, 2500)) {
+    try {
+      fallbackRows = await fetchFallbackCandidates(state, scanContext);
+    } catch (err) {
+      console.log(`[OPEN 일반검색 조회실패] ${err.message}`);
+    }
 
     state.lastOpenFullScanAtMs = Date.now();
     state.lastOpenFullScanAt = nowText();
+  } else if (shouldRunFullScan) {
+    console.log(`[OPEN 일반검색 이월] 후보 실시간 재확인 우선 / 다음 스캔에서 재시도`);
+  }
 
+  if (shouldRunFullScan && hasOpenScanBudget(scanContext, 1000)) {
+    priorityRows = await fetchPriorityCandidates(marketData, scanContext);
     console.log(
       `[OPEN 전체검색 실행] ` +
       `우선 ${priorityRows.length}개 / ` +
@@ -3226,17 +3396,21 @@ async function discoverCandidates(state, marketData = {}) {
     );
   }
 
-  const directHotRows = await enrichHistoricalHotCandidates(
-    buildDirectHotCandidates(hotData)
-  );
+  if (!hasOpenScanBudget(scanContext)) {
+    console.log(
+      `[OPEN 수집시간 제한] ${Number(settings.openCandidateScanBudgetMs || 0) / 1000}초 / ` +
+      `HOT·일반검색 우선 처리 후 나머지는 다음 스캔에서 순환`
+    );
+  }
   const merged = [];
   const seen = new Set();
 
   for (
     const sourceItem of [
-      ...directHotRows,
+      // 같은 코드가 있으면 이번 스캔에서 API로 갱신한 잠재/집중후보가 HOT 파일 스냅샷보다 우선한다.
       ...potentialRows,
       ...focusedRows,
+      ...directHotRows,
       ...priorityRows,
       ...fallbackRows
     ]
@@ -3314,7 +3488,7 @@ async function discoverCandidates(state, marketData = {}) {
 
 function calculateOpenMomentumStrength(history = {}) {
   const samples = Array.isArray(history.samples) ? history.samples : [];
-  const minCount = Number(settings.openMinObservationCount || 4);
+  const minCount = Number(settings.openMinObservationCount || 2);
 
   if (samples.length < minCount) {
     return {
@@ -3908,6 +4082,27 @@ function judgeOpenBuy(state, item, price, options = {}) {
     };
   }
 
+  const quoteObservedAtMs = Number(
+    item.quoteObservedAtMs || item.hotDetectedAtMs || item.lastDetectedAtMs || 0
+  );
+  const quoteAgeMs = quoteObservedAtMs > 0
+    ? Math.max(0, Date.now() - quoteObservedAtMs)
+    : Math.max(0, Number(item.quoteAgeMs || 0));
+  if (
+    quoteAgeMs > Number(settings.openMaxQuoteAgeMs || 15000) ||
+    (
+      item.isStaleFallback === true &&
+      Number(item.cacheAgeMs || quoteAgeMs) > Number(settings.openMaxQuoteAgeMs || 15000)
+    )
+  ) {
+    return {
+      pass: false,
+      reason:
+        `시세 오래됨 ${Math.round(quoteAgeMs / 1000)}초 / ` +
+        `허용 ${Math.round(Number(settings.openMaxQuoteAgeMs || 15000) / 1000)}초 / 재조회 대기`
+    };
+  }
+
   /*
    * 발견점수·상승률·시가대비 조건에서 탈락하더라도 실제 가격·거래량
    * 관찰표본은 먼저 누적한다. 이전에는 앞단 필터를 통과한 후보만
@@ -4184,7 +4379,7 @@ function judgeOpenBuy(state, item, price, options = {}) {
   const marketRequiredDiscoverScore = requiredDiscoverScore;
   const fallbackHotObservationEligible =
     settings.openFallbackBuyEnabled === true &&
-    getCurrentHHMM() >= String(settings.openFallbackBuyStartTime || "09:07") &&
+    getCurrentHHMM() >= String(settings.openFallbackBuyStartTime || "09:03") &&
     isHotSignal &&
     discoverScore >= Number(settings.openFallbackMinDiscoverScore || 9);
 
@@ -4946,35 +5141,124 @@ if (
   return null;
 }
 
+function getOpenHoldingPositionToken(holding = {}) {
+  const rawToken =
+    holding.positionId || holding.buyTime || holding.buyTimeMs ||
+    holding.buyAt || holding.buyTimeText || "legacy";
+  return String(rawToken).replace(/[^0-9A-Za-z_-]/g, "_").slice(-100);
+}
+
+function getOpenCompletedFullSellKey(holding = {}) {
+  const code = normalizeOpenStockCode(holding.code);
+  return `${todayKey()}_${code}_${getOpenHoldingPositionToken(holding)}`;
+}
+
+function reconcileCompletedOpenHoldings(state) {
+  if (!Array.isArray(state.holdings)) state.holdings = [];
+  if (!Array.isArray(state.completedOpenSellCodes)) state.completedOpenSellCodes = [];
+  if (!Array.isArray(state.completedFullSellCodes)) state.completedFullSellCodes = [];
+
+  const completedCodes = new Set(state.completedOpenSellCodes.map(String));
+  const staleOpen = state.holdings.filter(holding => {
+    if (String(holding.strategyGroup || "").toUpperCase() !== "OPEN") return false;
+    const code = normalizeOpenStockCode(holding.code);
+    return completedCodes.has(`${todayKey()}_${code}`);
+  });
+
+  if (!staleOpen.length) return false;
+  const staleKeys = new Set(staleOpen.map(getOpenCompletedFullSellKey));
+  for (const key of staleKeys) {
+    if (!state.completedFullSellCodes.includes(key)) state.completedFullSellCodes.push(key);
+  }
+  state.completedFullSellCodes = state.completedFullSellCodes.slice(-500);
+  state.holdings = state.holdings.filter(holding => !staleKeys.has(getOpenCompletedFullSellKey(holding)));
+  console.log(
+    `[OPEN 상태동기화] 이미 매도완료된 OPEN 보유 ${staleOpen.length}건 제거 / ` +
+    staleOpen.map(row => `${row.name || row.code}(${normalizeOpenStockCode(row.code)})`).join(" | ")
+  );
+  return true;
+}
+
 async function paperOpenSell(state, holding, price, signal) {
   const normalizedCode = normalizeOpenStockCode(holding.code);
+  const completedCodeKey = `${todayKey()}_${normalizedCode}`;
   const sellKey = `${todayKey()}_${normalizedCode}`;
+  if (!Array.isArray(state.pendingSellCodes)) state.pendingSellCodes = [];
+  if (!Array.isArray(state.completedOpenSellCodes)) state.completedOpenSellCodes = [];
+  if (!Array.isArray(state.completedFullSellCodes)) state.completedFullSellCodes = [];
+
+  // 다른 루프/프로세스가 먼저 매도한 경우 stale OPEN 스냅샷으로 다시 주문하지 않는다.
+  const latestBeforeSell = loadState();
+  const latestHolding = (latestBeforeSell.holdings || []).find(row =>
+    String(row.strategyGroup || "").toUpperCase() === "OPEN" &&
+    normalizeOpenStockCode(row.code) === normalizedCode &&
+    (!holding.positionId || !row.positionId || String(row.positionId) === String(holding.positionId))
+  );
+  const alreadyCompleted = (latestBeforeSell.completedOpenSellCodes || []).includes(completedCodeKey);
+  if (!latestHolding) {
+    replaceOpenStateSnapshot(state, latestBeforeSell);
+    console.log(`[OPEN 매도생략] ${holding.name || normalizedCode} / 실제 보유원장 없음`);
+    return true;
+  }
+  if (alreadyCompleted) {
+    // 완료기록과 stale 보유가 동시에 있으면 서버 중복매도 방어를 한 번 호출해 원장 자체를 정리한다.
+    console.log(`[OPEN 매도원장 복구요청] ${holding.name || normalizedCode} / 완료기록 있으나 stale 보유 감지`);
+  }
+
   if (state.pendingSellCodes.includes(sellKey)) return false;
   state.pendingSellCodes.push(sellKey);
   saveState(state);
 
   try {
-    const qty = Number(holding.qty || 0);
+    const qty = Number(latestHolding.qty || holding.qty || 0);
     if (qty <= 0) return false;
+    const sellRequestedAtMs = Date.now();
+    const positionId = latestHolding.positionId || holding.positionId || null;
+    const executionId = [
+      "OPEN_SELL",
+      positionId || completedCodeKey,
+      sellRequestedAtMs,
+      qty,
+      signal.type
+    ].join("_");
 
     const result = await postJson(`${API_BASE}/api/core-paper-sell`, {
-      code: holding.code,
+      code: normalizedCode,
       price,
       qty,
       sellType: signal.type,
       reason: signal.reason,
+      positionId,
+      executionId,
+      sellRequestedAtMs,
       signalAt: signal.signalAt || null,
       signalAtMs: Number(signal.signalAtMs || 0),
       signalPrice: Number(signal.signalPrice || price || 0)
     });
 
-    recordOpenLearningSell(holding, price, signal, result);
-    // 주문 API가 저장한 최신 보유·현금·거래원장을 다시 읽는다.
-    replaceOpenStateSnapshot(state, loadState());
+    // 서버가 이미 처리한 매도라면 학습결과/손익 로그를 다시 만들지 않는다.
+    if (result?.duplicateIgnored === true) {
+      const latest = loadState();
+      reconcileCompletedOpenHoldings(latest);
+      saveState(latest);
+      replaceOpenStateSnapshot(state, latest);
+      console.log(`[OPEN 중복매도 방지] ${holding.name || normalizedCode} / 서버 완료기록 확인`);
+      return true;
+    }
 
-    state.openCompleted = true;
+    recordOpenLearningSell(latestHolding, price, signal, result);
+
+    // 주문 API가 저장한 최신 보유·현금·거래원장을 다시 읽는다.
+    const latestAfterSell = loadState();
+    reconcileCompletedOpenHoldings(latestAfterSell);
+    replaceOpenStateSnapshot(state, latestAfterSell);
+
+    // 1종목 매도했다고 OPEN 하루가 끝난 것은 아니다. 5종목 일일 매수한도 또는 매수시간 종료일 때만 완료한다.
+    const buyCapacityFull = getOpenBuyCountToday(state) >= Number(settings.openMaxHoldingCount || 5);
+    const buyWindowClosed = getCurrentHHMM() >= String(settings.openBuyEndTime || "09:30");
+    state.openCompleted = buyCapacityFull || buyWindowClosed;
     state.openSkipped = false;
-    state.openCompletedAt = nowText();
+    state.openCompletedAt = state.openCompleted ? nowText() : null;
     state.openSellType = signal.type;
     state.openSellReason = signal.reason;
     saveState(state);
@@ -4985,11 +5269,11 @@ async function paperOpenSell(state, holding, price, signal) {
     const latestState = loadState();
     if (!Array.isArray(latestState.pendingSellCodes)) latestState.pendingSellCodes = [];
     latestState.pendingSellCodes = latestState.pendingSellCodes.filter(key => key !== sellKey);
+    reconcileCompletedOpenHoldings(latestState);
     saveState(latestState);
     replaceOpenStateSnapshot(state, latestState);
   }
 }
-
 
 function getOpenRejectCategory(reason = "") {
   const text = String(reason || "");
@@ -5142,6 +5426,17 @@ function makeOpenFallbackEntry(state, entry) {
     ? ((Number(price) - previousPrice) / previousPrice) * 100
     : 0;
 
+  // 오래된 시세는 보완매수로도 우회하지 않는다. 반드시 새 현재가를 받은 뒤 다시 평가한다.
+  const fallbackQuoteObservedAtMs = Number(item.quoteObservedAtMs || 0);
+  const fallbackQuoteAgeMs = fallbackQuoteObservedAtMs > 0
+    ? Math.max(0, Date.now() - fallbackQuoteObservedAtMs)
+    : Number(item.quoteAgeMs || Infinity);
+  if (
+    /시세 오래됨|재조회 대기|조회실패/.test(strictRejectReason) ||
+    !Number.isFinite(fallbackQuoteAgeMs) ||
+    fallbackQuoteAgeMs > Number(settings.openMaxQuoteAgeMs || 15000)
+  ) return null;
+
   // 보완매수는 엄격판정의 시장·섹터 차단을 절대 우회하지 않는다.
   // 25~39점 약세장의 초강력 후보는 judgeOpenBuy()에서 먼저 예외 통과되어야 한다.
   if (
@@ -5183,6 +5478,22 @@ function makeOpenFallbackEntry(state, entry) {
     openPosition < settings.openFallbackMinOpenPositionRate ||
     openPosition > settings.openFallbackMaxOpenPositionRate
   ) return null;
+
+  const fallbackChaseOverheated =
+    settings.openFallbackChaseGuardEnabled === true &&
+    changeRate >= Number(settings.openFallbackChaseGuardMinChangeRate || 5.0) &&
+    volumeRatio >= Number(settings.openFallbackChaseGuardMinTradeVolumeRatio || 300) &&
+    dayPosition >= Number(settings.openFallbackChaseGuardMinDayPositionRate || 85) &&
+    openPosition >= Number(settings.openFallbackChaseGuardMinOpenPositionRate || 4.0);
+  if (fallbackChaseOverheated) {
+    console.log(
+      `[OPEN 보완매수 과열차단] ${item.name || item.code} / ` +
+      `상승 ${changeRate.toFixed(2)}% / 거래량 ${volumeRatio.toFixed(1)}% / ` +
+      `위치 ${dayPosition.toFixed(1)}% / 시가대비 ${openPosition.toFixed(2)}%`
+    );
+    return null;
+  }
+
   if (firstPriceDiffRate < settings.openFallbackMaxFirstPriceDropRate) return null;
   if (
     recentPriceDiffRate <= Number(settings.openRecentPriceWeakBlockRate || -0.50)
@@ -5702,10 +6013,17 @@ async function checkOpenSellOnce() {
   initOpenDayIfNeeded(state);
   if (!state.serverAutoEnabled) return;
 
-  const openHoldings = (state.holdings || []).filter(h => h.strategyGroup === "OPEN");
+  if (reconcileCompletedOpenHoldings(state)) {
+    saveState(state);
+    replaceOpenStateSnapshot(state, loadState());
+  }
+
+  const openHoldings = (state.holdings || []).filter(
+    h => String(h.strategyGroup || "").toUpperCase() === "OPEN"
+  );
   for (const holding of openHoldings) {
     let price = 0;
-    try { price = await fetchPrice(holding.code); }
+    try { price = await fetchPrice(holding.code, "sell"); }
     catch (err) {
       console.log(`[OPEN 가격조회 실패] ${holding.name} / ${err.message}`);
       price = Number(holding.currentPrice || holding.buyPrice || 0);

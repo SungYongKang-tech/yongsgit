@@ -1032,10 +1032,10 @@ buyAssetRatio: 0.10,
   volumeStartTime: "09:10",
 volumeEndTime: "13:30",
 
-// OPEN 우선운영: OPEN 매수 완료 전에는 최대 09:30까지
+// OPEN 우선운영: OPEN 매수 완료 전에는 최대 09:25까지
 // CORE/VOLUME 후보 분석은 계속하고 실제 신규주문과 스위칭만 보류
 openPriorityBuyBlockEnabled: true,
-openPriorityBuyBlockEndTime: "09:30",
+openPriorityBuyBlockEndTime: "09:25",
   volumeMaxHoldingCount: 5,
   volumeMaxDailyBuyCount: 5,
   volumeMinChangeRate: 0.8,
@@ -1163,6 +1163,15 @@ candidateWatchMaxAgeMs: 30 * 60 * 1000,
 
 candidateWatchLoopMs: 30 * 1000,
 candidateWatchPriceDelayMs: 350,
+// 후보재평가가 BUY 전체검색을 장시간 밀지 않도록 1회 실시간 재조회 종목수를 제한한다.
+// 같은 종목이 CORE/VOLUME 양쪽에 있으면 종목 1개로 계산하고 시세도 1회만 조회한다.
+candidateWatchEvalMaxCodeCount: 10,
+// 느린 API가 이어져도 후보재평가 한 회차가 BUY 주기를 장시간 점유하지 않게 한다.
+candidateWatchMaxRunMs: 20 * 1000,
+
+// 매수 직전 현재가는 최근 10초 이내 값만 허용한다.
+// API 장애 때 반환된 오래된 캐시로 신규매수하는 것을 방지한다.
+buyQuoteMaxAgeMs: 10 * 1000,
 
 // HOT Scanner 후보
 hotScannerEnabled: true,
@@ -1184,7 +1193,7 @@ hotEarlyCandidateMinDiscoverScore: 6,
 hotHistoryActiveWindowMs: 5 * 60 * 1000,
 hotHistoryCandidateMaxCount: 60,
 
-// OPEN 우선시간에는 주문·전체검색을 하지 않고 HOT 후보 관찰만 계속한다.
+// OPEN 우선시간에도 HOT 후보 관찰과 전체검색은 계속하고 주문만 보류한다.
 openPriorityHotObservationEnabled: true,
 openPriorityObservationMinIntervalMs: 10 * 1000,
 
@@ -1196,7 +1205,9 @@ leaderWatchMinDiscoverScore: 7,
 leaderWatchMinVolumeRatio: 140,
 leaderWatchMinDayPositionRate: 70,
 leaderWatchMinHotScore: 70,
-leaderWatchMaxAgeMs: 5 * 60 * 1000,
+// 09:25 OPEN 인계 전 발견된 주도주가 인계 직후 만료되지 않도록 20분 유지한다.
+// 실제 진입은 기존처럼 눌림·재상승(REBOUND) 확인을 반드시 통과해야 한다.
+leaderWatchMaxAgeMs: 20 * 60 * 1000,
 leaderWatchMinBuyStrengthScore: 75,
 
 // 시장온도는 임의의 한 배치가 아니라 최근 순환검색 누적표본으로 계산한다.
@@ -1207,6 +1218,8 @@ marketTemperatureSampleMaxCount: 1000,
 marketTemperatureSampleMaxAgeMs: 45 * 60 * 1000,
 marketTemperatureAccumulatingBuyBlocked: true,
 marketTemperatureAccumulatingFallbackScore: 30,
+// 한 번 완성된 120개 시장표본은 순환 재수집 중 최대 30분까지 사용한다.
+marketTemperatureLastReadyMaxAgeMs: 30 * 60 * 1000,
 
 // 10초 매도루프가 방금 끝난 경우 매수·후보재평가 직전 중복 매도점검을 생략한다.
 sellPriorityFreshMs: 8 * 1000,
@@ -1297,7 +1310,7 @@ function isBetweenTime(start, end) {
 /*
  * OPEN 우선운영 중 실제 CORE/VOLUME 주문 차단 여부
  *
- * - 09:30 이전
+ * - 09:25 이전
  * - OPEN 실제 매수가 아직 완료되지 않음
  *
  * 후보검색, 점수계산, 후보강화 목록은 계속 수행한다.
@@ -1315,7 +1328,7 @@ function isOpenPriorityBuyBlocked(state = {}) {
   }
 
   // OPEN이 실제 매수로 완료됐거나 미매수 종료가 확정되면
-  // 09:30을 기다리지 않고 CORE/VOLUME 주문을 허용한다.
+  // 09:25를 기다리지 않고 CORE/VOLUME 주문을 허용한다.
   return !(
     state.openCompleted === true ||
     state.openSkipped === true
@@ -1824,6 +1837,27 @@ async function fetchCandidateRealtime(code, fallback = {}, source = "core") {
     0
   );
 
+  const quoteObservedAtMs = Number(
+    data.quoteObservedAtMs ||
+    data.cachedAtMs ||
+    0
+  );
+  const quoteAgeMs = quoteObservedAtMs > 0
+    ? Math.max(0, Date.now() - quoteObservedAtMs)
+    : Number(data.cacheAgeMs || 0);
+  const normalizedSource = String(source || "core").toLowerCase();
+  const isBuyQuote = normalizedSource === "core" || normalizedSource === "volume";
+
+  if (
+    isBuyQuote &&
+    quoteAgeMs > Number(settings.buyQuoteMaxAgeMs || 10000)
+  ) {
+    throw new Error(
+      `매수시세 오래됨 ${Math.round(quoteAgeMs / 1000)}초 / ` +
+      `허용 ${Math.round(Number(settings.buyQuoteMaxAgeMs || 10000) / 1000)}초`
+    );
+  }
+
   return {
     code,
     name:
@@ -1842,6 +1876,11 @@ async function fetchCandidateRealtime(code, fallback = {}, source = "core") {
     tradeVolumeRatio,
     trde_pre: tradeVolumeRatioRaw,
     discoverScore,
+    requestSource: normalizedSource,
+    quoteObservedAtMs,
+    quoteAgeMs,
+    isCached: data.isCached === true,
+    isStaleFallback: data.isStaleFallback === true,
 
     raw: {
       ...raw,
@@ -2539,6 +2578,43 @@ function calculateStableMarketTemperature(
   }
 
   if (sampleRows.length < minCount) {
+    const lastReadyState = state.lastReadyMarketTemperature || null;
+    const lastReadyTemperature = lastReadyState?.temperature || null;
+    const lastReadyAtMs = Number(lastReadyState?.updatedAtMs || 0);
+    const lastReadyAgeMs = lastReadyAtMs > 0
+      ? now - lastReadyAtMs
+      : Number.MAX_SAFE_INTEGER;
+    const lastReadyMaxAgeMs = Number(
+      settings.marketTemperatureLastReadyMaxAgeMs || 0
+    );
+    const canUseLastReady =
+      lastReadyState?.date === date &&
+      lastReadyTemperature?.readyForTrading === true &&
+      lastReadyAgeMs >= 0 &&
+      (!lastReadyMaxAgeMs || lastReadyAgeMs <= lastReadyMaxAgeMs);
+
+    if (canUseLastReady) {
+      return {
+        ...lastReadyTemperature,
+        total: sampleRows.length,
+        sampleCount: sampleRows.length,
+        sampleMode: "REFRESHING_LAST_READY",
+        readyForTrading: true,
+        buyBlockedUntilReady: false,
+        checkedAt: nowText(),
+        checkedDate: date,
+        byMarket: lastReadyTemperature.byMarket || byMarket,
+        lastReadySampleCount: Number(
+          lastReadyTemperature.sampleCount || minCount
+        ),
+        lastReadyAgeMs,
+        reason:
+          `시장 누적표본 갱신 ${sampleRows.length}/${minCount}개 / ` +
+          `최근 완성값 ${Math.round(lastReadyAgeMs / 60000)}분 전 사용 / ` +
+          `신규매수 판단 유지`
+      };
+    }
+
     const partial = calculateMarketTemperature(sampleRows);
     const premarket = getPremarketFallbackScore();
     const fallbackScore = premarket
@@ -2571,7 +2647,7 @@ function calculateStableMarketTemperature(
   }
 
   const calculated = calculateMarketTemperature(sampleRows);
-  return {
+  const readyTemperature = {
     ...calculated,
     sampleCount: sampleRows.length,
     sampleMode: "ACCUMULATED",
@@ -2580,6 +2656,15 @@ function calculateStableMarketTemperature(
     byMarket,
     reason: `${calculated.reason} / 최근 누적 ${sampleRows.length}개`
   };
+
+  state.lastReadyMarketTemperature = {
+    date,
+    updatedAt: nowText(),
+    updatedAtMs: now,
+    temperature: readyTemperature
+  };
+
+  return readyTemperature;
 }
 
 function getMarketAdjustedBuySettings(
@@ -5644,6 +5729,7 @@ function initDailyRiskIfNeeded(state) {
     checkedAt: nowText(),
     checkedDate: today
   };
+  state.lastReadyMarketTemperature = null;
 
   /*
    * 아까운 후보 분석 초기화
@@ -6337,10 +6423,12 @@ async function discoverCandidates(
   state.lastDiscoverOffsetAt =
     nowText();
 
-  const rawItems =
-    Array.isArray(data.items)
-      ? data.items
-      : [];
+  const marketSourceItems = Array.isArray(data.marketItems)
+    ? data.marketItems
+    : (Array.isArray(data.items) ? data.items : []);
+  const candidateSourceItems = Array.isArray(data.items)
+    ? data.items
+    : marketSourceItems;
 
   /*
    * 시장점수용 데이터
@@ -6349,7 +6437,7 @@ async function discoverCandidates(
    * ETF·ETN·우선주 등 제외종목만 제거한다.
    */
   const marketRows =
-    rawItems.filter(item =>
+    marketSourceItems.filter(item =>
       !isExcludedStock(item)
     );
 
@@ -6359,7 +6447,8 @@ async function discoverCandidates(
    * 기존처럼 발견점수 기준을 적용한다.
    */
   const candidates =
-    marketRows
+    candidateSourceItems
+      .filter(item => !isExcludedStock(item))
       .filter(item =>
         Number(item.discoverScore || 0) >=
         settings.minDiscoverScore
@@ -6371,7 +6460,7 @@ async function discoverCandidates(
       );
 
   console.log(
-    `[DISCOVER] 원본 ${rawItems.length}개 / ` +
+    `[DISCOVER] 원본 ${marketSourceItems.length}개 / ` +
     `시장계산 ${marketRows.length}개 / ` +
     `매수후보 ${candidates.length}개 / ` +
     `offset ${offset} → ${state.discoverOffset} / ` +
@@ -8079,6 +8168,56 @@ async function paperBuy(
   strategyGroup,
   reason
 ) {
+  // 통과 판단 직후에도 현재가를 다시 받아 오래된 HOT·순환검색 가격으로
+  // 주문하지 않도록 한다. 새 가격에서 조건이 깨지면 주문 API를 호출하지 않는다.
+  try {
+    const realtimeItem = await fetchCandidateRealtime(
+      item.code,
+      item,
+      String(strategyGroup || "CORE").toLowerCase()
+    );
+    const realtimePrice = Math.abs(Number(
+      realtimeItem.currentPrice || realtimeItem.price || 0
+    ));
+
+    if (!realtimePrice) {
+      console.log(
+        `[${strategyGroup} 매수제외] ${item.name || item.code} / ` +
+        `주문 직전 현재가 없음`
+      );
+      return false;
+    }
+
+    const refreshedItem = {
+      ...item,
+      ...realtimeItem,
+      raw: {
+        ...(item.raw || {}),
+        ...(realtimeItem.raw || {})
+      }
+    };
+    const refreshedJudge = strategyGroup === "CORE"
+      ? judgeCoreBuy(state, refreshedItem, realtimePrice)
+      : judgeVolumeBuy(state, refreshedItem, realtimePrice);
+
+    if (!refreshedJudge.pass) {
+      console.log(
+        `[${strategyGroup} 매수제외] ${item.name || item.code} / ` +
+        `주문 직전 재검증 탈락 / ${refreshedJudge.reason}`
+      );
+      return false;
+    }
+
+    item = refreshedItem;
+    price = realtimePrice;
+  } catch (err) {
+    console.log(
+      `[${strategyGroup} 매수제외] ${item.name || item.code} / ` +
+      `주문 직전 시세확인 실패 / ${err.message}`
+    );
+    return false;
+  }
+
   // 심사와 주문 사이에 다른 루프가 매수했을 수 있으므로 주문 직전 재확인한다.
   const dailyLimit = checkStrategyDailyBuyLimit(state, strategyGroup);
   if (dailyLimit.blocked) {
@@ -9840,10 +9979,9 @@ async function runCandidateWatchOnce() {
   if (openPriorityBuyBlocked) {
     collectOpenPriorityHotObservations(state);
     console.log(
-      `[후보재평가 보류] ${getOpenPriorityBlockReason(state)} / ` +
-      `주문·실시간재조회는 보류하고 HOT 관찰은 유지`
+      `[후보재평가 관찰전용] ${getOpenPriorityBlockReason(state)} / ` +
+      `실시간재조회·점수계산은 계속하고 주문만 보류`
     );
-    return;
   }
 
   initDailyRiskIfNeeded(state);
@@ -9884,25 +10022,67 @@ async function runCandidateWatchOnce() {
     }
   }
 
-  // 같은 종목·같은 전략 중복 제거
-  const uniqueTargets = Array.from(
+  // 같은 종목·같은 전략 중복 제거 후 점수순으로 정렬한다.
+  const dedupedTargets = Array.from(
     new Map(
       watchTargets.map(candidate => [
         `${candidate.recheckStrategy}_${candidate.code}`,
         candidate
       ])
     ).values()
+  ).sort((a, b) =>
+    Number(b.watchScore || 0) - Number(a.watchScore || 0) ||
+    Number(b.lastSeenAt || 0) - Number(a.lastSeenAt || 0)
   );
+
+  // CORE/VOLUME 양쪽에 같은 종목이 있으면 두 전략 판단은 모두 유지하되,
+  // 1회 재평가에서 실시간으로 조회할 고유 종목 수만 제한한다.
+  const maxCodeCount = Math.max(
+    1,
+    Number(settings.candidateWatchEvalMaxCodeCount || 10)
+  );
+  const selectedCodes = new Set();
+  const uniqueTargets = [];
+
+  for (const candidate of dedupedTargets) {
+    const code = String(candidate.code || "").padStart(6, "0");
+    if (!selectedCodes.has(code)) {
+      if (selectedCodes.size >= maxCodeCount) continue;
+      selectedCodes.add(code);
+    }
+    uniqueTargets.push(candidate);
+  }
 
   if (!uniqueTargets.length) {
     return;
   }
 
   console.log(
-    `[후보재평가] 시작 / 대상 ${uniqueTargets.length}개`
+    `[후보재평가] 시작 / 전략대상 ${uniqueTargets.length}개 / ` +
+    `실시간종목 ${selectedCodes.size}/${maxCodeCount}개`
+  );
+
+  // 같은 종목이 CORE와 VOLUME에 동시에 있으면 /api/price를 한 번만 호출한다.
+  const realtimeByCode = new Map();
+  const watchStartedAtMs = Date.now();
+  const watchMaxRunMs = Math.max(
+    5000,
+    Number(settings.candidateWatchMaxRunMs || 20000)
   );
 
   for (const candidate of uniqueTargets) {
+    if (
+      realtimeByCode.size > 0 &&
+      Date.now() - watchStartedAtMs >= watchMaxRunMs
+    ) {
+      console.log(
+        `[후보재평가] 시간상한 도달 / ` +
+        `${((Date.now() - watchStartedAtMs) / 1000).toFixed(1)}초 / ` +
+        `나머지는 다음 회차로 이월`
+      );
+      break;
+    }
+
     const strategyGroup = candidate.recheckStrategy;
 
     if (
@@ -9917,20 +10097,38 @@ async function runCandidateWatchOnce() {
     }
 
     let realtimeItem;
+    const realtimeCode = String(candidate.code || "").padStart(6, "0");
+    const fetchedThisTurn = !realtimeByCode.has(realtimeCode);
 
     try {
-      realtimeItem = await fetchCandidateRealtime(
-        candidate.code,
-        {
-          ...(candidate.itemSnapshot || {}),
-          name: candidate.name,
-          currentPrice: candidate.currentPrice,
-          discoverScore: candidate.discoverScore,
-          changeRate: candidate.changeRate,
-          volumeRatio: candidate.volumeRatio,
-          tradeVolumeRatio: candidate.volumeRatio
-        }
-      );
+      if (realtimeByCode.has(realtimeCode)) {
+        const sharedRealtime = realtimeByCode.get(realtimeCode);
+        realtimeItem = {
+          ...sharedRealtime,
+          // 공유한 것은 실시간 시세이고 후보 고유 발견점수는 전략별 저장값을 유지한다.
+          discoverScore: Number(
+            candidate.discoverScore ??
+            candidate.itemSnapshot?.discoverScore ??
+            sharedRealtime.discoverScore ??
+            0
+          )
+        };
+      } else {
+        realtimeItem = await fetchCandidateRealtime(
+          candidate.code,
+          {
+            ...(candidate.itemSnapshot || {}),
+            name: candidate.name,
+            currentPrice: candidate.currentPrice,
+            discoverScore: candidate.discoverScore,
+            changeRate: candidate.changeRate,
+            volumeRatio: candidate.volumeRatio,
+            tradeVolumeRatio: candidate.volumeRatio
+          },
+          String(strategyGroup || "CORE").toLowerCase()
+        );
+        realtimeByCode.set(realtimeCode, realtimeItem);
+      }
     } catch (err) {
       console.log(
         `[후보재평가 실패] ${candidate.name} / ` +
@@ -10133,7 +10331,9 @@ if (!judged.pass) {
         `${nearMiss.primaryGap}`
       );
 
-      await sleep(settings.candidateWatchPriceDelayMs);
+      if (fetchedThisTurn) {
+        await sleep(settings.candidateWatchPriceDelayMs);
+      }
       continue;
     }
 
@@ -10147,7 +10347,9 @@ if (!judged.pass) {
         `[후보재평가 매수보류] ${candidate.name} / ` +
         `${strategyGroup} / ${getOpenPriorityBlockReason(state)}`
       );
-      await sleep(settings.candidateWatchPriceDelayMs);
+      if (fetchedThisTurn) {
+        await sleep(settings.candidateWatchPriceDelayMs);
+      }
       continue;
     }
 
@@ -10169,7 +10371,9 @@ if (!judged.pass) {
       break;
     }
 
-    await sleep(settings.candidateWatchPriceDelayMs);
+    if (fetchedThisTurn) {
+      await sleep(settings.candidateWatchPriceDelayMs);
+    }
   }
 
   state.lastCandidateWatchCheckAt = nowText();
@@ -10215,10 +10419,9 @@ async function runBuyOnce() {
   if (openPriorityBuyBlocked) {
     collectOpenPriorityHotObservations(state);
     console.log(
-      `[BUY 점검보류] ${getOpenPriorityBlockReason(state)} / ` +
-      `전체검색·주문은 생략하고 HOT 관찰은 유지`
+      `[BUY 관찰전용] ${getOpenPriorityBlockReason(state)} / ` +
+      `전체검색·시장표본·점수계산은 계속하고 주문만 보류`
     );
-    return;
   }
 
   if (!state.serverAutoEnabled) {
@@ -10999,7 +11202,6 @@ async function start() {
     if (
       !buyPending ||
       buyPendingScheduled ||
-      candidateWatchPending ||
       isTraderBusy()
     ) {
       return;
@@ -11050,6 +11252,8 @@ async function start() {
       !candidateWatchPending ||
       candidateWatchPendingScheduled ||
       sellPending ||
+      buyPending ||
+      buyPendingScheduled ||
       isTraderBusy()
     ) {
       return;
@@ -11063,6 +11267,8 @@ async function start() {
       if (
         !candidateWatchPending ||
         sellPending ||
+        buyPending ||
+        buyPendingScheduled ||
         isTraderBusy()
       ) {
         return;
@@ -11146,8 +11352,8 @@ async function start() {
         await runSellSafely();
       }
 
-      schedulePendingCandidateWatchIfReady();
       schedulePendingBuyIfReady();
+      schedulePendingCandidateWatchIfReady();
     }
   }
 
@@ -11159,6 +11365,13 @@ async function start() {
 
     if (isTraderBusy()) {
       reserveCandidateWatch("공통 busy");
+      return;
+    }
+
+    // BUY가 이미 밀려 있으면 후보재평가보다 전종목 검색을 먼저 회복한다.
+    if (buyPending || buyPendingScheduled) {
+      reserveCandidateWatch("BUY 우선");
+      schedulePendingBuyIfReady();
       return;
     }
 
@@ -11186,8 +11399,8 @@ async function start() {
         await runSellSafely();
       }
 
-      schedulePendingCandidateWatchIfReady();
       schedulePendingBuyIfReady();
+      schedulePendingCandidateWatchIfReady();
     }
   }
 
@@ -11239,8 +11452,8 @@ async function start() {
     } finally {
       sellRunning = false;
       lastSellPriorityCheckAt = Date.now();
-      schedulePendingCandidateWatchIfReady();
       schedulePendingBuyIfReady();
+      schedulePendingCandidateWatchIfReady();
     }
   }
 
@@ -11248,17 +11461,31 @@ async function start() {
    * 장 초반 30초, 중반 45초, 이후 60초처럼
    * 현재 시간대에 맞춰 다음 매수 점검 주기를 다시 계산한다.
    */
-  function scheduleNextBuyLoop() {
+  function scheduleNextBuyLoop(delayOverrideMs = null) {
     const delay = Math.max(
       1000,
-      Number(getDynamicBuyLoopMs() || settings.buyLoopMs)
+      Number(
+        delayOverrideMs ??
+        getDynamicBuyLoopMs() ??
+        settings.buyLoopMs
+      )
     );
 
     buyTimer = setTimeout(async () => {
+      const cycleStartedAtMs = Date.now();
       try {
         await runBuySafely();
       } finally {
-        scheduleNextBuyLoop();
+        // 설정 주기는 "작업 종료 후 대기시간"이 아니라 시작-시작 간격으로 맞춘다.
+        // DISCOVER가 10~20초 걸려도 그 시간만큼 다음 대기에서 차감해 전종목 순환을 유지한다.
+        const nextIntervalMs = Math.max(
+          1000,
+          Number(getDynamicBuyLoopMs() || settings.buyLoopMs)
+        );
+        const elapsedMs = Math.max(0, Date.now() - cycleStartedAtMs);
+        scheduleNextBuyLoop(
+          Math.max(1000, nextIntervalMs - elapsedMs)
+        );
       }
     }, delay);
 

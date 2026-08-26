@@ -375,13 +375,13 @@
   <div class="card">
     <h2>✅ OPEN 실제매수 운영방식</h2>
     <div class="condition-grid">
-      <div class="condition-item"><div class="condition-label">엄격 후보</div><div class="condition-value">20초 관찰 후 지속강도 1위</div></div>
-      <div class="condition-item"><div class="condition-label">보완매수 시작</div><div class="condition-value">09:07 이후</div></div>
-      <div class="condition-item"><div class="condition-label">보완 최소조건</div><div class="condition-value">발견 9 · 거래량 80→90→110→130%</div></div>
-      <div class="condition-item"><div class="condition-label">투자금</div><div class="condition-value">OPEN 시작 가용자금의 종목당 20%</div></div>
+      <div class="condition-item"><div class="condition-label">엄격 후보</div><div class="condition-value" id="openStrictMethod">20초·2회 관찰 후 지속강도 1위</div></div>
+      <div class="condition-item"><div class="condition-label">보완매수 시작</div><div class="condition-value" id="openFallbackStart">09:03 이후</div></div>
+      <div class="condition-item"><div class="condition-label">보완 최소조건</div><div class="condition-value" id="openFallbackCondition">기본 발견 9 · 기본 거래량 80→90→110→130%</div></div>
+      <div class="condition-item"><div class="condition-label">투자금</div><div class="condition-value" id="openInvestmentMethod">OPEN 시작 가용자금의 종목당 20%</div></div>
     </div>
-    <div class="muted" style="font-size:12px; margin-top:8px; line-height:1.6;">
-      최소 20초·2회 이상 관찰한 뒤 가격·거래량 지속성과 지속강도 점수를 통과한 후보를 순위대로 최대 5종목까지 실제 매수합니다. 발견 9점 HOT 후보는 즉시 매수하지 않고 관찰단계에만 진입합니다. 같은 종목은 하루 한 번만 매수합니다. 거래량 기준은 09:05 전 80%, 09:10 전 90%, 09:20 전 110%, 이후 130%로 단계적으로 적용됩니다.
+    <div class="muted" id="openOperatingDescription" style="font-size:12px; margin-top:8px; line-height:1.6;">
+      최소 20초·2회 이상 관찰한 뒤 가격·거래량 지속성과 지속강도 점수를 통과한 후보를 순위대로 최대 5종목까지 실제 매수합니다. 기본 발견 9점 HOT 후보는 즉시 매수하지 않고 관찰단계에만 진입합니다. 같은 종목은 하루 한 번만 매수합니다. 기본 거래량 기준은 09:05 전 80%, 09:10 전 90%, 09:20 전 110%, 이후 130%이며 시장점수에 따라 가산됩니다. 시세가 15초보다 오래되면 매수하지 않고 재조회합니다.
     </div>
   </div>
 
@@ -1246,6 +1246,47 @@
     return `${Number(match[2])}/${Number(match[3])} ${String(hour).padStart(2,"0")}:${match[6]}:${match[7]}`;
   }
 
+  function renderOpenOperatingMethod(tracking = {}) {
+    const confirmWaitSeconds = Math.max(0, Number(tracking.confirmWaitSeconds ?? 20));
+    const minObservationCount = Math.max(1, Number(tracking.minObservationCount ?? 2));
+    const fallbackStartTime = String(tracking.fallbackStartTime || "09:03");
+    const fallbackMinDiscoverScore = Math.max(0, Number(tracking.fallbackMinDiscoverScore ?? 9));
+    const maxHoldingCount = Math.max(1, Number(tracking.maxHoldingCount ?? 5));
+    const investmentRatio = Math.max(0, Number(tracking.investmentRatio ?? 0.20));
+    const investmentPercent = investmentRatio <= 1 ? investmentRatio * 100 : investmentRatio;
+    const maxQuoteAgeSeconds = Math.max(0, Number(tracking.maxQuoteAgeSeconds ?? 15));
+    const fallbackVolumeSteps = [
+      { label: "09:05 전", minimum: 80 },
+      { label: "09:10 전", minimum: 90 },
+      { label: "09:20 전", minimum: 110 },
+      { label: "이후", minimum: 130 }
+    ];
+    const volumeSteps = Array.isArray(tracking.volumeRatioSteps) && tracking.volumeRatioSteps.length
+      ? tracking.volumeRatioSteps
+      : fallbackVolumeSteps;
+    const volumeNumbers = volumeSteps.map(item => Number(item?.minimum ?? item?.ratio ?? item?.value ?? 0));
+    const compactVolumeText = `${volumeNumbers.map(value => Number.isFinite(value) ? value.toFixed(0) : "-").join("→")}%`;
+    const detailedVolumeText = volumeSteps.map((item, index) => {
+      const label = String(item?.label || fallbackVolumeSteps[index]?.label || `${index + 1}단계`);
+      const minimum = Number(item?.minimum ?? item?.ratio ?? item?.value ?? 0);
+      return `${label} ${Number.isFinite(minimum) ? minimum.toFixed(0) : "-"}%`;
+    }).join(", ");
+
+    const strictMethod = document.getElementById("openStrictMethod");
+    const fallbackStart = document.getElementById("openFallbackStart");
+    const fallbackCondition = document.getElementById("openFallbackCondition");
+    const investmentMethod = document.getElementById("openInvestmentMethod");
+    const description = document.getElementById("openOperatingDescription");
+
+    if (strictMethod) strictMethod.textContent = `${confirmWaitSeconds.toFixed(0)}초·${minObservationCount.toFixed(0)}회 관찰 후 지속강도 1위`;
+    if (fallbackStart) fallbackStart.textContent = `${fallbackStartTime} 이후`;
+    if (fallbackCondition) fallbackCondition.textContent = `기본 발견 ${fallbackMinDiscoverScore.toFixed(0)} · 기본 거래량 ${compactVolumeText}`;
+    if (investmentMethod) investmentMethod.textContent = `OPEN 시작 가용자금의 종목당 ${investmentPercent.toFixed(0)}%`;
+    if (description) {
+      description.textContent = `최소 ${confirmWaitSeconds.toFixed(0)}초·${minObservationCount.toFixed(0)}회 이상 관찰한 뒤 가격·거래량 지속성과 지속강도 점수를 통과한 후보를 순위대로 최대 ${maxHoldingCount.toFixed(0)}종목까지 실제 매수합니다. 기본 발견 ${fallbackMinDiscoverScore.toFixed(0)}점 HOT 후보는 즉시 매수하지 않고 관찰단계에만 진입합니다. 같은 종목은 하루 한 번만 매수합니다. 기본 거래량 기준은 ${detailedVolumeText}이며 시장점수에 따라 가산됩니다. 시세가 ${maxQuoteAgeSeconds.toFixed(0)}초보다 오래되면 매수하지 않고 재조회합니다.`;
+    }
+  }
+
   function renderOpenLiveTracking(data = {}) {
     const box = document.getElementById("openLiveTrackingBox");
     const updated = document.getElementById("openLiveUpdatedAt");
@@ -1255,9 +1296,10 @@
     const daily = data.daily || {};
     const hot = data.hot || {};
     const top = t.topCandidate || null;
+    renderOpenOperatingMethod(t);
     updated.textContent = `${data.openCompleted || data.openSkipped ? "최종 저장" : "갱신"} ${formatKstDateTime((data.openCompleted || data.openSkipped ? data.openCompletedAt : null) || t.updatedAt || data.serverTime || "-")}`;
     const obs = Number(top?.observationCount || top?.strongObservationCount || 0);
-    const requiredObs = Number(t.minObservationCount || 4);
+    const requiredObs = Number(t.minObservationCount || 2);
     const pricePersistence = normalizeRatioForDisplay(top?.pricePersistence);
     const volumePersistence = normalizeRatioForDisplay(top?.volumePersistence);
     const activities = Array.isArray(data.activities) ? data.activities : [];

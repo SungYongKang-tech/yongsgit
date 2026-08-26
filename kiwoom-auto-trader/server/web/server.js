@@ -105,9 +105,51 @@ function getStockMarketMetadata(code, fallback = {}) {
     fallback.exchange ??
     null;
 
+  const sectorKey =
+    stock.sectorKey ??
+    stock.sectorCode ??
+    stock.industryCode ??
+    stock["업종코드"] ??
+    stock.sector ??
+    stock.industry ??
+    fallback.sectorKey ??
+    fallback.sectorCode ??
+    fallback.industryCode ??
+    fallback["업종코드"] ??
+    fallback.sector ??
+    fallback.industry ??
+    null;
+
+  const sectorName =
+    stock.sectorName ??
+    stock.industryName ??
+    stock["업종명"] ??
+    stock.sector ??
+    stock.industry ??
+    fallback.sectorName ??
+    fallback.industryName ??
+    fallback["업종명"] ??
+    fallback.sector ??
+    fallback.industry ??
+    sectorKey ??
+    null;
+
+  const industryName =
+    stock.industryName ??
+    stock.sectorName ??
+    stock["업종명"] ??
+    fallback.industryName ??
+    fallback.sectorName ??
+    fallback["업종명"] ??
+    sectorName;
+
   return {
     marketSegment,
-    market: marketSegment
+    market: marketSegment,
+    sectorKey,
+    sector: sectorName,
+    sectorName,
+    industryName
   };
 }
 
@@ -301,9 +343,13 @@ function getCurrentTradingSettings() {
     "volumeFirstTakeProfitRate",
     "volumeTrailingStartRate",
     "volumeTrailingStopRate",
+    "openPriorityBuyBlockEndTime",
+    "leaderWatchMaxAgeMs",
+    "buyQuoteMaxAgeMs",
     "marketTemperatureMinSampleCount",
     "marketTemperatureSegmentMinSampleCount",
     "marketTemperatureSampleMaxAgeMs",
+    "marketTemperatureLastReadyMaxAgeMs",
     "marketTemperatureAccumulatingBuyBlocked",
     "marketTemperatureAccumulatingFallbackScore",
     "sellLoopMs",
@@ -599,12 +645,19 @@ function savePaperState(state, options = {}) {
   return state;
 }
 
+const REPORT_STRATEGY_GROUPS = new Set(["OPEN", "CORE", "VOLUME"]);
+
 const REPORT_BUY_TYPES = new Set([
   "OPEN_BUY",
   "CORE_BUY",
   "VOLUME_BUY"
 ]);
 
+/*
+ * 성과집계용 매도 타입.
+ * 이 목록은 현재 표준 타입을 빠르게 판별하기 위한 것이고, 실제 집계는
+ * isReportSellLog()에서 과거/추가 매도 타입도 자동 판별한다.
+ */
 const REPORT_SELL_TYPES = new Set([
   "SELL",
   "SELL_ALL",
@@ -634,14 +687,54 @@ function reportNormalizeCode(code) {
     .padStart(6, "0");
 }
 
-function reportStrategy(log = {}) {
-  if (log.strategyGroup) return String(log.strategyGroup).toUpperCase();
-  if (log.group) return String(log.group).toUpperCase();
+function reportExplicitStrategy(log = {}) {
+  for (const value of [
+    log.__reportStrategyGroup,
+    log.strategyGroup,
+    log.group
+  ]) {
+    const normalized = String(value || "").toUpperCase().trim();
+    if (REPORT_STRATEGY_GROUPS.has(normalized)) return normalized;
+  }
 
-  const type = String(log.type || "").toUpperCase();
-  if (type.startsWith("OPEN")) return "OPEN";
-  if (type.startsWith("VOLUME")) return "VOLUME";
-  return "CORE";
+  const type = String(log.type || "").toUpperCase().trim();
+  for (const group of REPORT_STRATEGY_GROUPS) {
+    if (type === group || type.startsWith(`${group}_`)) return group;
+  }
+
+  return null;
+}
+
+function reportStrategy(log = {}) {
+  // 과거 CORE 로그는 strategyGroup이 없는 경우가 있어 CORE를 기본값으로 유지한다.
+  return reportExplicitStrategy(log) || "CORE";
+}
+
+function isReportBuyLog(log = {}) {
+  const type = String(log.type || "").toUpperCase().trim();
+  if (REPORT_BUY_TYPES.has(type)) return true;
+
+  const qty = Number(log.qty || 0);
+  const buyPrice = Number(log.buyPrice || log.price || 0);
+
+  // BUY/TURBO_BUY/LEADER_BUY/EARLY_BUY 등 과거 매수로그도 복원한다.
+  return (type === "BUY" || type.endsWith("_BUY")) && qty > 0 && buyPrice > 0;
+}
+
+function isReportSellLog(log = {}) {
+  const type = String(log.type || "").toUpperCase().trim();
+  if (!type || isReportBuyLog(log)) return false;
+  if (REPORT_SELL_TYPES.has(type)) return true;
+
+  const qty = Number(log.qty || 0);
+  const sellPrice = Number(log.sellPrice || log.price || 0);
+  const hasProfit =
+    Object.prototype.hasOwnProperty.call(log, "profit") &&
+    Number.isFinite(Number(log.profit));
+  const sellLikeType = /(SELL|STOP|TAKE_PROFIT|TRAIL|BREAK_EVEN|PROTECT|STAGNATION|STAGNANT|TIME_EXIT|TIME_SELL|END_)/.test(type);
+
+  // 과거/신규 매도 타입이 REPORT_SELL_TYPES에 없어도 실제 체결손익 로그면 집계한다.
+  return qty > 0 && sellPrice > 0 && hasProfit && sellLikeType;
 }
 
 function reportTimestampMs(log = {}) {
@@ -696,10 +789,10 @@ function buildReportPositionSummary(
   selectedSellLogs = null
 ) {
   const allLogs = Array.isArray(tradeLogs) ? tradeLogs : [];
-  const buyLogs = allLogs.filter(log => REPORT_BUY_TYPES.has(log.type));
+  const buyLogs = allLogs.filter(isReportBuyLog);
   const sellLogs = Array.isArray(selectedSellLogs)
     ? selectedSellLogs
-    : allLogs.filter(log => REPORT_SELL_TYPES.has(log.type));
+    : allLogs.filter(isReportSellLog);
 
   const buyRecords = buyLogs.map((log, index) => ({
     identity: reportBuyIdentity(log, index),
@@ -734,7 +827,7 @@ function buildReportPositionSummary(
     }
 
     const code = reportNormalizeCode(sellLog.code);
-    const strategyGroup = reportStrategy(sellLog);
+    const explicitStrategyGroup = reportExplicitStrategy(sellLog);
     const date = String(sellLog.date || "").slice(0, 10);
     const explicitBuyTime = Number(
       sellLog.buyTime || sellLog.buyTimeMs || 0
@@ -743,7 +836,7 @@ function buildReportPositionSummary(
     if (explicitBuyTime > 0) {
       const exactTime = uniqueBuyRecords.find(record =>
         record.code === code &&
-        record.strategyGroup === strategyGroup &&
+        (!explicitStrategyGroup || record.strategyGroup === explicitStrategyGroup) &&
         record.timeMs === explicitBuyTime
       );
       if (exactTime) return exactTime;
@@ -753,7 +846,7 @@ function buildReportPositionSummary(
     const candidates = uniqueBuyRecords
       .filter(record =>
         record.code === code &&
-        record.strategyGroup === strategyGroup &&
+        (!explicitStrategyGroup || record.strategyGroup === explicitStrategyGroup) &&
         (!date || !record.date || record.date === date) &&
         (!sellTimeMs || !record.timeMs || record.timeMs <= sellTimeMs)
       )
@@ -766,11 +859,15 @@ function buildReportPositionSummary(
   }
 
   const positionMap = new Map();
+  const resolvedSellLogs = [];
 
   sellLogs.forEach((log, sellIndex) => {
     const buyRecord = findBuyRecord(log);
     const code = reportNormalizeCode(log.code);
-    const strategyGroup = reportStrategy(log);
+    const strategyGroup =
+      buyRecord?.strategyGroup ||
+      reportExplicitStrategy(log) ||
+      "CORE";
     const date = String(log.date || "").slice(0, 10);
     const positionId = log.positionId
       ? String(log.positionId)
@@ -823,8 +920,13 @@ function buildReportPositionSummary(
     position.lowestProfitRate = position.lowestProfitRate === null
       ? fillProfitRate
       : Math.min(position.lowestProfitRate, fillProfitRate);
-    position.lastSellLog = log;
-    position.sellLogs.push(log);
+    const resolvedLog = {
+      ...log,
+      __reportStrategyGroup: strategyGroup
+    };
+    position.lastSellLog = resolvedLog;
+    position.sellLogs.push(resolvedLog);
+    resolvedSellLogs.push(resolvedLog);
   });
 
   const positions = Array.from(positionMap.values()).map(position => {
@@ -872,7 +974,8 @@ function buildReportPositionSummary(
 
   return {
     buyRecords: uniqueBuyRecords,
-    sellLogs,
+    sellLogs: resolvedSellLogs,
+    resolvedSellLogs,
     positions,
     closedPositions: positions.filter(position => position.isClosed),
     partialOpenPositions: positions.filter(position => position.isPartialOpen)
@@ -1152,13 +1255,24 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const HOT_API_EARLY_CACHE_MS = 8 * 1000;
 const HOT_API_NORMAL_CACHE_MS = 15 * 1000;
 // 장초반 OPEN 현재가 조회와 겹칠 때 키움 API가 밀리지 않도록
-// HOT 상세보완은 상위 4종목까지만 수행한다. 나머지는 순위 API 원본값을 쓴다.
-const HOT_DETAIL_ENRICH_LIMIT = 4;
+// HOT 상세보완은 전 시간대 상위 2종목만 수행한다.
+// 순위 응답 지연으로 CORE/VOLUME 후보평가가 밀리는 것을 우선 방지한다.
+// 나머지는 순위 API 원본값을 써서 후보 발굴 범위는 유지한다.
+const HOT_DETAIL_ENRICH_LIMIT = 2;
+const HOT_OPEN_DETAIL_ENRICH_LIMIT = 2;
 const HOT_DETAIL_ENRICH_DELAY_MS = 400;
 const HOT_DETAIL_REQUEST_TIMEOUT_MS = 5 * 1000;
 const HOT_KIWOOM_PRICE_TIMEOUT_MS = 3500;
+const OPEN_KIWOOM_PRICE_TIMEOUT_MS = 4500;
+const FAST_KIWOOM_PRICE_TIMEOUT_MS = 4 * 1000;
+const MARKET_KIWOOM_PRICE_TIMEOUT_MS = 4 * 1000;
+const TRADING_KIWOOM_PRICE_TIMEOUT_MS = 5 * 1000;
+const SELL_KIWOOM_PRICE_TIMEOUT_MS = 5 * 1000;
 const KIWOOM_PRICE_REQUEST_TIMEOUT_MS = 8 * 1000;
 const HOT_STALE_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
+// HOT 거래량 점수는 275% 이상에서 이미 만점이다. 순위 API 필드오염으로
+// 수백만% 값이 내려와도 후속 HOT/WAVE 지속강도를 왜곡하지 않도록 넉넉한 상한을 둔다.
+const HOT_TRADE_VOLUME_RATIO_SANITY_MAX = 5000;
 let hotApiCache = {
   cachedAt: 0,
   data: null
@@ -1175,6 +1289,18 @@ function getHotApiCacheMs() {
   return hhmm < "09:30" ? HOT_API_EARLY_CACHE_MS : HOT_API_NORMAL_CACHE_MS;
 }
 
+function getHotDetailEnrichLimit() {
+  const hhmm = new Date().toLocaleTimeString("en-GB", {
+    timeZone: "Asia/Seoul",
+    hourCycle: "h23",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).slice(0, 5);
+  return hhmm >= "09:00" && hhmm <= "09:30"
+    ? HOT_OPEN_DETAIL_ENRICH_LIMIT
+    : HOT_DETAIL_ENRICH_LIMIT;
+}
+
 function hotToNumber(value) {
   const number = Number(
     String(value ?? 0)
@@ -1183,6 +1309,42 @@ function hotToNumber(value) {
       .trim()
   );
   return Number.isFinite(number) ? number : 0;
+}
+
+function sanitizeHotTradeVolumeRatio(value) {
+  const number = hotToNumber(value);
+  if (!Number.isFinite(number) || number <= 0) return 0;
+  return Math.min(HOT_TRADE_VOLUME_RATIO_SANITY_MAX, number);
+}
+
+function getRankVolumeRatioInfo(row = {}, surgeRate = 0) {
+  const nowVolume = Math.abs(hotToNumber(
+    row.now_trde_qty ?? row.trde_qty ?? row.volume ?? row.exp_cntr_qty ?? 0
+  ));
+  const prevVolume = Math.abs(hotToNumber(
+    row.prev_trde_qty ?? row.pred_trde_qty ?? row.pre_trde_qty ?? row.before_trde_qty ?? 0
+  ));
+  const rawRatio = surgeRate ? Math.max(0, 100 + surgeRate) : 0;
+  const derivedRatio = prevVolume > 0 && nowVolume >= 0
+    ? (nowVolume / prevVolume) * 100
+    : 0;
+
+  const rawLooksLikeVolume =
+    rawRatio > 10000 &&
+    nowVolume > 0 &&
+    Math.abs(rawRatio - nowVolume) / nowVolume <= 0.01;
+  const rawImplausible = rawRatio > HOT_TRADE_VOLUME_RATIO_SANITY_MAX;
+  const useDerived = derivedRatio > 0 && (rawLooksLikeVolume || rawImplausible);
+  const selected = useDerived ? derivedRatio : rawRatio;
+
+  return {
+    tradeVolumeRatio: sanitizeHotTradeVolumeRatio(selected),
+    tradeVolumeRatioRaw: rawRatio,
+    tradeVolumeRatioDerived: derivedRatio,
+    tradeVolumeRatioSource: useDerived ? "RANK_VOLUME_DERIVED" : "RANK_SURGE_RATE",
+    tradeVolumeRatioSanitized:
+      rawImplausible || rawLooksLikeVolume || selected > HOT_TRADE_VOLUME_RATIO_SANITY_MAX
+  };
 }
 
 function findFirstArrayByKeys(data, keys = []) {
@@ -1251,6 +1413,7 @@ function normalizeHotRankRow(row = {}, source) {
     row.now_trde_qty || row.trde_qty || row.volume || row.exp_cntr_qty || 0
   ));
   const surgeRate = hotToNumber(row.sdnin_rt ?? row.surgeRate ?? 0);
+  const volumeRatioInfo = getRankVolumeRatioInfo(row, surgeRate);
 
   return {
     code,
@@ -1261,7 +1424,7 @@ function normalizeHotRankRow(row = {}, source) {
     changeRate,
     volume: currentVolume,
     tradeAmount: Math.abs(hotToNumber(row.trde_amt || row.tradeAmount || 0)),
-    tradeVolumeRatio: surgeRate ? Math.max(0, 100 + surgeRate) : 0,
+    ...volumeRatioInfo,
     sources: [source],
     rawRank: row
   };
@@ -1289,10 +1452,16 @@ function mergeHotRankRows(groups = []) {
         changeRate: item.changeRate || existing.changeRate,
         volume: Math.max(existing.volume || 0, item.volume || 0),
         tradeAmount: Math.max(existing.tradeAmount || 0, item.tradeAmount || 0),
-        tradeVolumeRatio: Math.max(
+        tradeVolumeRatio: sanitizeHotTradeVolumeRatio(Math.max(
           existing.tradeVolumeRatio || 0,
           item.tradeVolumeRatio || 0
+        )),
+        tradeVolumeRatioRaw: Math.max(
+          Number(existing.tradeVolumeRatioRaw || 0),
+          Number(item.tradeVolumeRatioRaw || 0)
         ),
+        tradeVolumeRatioSanitized:
+          existing.tradeVolumeRatioSanitized === true || item.tradeVolumeRatioSanitized === true,
         sources: Array.from(new Set([...(existing.sources || []), source])),
         rawRank: {
           ...(existing.rawRank || {}),
@@ -1303,6 +1472,54 @@ function mergeHotRankRows(groups = []) {
   }
 
   return Array.from(map.values());
+}
+
+function selectHotCoverage(rows = [], limit = 50) {
+  const safeLimit = Math.max(1, Math.min(60, Number(limit || 50)));
+  const earlyQuota = Math.max(10, Math.ceil(safeLimit * 0.40));
+  const multiSourceQuota = Math.max(10, Math.ceil(safeLimit * 0.40));
+  const changeQuota = Math.max(5, safeLimit - earlyQuota - multiSourceQuota);
+  const tradeAmountOf = item => Math.max(
+    Number(item.tradeAmount || 0),
+    Number(item.currentPrice || 0) * Number(item.volume || 0)
+  );
+  const sourceFirstSort = (a, b) =>
+    (b.sources?.length || 0) - (a.sources?.length || 0) ||
+    Number(b.tradeVolumeRatio || 0) - Number(a.tradeVolumeRatio || 0) ||
+    tradeAmountOf(b) - tradeAmountOf(a) ||
+    Number(b.changeRate || 0) - Number(a.changeRate || 0);
+  const earlySort = (a, b) =>
+    (b.sources?.length || 0) - (a.sources?.length || 0) ||
+    Number(b.tradeVolumeRatio || 0) - Number(a.tradeVolumeRatio || 0) ||
+    tradeAmountOf(b) - tradeAmountOf(a) ||
+    Number(b.changeRate || 0) - Number(a.changeRate || 0);
+  const changeSort = (a, b) =>
+    Number(b.changeRate || 0) - Number(a.changeRate || 0) ||
+    (b.sources?.length || 0) - (a.sources?.length || 0) ||
+    tradeAmountOf(b) - tradeAmountOf(a);
+
+  const selected = new Map();
+  const append = (items, quota = Infinity, coverageGroup = "FILL") => {
+    let added = 0;
+    for (const item of items) {
+      if (selected.size >= safeLimit || added >= quota) break;
+      if (selected.has(item.code)) continue;
+      selected.set(item.code, { ...item, hotCoverageGroup: coverageGroup });
+      added++;
+    }
+  };
+
+  append(
+    rows
+      .filter(item => Number(item.changeRate || 0) >= 0.5 && Number(item.changeRate || 0) <= 8)
+      .sort(earlySort),
+    earlyQuota,
+    "EARLY"
+  );
+  append([...rows].sort(sourceFirstSort), multiSourceQuota, "MULTI_SOURCE");
+  append([...rows].sort(changeSort), changeQuota, "CHANGE_RATE");
+  append([...rows].sort(sourceFirstSort), Infinity, "FILL");
+  return Array.from(selected.values()).slice(0, safeLimit);
 }
 
 async function enrichHotCandidate(item) {
@@ -1327,7 +1544,7 @@ async function enrichHotCandidate(item) {
     const trdePreRaw = raw.trde_pre ?? priceData.trde_pre ?? null;
     const previousDayVolumeRatio =
       trdePreRaw !== null && trdePreRaw !== ""
-        ? Math.max(0, 100 + hotToNumber(trdePreRaw))
+        ? sanitizeHotTradeVolumeRatio(100 + hotToNumber(trdePreRaw))
         : 0;
 
     return {
@@ -1340,10 +1557,11 @@ async function enrichHotCandidate(item) {
       open: Math.abs(hotToNumber(priceData.open || raw.open_pric || 0)),
       high: Math.abs(hotToNumber(priceData.high || raw.high_pric || 0)),
       low: Math.abs(hotToNumber(priceData.low || raw.low_pric || 0)),
-      tradeVolumeRatio: Math.max(
+      tradeVolumeRatio: sanitizeHotTradeVolumeRatio(Math.max(
         Number(item.tradeVolumeRatio || 0),
         previousDayVolumeRatio
-      ),
+      )),
+      previousDayVolumeRatio,
       trde_pre: trdePreRaw,
       raw: {
         ...raw,
@@ -1353,7 +1571,7 @@ async function enrichHotCandidate(item) {
   } catch (err) {
     console.warn(
       `[HOT API 상세조회 실패] ${item.code} / ` +
-      `${err.name === "AbortError" ? "3초 시간초과" : err.message} / ` +
+      `${err.name === "AbortError" ? `${Math.round(HOT_DETAIL_REQUEST_TIMEOUT_MS / 1000)}초 시간초과` : err.message} / ` +
       `순위 API 원본값 유지`
     );
     return item;
@@ -1440,27 +1658,24 @@ async function buildHotCandidates(limit) {
     throw new Error(`키움 HOT 순위조회 전체 실패 / ${errors.join(" | ")}`);
   }
 
-  const merged = mergeHotRankRows(groups)
+  const mergedAll = mergeHotRankRows(groups)
     .filter(item => item.currentPrice > 0)
-    .filter(item => item.changeRate > 0)
-    .sort((a, b) => {
-      const sourceDiff = (b.sources?.length || 0) - (a.sources?.length || 0);
-      if (sourceDiff !== 0) return sourceDiff;
-      const rateDiff = Number(b.changeRate || 0) - Number(a.changeRate || 0);
-      if (rateDiff !== 0) return rateDiff;
-      return Number(b.volume || 0) - Number(a.volume || 0);
-    })
-    .slice(0, Math.min(40, safeLimit + 10));
+    .filter(item => item.changeRate > 0);
+  const merged = selectHotCoverage(
+    mergedAll,
+    Math.min(60, safeLimit + 10)
+  );
 
   const detailStartedAt = Date.now();
+  const detailEnrichLimit = getHotDetailEnrichLimit();
   const enriched = [];
   for (let index = 0; index < merged.length; index++) {
     const item = merged[index];
 
-    if (index < HOT_DETAIL_ENRICH_LIMIT) {
+    if (index < detailEnrichLimit) {
       enriched.push(await enrichHotCandidate(item));
 
-      if (index < HOT_DETAIL_ENRICH_LIMIT - 1) {
+      if (index < detailEnrichLimit - 1) {
         await sleep(HOT_DETAIL_ENRICH_DELAY_MS);
       }
     } else {
@@ -1469,16 +1684,10 @@ async function buildHotCandidates(limit) {
     }
   }
 
-  const items = enriched
-    .filter(item => item.currentPrice > 0)
-    .sort((a, b) => {
-      const sourceDiff = (b.sources?.length || 0) - (a.sources?.length || 0);
-      if (sourceDiff !== 0) return sourceDiff;
-      const volumeDiff = Number(b.tradeVolumeRatio || 0) - Number(a.tradeVolumeRatio || 0);
-      if (volumeDiff !== 0) return volumeDiff;
-      return Number(b.changeRate || 0) - Number(a.changeRate || 0);
-    })
-    .slice(0, safeLimit);
+  const items = selectHotCoverage(
+    enriched.filter(item => item.currentPrice > 0),
+    safeLimit
+  );
 
   const detailElapsedMs = Date.now() - detailStartedAt;
   const totalElapsedMs = Date.now() - startedAt;
@@ -1486,7 +1695,7 @@ async function buildHotCandidates(limit) {
     `[HOT API 성능] 순위 ${(rankElapsedMs / 1000).toFixed(1)}초 / ` +
     `상세 ${(detailElapsedMs / 1000).toFixed(1)}초 / ` +
     `전체 ${(totalElapsedMs / 1000).toFixed(1)}초 / ` +
-    `병합 ${merged.length}개 / 결과 ${items.length}개 / ` +
+    `병합원본 ${mergedAll.length}개 / 상세대상 ${merged.length}개 / 결과 ${items.length}개 / ` +
     `순위부분오류 ${errors.length}건`
   );
 
@@ -1575,36 +1784,39 @@ app.get("/api/discover", async (req, res) => {
   try {
     const scanLimit = Math.max(1, Math.min(60, Number(req.query.scanLimit || 40)));
     const resultLimit = Math.max(1, Math.min(60, Number(req.query.limit || 40)));
-    const offset = Number(req.query.offset || 0);
-
-    const nextOffset =
-      offset + scanLimit >= STOCK_MASTER.length
-        ? 0
-        : offset + scanLimit;
+    const offset = Math.max(0, Number(req.query.offset || 0));
+    const requestSource = String(req.query.source || "market").toLowerCase();
+    const budgetMs = Math.max(0, Math.min(30000, Number(req.query.budgetMs || 0)));
+    const startedAtMs = Date.now();
 
     const targets = STOCK_MASTER.slice(offset, offset + scanLimit);
 
     console.log(
-      `[DISCOVER] offset=${offset} scan=${scanLimit} next=${nextOffset} total=${STOCK_MASTER.length} / 전종목 순환 배치`
+      `[DISCOVER] offset=${offset} scan=${scanLimit} total=${STOCK_MASTER.length} / ` +
+      `source=${requestSource} / budget=${budgetMs || "none"}ms`
     );
 
-    const items = [];
+    const marketItems = [];
+    let processedCount = 0;
 
     for (const stock of targets) {
-      try {
-        await sleep(300);
+      if (budgetMs > 0 && processedCount > 0 && Date.now() - startedAtMs >= budgetMs) {
+        break;
+      }
 
+      processedCount += 1;
+      try {
+        // /api/price 내부 큐가 키움 현재가 요청 간격을 직렬 제어한다.
+        // OPEN 일반검색은 open-discover 저우선순위로 넣어 실제 후보 재확인을 방해하지 않는다.
         const priceRes = await fetch(
-          `http://localhost:${PORT}/api/price?code=${stock.code}`
+          `http://localhost:${PORT}/api/price?code=${stock.code}&source=${encodeURIComponent(requestSource)}`
         );
 
         const priceData = await priceRes.json();
-
         if (!priceRes.ok) continue;
 
         const scoreInfo = calculateDiscoverScore(priceData);
-
-        items.push({
+        marketItems.push({
           ...priceData,
           ...getStockMarketMetadata(stock.code, stock),
           ...scoreInfo
@@ -1614,7 +1826,12 @@ app.get("/api/discover", async (req, res) => {
       }
     }
 
-    const sorted = items
+    const nextOffset =
+      offset + processedCount >= STOCK_MASTER.length
+        ? 0
+        : offset + processedCount;
+
+    const sorted = marketItems
       .filter((item) => Number(item.discoverScore || 0) > 0)
       .sort(
         (a, b) =>
@@ -1626,7 +1843,14 @@ app.get("/api/discover", async (req, res) => {
       offset,
       nextOffset,
       totalStocks: STOCK_MASTER.length,
-      scanCount: targets.length,
+      requestedScanCount: targets.length,
+      scanCount: processedCount,
+      marketCount: marketItems.length,
+      elapsedMs: Date.now() - startedAtMs,
+      budgetStopped: processedCount < targets.length,
+      requestSource,
+      // 시장온도는 발견점수 0점 종목도 포함해야 상승 후보 편향이 생기지 않는다.
+      marketItems,
       count: sorted.length,
       items: sorted.slice(0, resultLimit)
     });
@@ -1944,6 +2168,18 @@ app.post("/api/core-paper-buy", express.json(), (req, res) => {
   }
 });
 
+function serverHoldingPositionToken(holding = {}) {
+  const rawToken =
+    holding.positionId || holding.buyTime || holding.buyTimeMs ||
+    holding.buyAt || holding.buyTimeText || "legacy";
+  return String(rawToken).replace(/[^0-9A-Za-z_-]/g, "_").slice(-100);
+}
+
+function serverCompletedFullSellKey(holding = {}, date = todayKstKey()) {
+  const code = normalizeOpenStockCode(holding.code);
+  return `${date}_${code}_${serverHoldingPositionToken(holding)}`;
+}
+
 app.post("/api/core-paper-sell", express.json(), (req, res) => {
   try {
     const {
@@ -1975,12 +2211,33 @@ app.post("/api/core-paper-sell", express.json(), (req, res) => {
     if (!Array.isArray(state.tradeLogs)) state.tradeLogs = [];
     if (!Array.isArray(state.virtualResults)) state.virtualResults = [];
     if (!Array.isArray(state.completedOpenSellCodes)) state.completedOpenSellCodes = [];
+    if (!Array.isArray(state.completedFullSellCodes)) state.completedFullSellCodes = [];
 
     const normalizedCode = normalizeOpenStockCode(code);
     const date = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
     const completedKey = `${date}_${normalizedCode}`;
 
     if (String(sellType || "").startsWith("OPEN_") && state.completedOpenSellCodes.includes(completedKey)) {
+      // 완료기록이 있는데 오래된 OPEN 보유가 되살아난 경우 원장에서도 즉시 제거한다.
+      const staleOpenHoldings = state.holdings.filter(h =>
+        String(h.strategyGroup || "").toUpperCase() === "OPEN" &&
+        normalizeOpenStockCode(h.code) === normalizedCode
+      );
+      if (staleOpenHoldings.length > 0) {
+        for (const staleHolding of staleOpenHoldings) {
+          const fullKey = serverCompletedFullSellKey(staleHolding, date);
+          if (!state.completedFullSellCodes.includes(fullKey)) {
+            state.completedFullSellCodes.push(fullKey);
+          }
+        }
+        state.completedFullSellCodes = state.completedFullSellCodes.slice(-500);
+        state.holdings = state.holdings.filter(h => !staleOpenHoldings.includes(h));
+        savePaperState(state);
+        console.warn(
+          `[OPEN 중복매도 원장복구] ${normalizedCode} / stale 보유 ${staleOpenHoldings.length}건 제거`
+        );
+      }
+
       return res.json({
         ok: true,
         duplicateIgnored: true,
@@ -2078,6 +2335,13 @@ app.post("/api/core-paper-sell", express.json(), (req, res) => {
 
     if (holding.qty <= 0) {
       state.holdings = state.holdings.filter(h => h !== holding);
+
+      const completedFullKey = serverCompletedFullSellKey(holding, date);
+      if (!state.completedFullSellCodes.includes(completedFullKey)) {
+        state.completedFullSellCodes.push(completedFullKey);
+        state.completedFullSellCodes = state.completedFullSellCodes.slice(-500);
+      }
+
       if (String(sellType || "").startsWith("OPEN_") && !state.completedOpenSellCodes.includes(completedKey)) {
         state.completedOpenSellCodes.push(completedKey);
         state.completedOpenSellCodes = state.completedOpenSellCodes.slice(-200);
@@ -2363,32 +2627,106 @@ let lastKiwoomPriceRequestAt = 0;
 const kiwoomPriceRequestQueue = [];
 let kiwoomPriceWorkerRunning = false;
 let kiwoomPriceRequestSequence = 0;
+// CORE/VOLUME이 같은 종목을 거의 동시에 재조회하면 하나의 키움 요청을 공유한다.
+const tradingPriceInflightByCode = new Map();
+// 저우선순위 MARKET/HOT 요청이 과도하게 밀릴 때는 큐에 계속 쌓지 않고
+// 즉시 실패시켜 기존 캐시대체 로직이 처리하도록 한다.
+const KIWOOM_LOW_PRIORITY_QUEUE_SOFT_LIMIT = 40;
 
 /*
  * 기존 waitKiwoomPriceLimit은 동시에 들어온 여러 요청이 같은 시간만
  * 기다린 뒤 한꺼번에 출발할 수 있었다. 아래 우선순위 큐는 ka10001 요청을
- * 한 건씩 실행하면서 SELL > WAVE > 일반분석 > HOT 순서를 보장한다.
+ * 한 건씩 실행하면서 SELL > OPEN > WAVE > 일반분석 > HOT 순서를 보장한다.
  */
+function makePriceQueueError(message, code) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+function isQueuedPriceRequestCancelled(request) {
+  try {
+    return typeof request.shouldCancel === "function" && request.shouldCancel();
+  } catch (_) {
+    return false;
+  }
+}
+
+function isQueuedPriceRequestExpired(request) {
+  const maxQueueWaitMs = Number(request.maxQueueWaitMs || 0);
+  if (maxQueueWaitMs <= 0) return false;
+  return Date.now() - Number(request.queuedAtMs || Date.now()) > maxQueueWaitMs;
+}
+
+function pruneKiwoomPriceRequestQueue() {
+  if (!kiwoomPriceRequestQueue.length) return;
+
+  const kept = [];
+  for (const request of kiwoomPriceRequestQueue) {
+    if (isQueuedPriceRequestCancelled(request)) {
+      request.reject(
+        makePriceQueueError("클라이언트가 취소한 현재가 요청", "PRICE_QUEUE_CANCELLED")
+      );
+      continue;
+    }
+    if (isQueuedPriceRequestExpired(request)) {
+      request.reject(
+        makePriceQueueError("현재가 큐 대기시간 초과", "PRICE_QUEUE_EXPIRED")
+      );
+      continue;
+    }
+    kept.push(request);
+  }
+
+  kiwoomPriceRequestQueue.splice(
+    0,
+    kiwoomPriceRequestQueue.length,
+    ...kept
+  );
+}
+
 async function drainKiwoomPriceRequestQueue() {
   if (kiwoomPriceWorkerRunning) return;
   kiwoomPriceWorkerRunning = true;
 
   try {
     while (kiwoomPriceRequestQueue.length > 0) {
+      // 만료·취소된 저우선순위 요청을 한 건씩 처리하지 않고 매 회차 일괄 정리한다.
+      pruneKiwoomPriceRequestQueue();
+      if (!kiwoomPriceRequestQueue.length) break;
+
       kiwoomPriceRequestQueue.sort((a, b) =>
         Number(b.priority || 0) - Number(a.priority || 0) ||
         Number(a.sequence || 0) - Number(b.sequence || 0)
       );
       const request = kiwoomPriceRequestQueue.shift();
-    const minGapMs = 350;
-    const now = Date.now();
-    const waitMs = Math.max(0, minGapMs - (now - lastKiwoomPriceRequestAt));
 
-    if (waitMs > 0) {
-      await new Promise(resolve => setTimeout(resolve, waitMs));
-    }
+      if (isQueuedPriceRequestCancelled(request)) {
+        request.reject(makePriceQueueError("클라이언트가 취소한 현재가 요청", "PRICE_QUEUE_CANCELLED"));
+        continue;
+      }
+      if (isQueuedPriceRequestExpired(request)) {
+        request.reject(makePriceQueueError("현재가 큐 대기시간 초과", "PRICE_QUEUE_EXPIRED"));
+        continue;
+      }
 
-    lastKiwoomPriceRequestAt = Date.now();
+      const minGapMs = 350;
+      const now = Date.now();
+      const waitMs = Math.max(0, minGapMs - (now - lastKiwoomPriceRequestAt));
+      if (waitMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, waitMs));
+      }
+
+      if (isQueuedPriceRequestCancelled(request)) {
+        request.reject(makePriceQueueError("클라이언트가 취소한 현재가 요청", "PRICE_QUEUE_CANCELLED"));
+        continue;
+      }
+      if (isQueuedPriceRequestExpired(request)) {
+        request.reject(makePriceQueueError("현재가 큐 대기시간 초과", "PRICE_QUEUE_EXPIRED"));
+        continue;
+      }
+
+      lastKiwoomPriceRequestAt = Date.now();
       try {
         request.resolve(await request.task());
       } catch (err) {
@@ -2397,7 +2735,6 @@ async function drainKiwoomPriceRequestQueue() {
     }
   } finally {
     kiwoomPriceWorkerRunning = false;
-    // 마지막 요청 완료 직후 새 요청이 들어온 극단적인 경계도 놓치지 않는다.
     if (kiwoomPriceRequestQueue.length > 0) {
       void drainKiwoomPriceRequestQueue();
     }
@@ -2413,7 +2750,9 @@ function runQueuedKiwoomPriceRequest(requestTask, options = {}) {
       priority: Number(options.priority || 0),
       source: String(options.source || "default"),
       sequence: ++kiwoomPriceRequestSequence,
-      queuedAtMs: Date.now()
+      queuedAtMs: Date.now(),
+      maxQueueWaitMs: Number(options.maxQueueWaitMs || 0),
+      shouldCancel: typeof options.shouldCancel === "function" ? options.shouldCancel : null
     });
     void drainKiwoomPriceRequestQueue();
   });
@@ -2423,12 +2762,53 @@ function getKiwoomPriceQueueDepth() {
   return kiwoomPriceRequestQueue.length + (kiwoomPriceWorkerRunning ? 1 : 0);
 }
 
+function runSharedTradingPriceRequest(code, taskFactory, shareGroup = "core-volume") {
+  const normalizedCode = String(code || "").replace(/^A/i, "").padStart(6, "0");
+  const key = `${String(shareGroup || "default")}_${normalizedCode}`;
+  const existing = tradingPriceInflightByCode.get(key);
+  if (existing) {
+    return existing;
+  }
+
+  const promise = Promise.resolve().then(taskFactory);
+  tradingPriceInflightByCode.set(key, promise);
+  promise.then(
+    () => {
+      if (tradingPriceInflightByCode.get(key) === promise) {
+        tradingPriceInflightByCode.delete(key);
+      }
+    },
+    () => {
+      if (tradingPriceInflightByCode.get(key) === promise) {
+        tradingPriceInflightByCode.delete(key);
+      }
+    }
+  );
+  return promise;
+}
+
 function getKiwoomPricePriority(sourceValue) {
   const source = String(sourceValue || "core").toLowerCase();
-  if (["sell", "manual-sell", "risk"].includes(source)) return 100;
+  if (["sell", "manual-sell", "risk", "fast-sell"].includes(source)) return 100;
+  if (source === "open") return 90;
+  if (source === "open-discover") return 50;
+  if (source === "fast") return 85;
   if (source === "wave") return 80;
+  if (source === "core" || source === "volume") return 60;
+  if (source === "market") return 20;
   if (source === "hot") return 0;
   return 40;
+}
+
+function getKiwoomPriceQueueMaxWaitMs(sourceValue) {
+  const source = String(sourceValue || "core").toLowerCase();
+  if (["sell", "manual-sell", "risk", "fast-sell"].includes(source)) return 4500;
+  if (source === "open") return 2500;
+  if (source === "open-discover") return 2000;
+  if (source === "fast") return 3500;
+  if (["wave", "core", "volume"].includes(source)) return 4000;
+  if (["market", "hot"].includes(source)) return 3000;
+  return 5000;
 }
 
 app.get("/api/price", async (req, res) => {
@@ -2436,12 +2816,36 @@ app.get("/api/price", async (req, res) => {
     const token = getSavedToken();
     const code = String(req.query.code || "").trim();
     const requestSource = String(req.query.source || "core").toLowerCase();
+    const isSellPriceRequest = ["sell", "manual-sell", "risk", "fast-sell"].includes(requestSource);
     const priceRequestTimeoutMs =
-      requestSource === "hot"
-        ? HOT_KIWOOM_PRICE_TIMEOUT_MS
-        : KIWOOM_PRICE_REQUEST_TIMEOUT_MS;
+      isSellPriceRequest
+        ? SELL_KIWOOM_PRICE_TIMEOUT_MS
+        : requestSource === "hot"
+          ? HOT_KIWOOM_PRICE_TIMEOUT_MS
+          : requestSource === "open"
+            ? OPEN_KIWOOM_PRICE_TIMEOUT_MS
+            : requestSource === "open-discover"
+              ? 3500
+            : requestSource === "fast"
+              ? FAST_KIWOOM_PRICE_TIMEOUT_MS
+              : requestSource === "market"
+                ? MARKET_KIWOOM_PRICE_TIMEOUT_MS
+                : ["wave", "core", "volume"].includes(requestSource)
+                  ? TRADING_KIWOOM_PRICE_TIMEOUT_MS
+                  : KIWOOM_PRICE_REQUEST_TIMEOUT_MS;
     const requestPriority = getKiwoomPricePriority(requestSource);
-    const freshCacheMaxAgeMs = requestSource === "sell" ? 1500 : 8000;
+    const queueMaxWaitMs = getKiwoomPriceQueueMaxWaitMs(requestSource);
+    const shouldCancelPriceRequest = () => req.aborted === true || res.destroyed === true;
+    const freshCacheMaxAgeMs = requestSource === "fast-sell"
+      ? 5 * 1000
+      : isSellPriceRequest
+        ? 1500
+        : requestSource === "fast"
+          ? 2500
+          : requestSource === "open-discover"
+            ? 8000
+          : 8000;
+
 
     if (!code) {
       return res.status(400).json({ message: "종목코드가 없습니다." });
@@ -2450,56 +2854,95 @@ app.get("/api/price", async (req, res) => {
     const cached = priceCache[code];
 
 if (cached && Date.now() - cached.cachedAt <= freshCacheMaxAgeMs) {
+  const cacheAgeMs = Date.now() - Number(cached.cachedAt || 0);
   return res.json({
     ...cached.data,
-    isCached: true
+    requestSource,
+    isCached: true,
+    cacheAgeMs,
+    cachedAtMs: Number(cached.cachedAt || 0),
+    quoteObservedAtMs: Number(cached.cachedAt || 0)
   });
 }
 
     const url = `${process.env.KIWOOM_BASE_URL}/api/dostk/stkinfo`;
+    const queueDepthBeforeRequest = getKiwoomPriceQueueDepth();
 
-    let result = await runQueuedKiwoomPriceRequest(() =>
-      axios.post(
-        url,
-        { stk_cd: code },
+    if (
+      requestPriority <= 20 &&
+      queueDepthBeforeRequest >= KIWOOM_LOW_PRIORITY_QUEUE_SOFT_LIMIT
+    ) {
+      throw makePriceQueueError(
+        `저우선순위 현재가 큐 과부하 ${queueDepthBeforeRequest}건`,
+        "PRICE_QUEUE_PRESSURE"
+      );
+    }
+
+    const sharedRequestGroup = requestSource === "open"
+      ? "open"
+      : (["core", "volume"].includes(requestSource) ? "core-volume" : null);
+    const isSharedTradingRequest = Boolean(sharedRequestGroup);
+
+    const requestCurrentPrice = async () => {
+      let activeToken = token;
+      let result = await runQueuedKiwoomPriceRequest(() =>
+        axios.post(
+          url,
+          { stk_cd: code },
+          {
+            headers: {
+              "Content-Type": "application/json;charset=UTF-8",
+              authorization: `Bearer ${activeToken}`,
+              "api-id": "ka10001"
+            },
+            timeout: priceRequestTimeoutMs
+          }
+        ),
         {
-          headers: {
-            "Content-Type": "application/json;charset=UTF-8",
-            authorization: `Bearer ${token}`,
-            "api-id": "ka10001"
-          },
-          timeout: priceRequestTimeoutMs
+          priority: requestPriority,
+          source: requestSource,
+          maxQueueWaitMs: queueMaxWaitMs,
+          // CORE/VOLUME 공유요청은 첫 HTTP 클라이언트 종료로 공용 키움 요청을 취소하지 않는다.
+          shouldCancel: isSharedTradingRequest ? null : shouldCancelPriceRequest
         }
-      ),
-      { priority: requestPriority, source: requestSource }
-    );
+      );
 
-let data = result.data;
+      let data = result.data;
 
-if (isTokenError(data)) {
-  console.log("[/api/price] 토큰 만료 감지 → 자동 재발급 후 현재가 재조회", code);
-
-  const newToken = await refreshKiwoomToken();
-
-  result = await runQueuedKiwoomPriceRequest(() =>
-    axios.post(
-      url,
-      { stk_cd: code },
-      {
-        headers: {
-          "Content-Type": "application/json;charset=UTF-8",
-          authorization: `Bearer ${newToken}`,
-          "api-id": "ka10001"
-        },
-        timeout: priceRequestTimeoutMs
+      if (isTokenError(data)) {
+        console.log("[/api/price] 토큰 만료 감지 → 자동 재발급 후 현재가 재조회", code);
+        activeToken = await refreshKiwoomToken();
+        result = await runQueuedKiwoomPriceRequest(() =>
+          axios.post(
+            url,
+            { stk_cd: code },
+            {
+              headers: {
+                "Content-Type": "application/json;charset=UTF-8",
+                authorization: `Bearer ${activeToken}`,
+                "api-id": "ka10001"
+              },
+              timeout: priceRequestTimeoutMs
+            }
+          ),
+          {
+            priority: requestPriority,
+            source: requestSource,
+            maxQueueWaitMs: queueMaxWaitMs,
+            shouldCancel: isSharedTradingRequest ? null : shouldCancelPriceRequest
+          }
+        );
+        data = result.data;
       }
-    ),
-    { priority: requestPriority, source: requestSource }
-  );
 
-  data = result.data;
-}
+      return data;
+    };
 
+    const data = isSharedTradingRequest
+      ? await runSharedTradingPriceRequest(code, requestCurrentPrice, sharedRequestGroup)
+      : await requestCurrentPrice();
+
+    const quoteObservedAtMs = Date.now();
     const responseData = {
   code: data.stk_cd,
   name: data.stk_nm,
@@ -2509,23 +2952,40 @@ if (isTokenError(data)) {
   open: Number(cleanNumber(data.open_pric)),
   high: Number(cleanNumber(data.high_pric)),
   low: Number(cleanNumber(data.low_pric)),
-  raw: data
+  raw: data,
+  requestSource,
+  quoteObservedAtMs
 };
 
 priceCache[code] = {
   data: responseData,
-  cachedAt: Date.now()
+  cachedAt: quoteObservedAtMs
 };
 
 res.json(responseData);
 
 
   } catch (error) {
+  if (req.aborted === true || res.destroyed === true) {
+    return;
+  }
   const code = String(req.query.code || "").trim();
   const requestSource = String(req.query.source || "core").toLowerCase();
   const stale = priceCache[code];
   const staleAgeMs = stale ? Date.now() - Number(stale.cachedAt || 0) : Infinity;
-  const staleCacheMaxAgeMs = requestSource === "sell" ? 5 * 1000 : 30 * 1000;
+  const staleCacheMaxAgeMs = ["sell", "manual-sell", "risk", "fast-sell"].includes(requestSource)
+    ? 5 * 1000
+    : requestSource === "fast"
+      ? 3 * 1000
+    : requestSource === "wave"
+      ? 15 * 1000
+      : requestSource === "open"
+        ? 12 * 1000
+        : requestSource === "open-discover"
+          ? 10 * 1000
+      : requestSource === "core" || requestSource === "volume"
+        ? 10 * 1000
+      : 30 * 1000;
 
   /*
    * 키움 429·일시적 네트워크 실패 시 전략별 허용범위의 캐시를 반환한다.
@@ -2540,9 +3000,12 @@ res.json(responseData);
 
     return res.json({
       ...stale.data,
+      requestSource,
       isCached: true,
       isStaleFallback: true,
-      cacheAgeMs: staleAgeMs
+      cacheAgeMs: staleAgeMs,
+      cachedAtMs: Number(stale.cachedAt || 0),
+      quoteObservedAtMs: Number(stale.cachedAt || 0)
     });
   }
 
@@ -2868,6 +3331,14 @@ const {
   getWaveSummary
 } = require("./wave-strategy");
 
+const {
+  startFastStrategy,
+  runFastOnce,
+  loadFastState,
+  getFastSummary,
+  resetFastState
+} = require("./fast-strategy");
+
 app.get("/api/paper-state", (req, res) => {
   res.json(loadState());
 });
@@ -2896,6 +3367,44 @@ app.post("/api/wave-run-once", async (req, res) => {
       reason: result.reason || null,
       summary: result.state?.summary || getWaveSummary()
     });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
+app.get("/api/fast-state", (req, res) => {
+  try {
+    res.json({ ok: true, ...loadFastState() });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
+app.get("/api/fast-summary", (req, res) => {
+  try {
+    res.json({ ok: true, ...getFastSummary() });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
+app.post("/api/fast-run-once", async (req, res) => {
+  try {
+    const result = await runFastOnce();
+    res.json({
+      ok: result.ok === true,
+      reason: result.reason || null,
+      summary: result.summary || getFastSummary(result.state)
+    });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
+app.post("/api/fast-reset", (req, res) => {
+  try {
+    const state = resetFastState();
+    res.json({ ok: true, summary: getFastSummary(state) });
   } catch (error) {
     res.status(500).json({ ok: false, message: error.message });
   }
@@ -3003,6 +3512,704 @@ app.get("/api/server-auto-status", (req, res) => {
   });
 });
 
+/*
+ * 메인 대시보드 전용 통합성과
+ * - OPEN/CORE/VOLUME은 paper-state-core의 1억원 계좌를 공유하므로
+ *   각 전략에는 독립 자산이 아닌 손익 기여액/기여율을 표시한다.
+ * - WAVE와 FAST는 별도 모의계좌이므로 계좌자산과 계좌수익률을 표시한다.
+ * - 일별 흐름은 전략별 실현손익만 사용해 보유평가손익의 중복 반영을 막는다.
+ */
+function dashboardNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function dashboardTodayKey() {
+  return new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
+}
+
+function dashboardRecentDateKeys(days = 7) {
+  const nowKst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const result = [];
+  for (let offset = days - 1; offset >= 0; offset--) {
+    const date = new Date(nowKst);
+    date.setUTCDate(date.getUTCDate() - offset);
+    result.push(date.toISOString().slice(0, 10));
+  }
+  return result;
+}
+
+function dashboardLogDate(log = {}) {
+  return String(log.date || log.buyDate || log.sellDate || "").slice(0, 10);
+}
+
+function dashboardHoldingSnapshot(holdings = []) {
+  const rows = Array.isArray(holdings) ? holdings : [];
+  const buyAmount = rows.reduce(
+    (sum, holding) => sum +
+      dashboardNumber(holding.buyPrice) * dashboardNumber(holding.qty),
+    0
+  );
+  const evalAmount = rows.reduce(
+    (sum, holding) => sum +
+      dashboardNumber(holding.currentPrice || holding.buyPrice) * dashboardNumber(holding.qty),
+    0
+  );
+  return {
+    holdingCount: rows.length,
+    buyAmount,
+    evalAmount,
+    unrealizedProfit: evalAmount - buyAmount
+  };
+}
+
+function dashboardRealizedHistory(sellLogs = [], dateKeys = []) {
+  return dateKeys.map(date => ({
+    date,
+    profit: sellLogs
+      .filter(log => dashboardLogDate(log) === date)
+      .reduce((sum, log) => sum + dashboardNumber(log.profit), 0)
+  }));
+}
+
+function dashboardAverageProfitRate(rows = []) {
+  if (!rows.length) return 0;
+  return rows.reduce(
+    (sum, row) => sum + dashboardNumber(row.profitRate),
+    0
+  ) / rows.length;
+}
+
+function dashboardNormalizeHolding(holding = {}, strategyGroup = "CORE", accountType = "MAIN") {
+  const strategy = String(strategyGroup || "CORE").toUpperCase();
+  const buyPrice = dashboardNumber(holding.buyPrice);
+  const currentPrice = dashboardNumber(holding.currentPrice || holding.buyPrice);
+  const highestPrice = dashboardNumber(holding.highestPrice || currentPrice || buyPrice);
+  const qty = dashboardNumber(holding.qty);
+  const buyAmount = dashboardNumber(holding.buyAmount || buyPrice * qty);
+  const evalAmount = currentPrice * qty;
+  const profit = evalAmount - buyAmount;
+  const profitRate = buyAmount > 0 ? (profit / buyAmount) * 100 : 0;
+  const maxProfitRate = buyPrice > 0
+    ? ((highestPrice - buyPrice) / buyPrice) * 100
+    : dashboardNumber(holding.maxProfitRate);
+  const drawdownFromHigh = highestPrice > 0
+    ? ((currentPrice - highestPrice) / highestPrice) * 100
+    : dashboardNumber(holding.drawdownFromHigh);
+
+  let status = "HOLD";
+  if (strategy === "WAVE") {
+    status = holding.protectActive ? "PROTECT" : "HOLD";
+  } else if (strategy === "FAST") {
+    status = "FAST HOLD";
+  } else if (holding.trailingActive) {
+    status = "TRAILING";
+  } else if (holding.targetTouched) {
+    status = "PROTECT";
+  }
+
+  return {
+    accountType,
+    accountLabel: accountType === "MAIN" ? "메인 공유계좌" : `${strategy} 독립계좌`,
+    strategyGroup: strategy,
+    code: reportNormalizeCode(holding.code),
+    name: holding.name || holding.code || "-",
+    buyPrice,
+    currentPrice,
+    highestPrice,
+    qty,
+    buyAmount,
+    evalAmount,
+    profit,
+    profitRate,
+    maxProfitRate,
+    drawdownFromHigh,
+    buyAt:
+      holding.buyTimeText ||
+      holding.buyAt ||
+      holding.buyTime ||
+      holding.buyDate ||
+      holding.date ||
+      null,
+    buyAtMs: dashboardNumber(
+      holding.buyAtMs || holding.buyTimeMs || holding.buyTime
+    ),
+    score: dashboardNumber(
+      holding.fastScore ||
+      holding.buyScore ||
+      holding.holdingScore ||
+      holding.watchScore ||
+      holding.finalScore ||
+      holding.finalBuyScore ||
+      holding.candidateWatchScore
+    ),
+    status,
+    manualSellAllowed: accountType === "MAIN",
+    reason: holding.reason || holding.buyReason || null
+  };
+}
+
+function dashboardNormalizeSell(log = {}, strategyGroup = "CORE", accountType = "MAIN") {
+  const strategy = String(strategyGroup || reportStrategy(log) || "CORE").toUpperCase();
+  return {
+    accountType,
+    accountLabel: accountType === "MAIN" ? "메인 공유계좌" : `${strategy} 독립계좌`,
+    strategyGroup: strategy,
+    type: String(log.type || "SELL"),
+    code: reportNormalizeCode(log.code),
+    name: log.name || log.code || "-",
+    price: dashboardNumber(log.sellPrice || log.price),
+    qty: dashboardNumber(log.qty),
+    profit: dashboardNumber(log.profit),
+    profitRate: dashboardNumber(log.profitRate),
+    maxProfitRate: dashboardNumber(log.maxProfitRate),
+    reason: log.reason || log.sellReason || "매도조건 충족",
+    date: dashboardLogDate(log),
+    time: log.time || log.sellTime || null,
+    timestampMs: reportTimestampMs(log)
+  };
+}
+
+function dashboardCountReasons(...reasonGroups) {
+  return reasonGroups.reduce(
+    (sum, group) => sum + Object.values(group || {}).reduce(
+      (inner, count) => inner + dashboardNumber(count),
+      0
+    ),
+    0
+  );
+}
+
+function dashboardCandidateRow(row = {}, fallbackStatus = "WATCH") {
+  const snapshot = row.snapshot || {};
+  const evaluation = row.evaluation || {};
+  const analysis = row.lastAnalysis || {};
+  return {
+    code: reportNormalizeCode(row.code),
+    name: row.name || row.code || "-",
+    status: row.status || row.preSignalStatus || fallbackStatus,
+    score: dashboardNumber(
+      row.fastScore ||
+      row.score ||
+      row.watchScore ||
+      row.finalScore ||
+      row.finalBuyScore ||
+      row.candidateWatchScore ||
+      row.discoverScore ||
+      analysis.totalScore
+    ),
+    currentPrice: dashboardNumber(
+      row.currentPrice || row.lastPrice || snapshot.currentPrice || snapshot.price
+    ),
+    changeRate: dashboardNumber(
+      row.changeRate || evaluation.changeRate || snapshot.changeRate
+    ),
+    reason:
+      row.reason ||
+      row.lastBuyBlockReason ||
+      evaluation.reason ||
+      analysis.buyReason ||
+      null
+  };
+}
+
+function dashboardMetric({
+  id,
+  label,
+  icon,
+  accountType,
+  accountLabel,
+  initialCapital,
+  totalAsset = null,
+  contributionBase,
+  holdings,
+  buyLogs,
+  sellLogs,
+  closedRows,
+  recentDateKeys,
+  status,
+  statusDetail,
+  detailHref,
+  candidateCount = 0
+}) {
+  const holding = dashboardHoldingSnapshot(holdings);
+  const realizedProfit = sellLogs.reduce(
+    (sum, log) => sum + dashboardNumber(log.profit),
+    0
+  );
+  const standaloneAccount = accountType === "INDEPENDENT";
+  const calculatedTotalAsset = totalAsset === null
+    ? null
+    : dashboardNumber(totalAsset);
+  const netProfit = standaloneAccount && calculatedTotalAsset !== null
+    ? calculatedTotalAsset - dashboardNumber(initialCapital)
+    : realizedProfit + holding.unrealizedProfit;
+  const rateBase = standaloneAccount
+    ? dashboardNumber(initialCapital)
+    : dashboardNumber(contributionBase);
+  const profitRate = rateBase > 0 ? (netProfit / rateBase) * 100 : 0;
+  const today = recentDateKeys[recentDateKeys.length - 1] || dashboardTodayKey();
+  const todayBuyLogs = buyLogs.filter(log => dashboardLogDate(log) === today);
+  const todaySellLogs = sellLogs.filter(log => dashboardLogDate(log) === today);
+  const wins = closedRows.filter(row => dashboardNumber(row.profit) > 0).length;
+  const losses = closedRows.filter(row => dashboardNumber(row.profit) < 0).length;
+  const neutral = Math.max(0, closedRows.length - wins - losses);
+
+  return {
+    id,
+    label,
+    icon,
+    accountType,
+    accountLabel,
+    initialCapital: dashboardNumber(initialCapital),
+    totalAsset: calculatedTotalAsset,
+    realizedProfit,
+    unrealizedProfit: holding.unrealizedProfit,
+    netProfit,
+    profitRate,
+    rateLabel: standaloneAccount ? "계좌수익률" : "메인계좌 기여율",
+    holdingCount: holding.holdingCount,
+    holdingBuyAmount: holding.buyAmount,
+    holdingEvalAmount: holding.evalAmount,
+    totalBuyCount: buyLogs.length,
+    totalSellCount: closedRows.length,
+    sellFillCount: sellLogs.length,
+    todayBuyCount: todayBuyLogs.length,
+    todaySellCount: todaySellLogs.length,
+    todayRealizedProfit: todaySellLogs.reduce(
+      (sum, log) => sum + dashboardNumber(log.profit),
+      0
+    ),
+    wins,
+    losses,
+    neutral,
+    winRate: closedRows.length > 0 ? (wins / closedRows.length) * 100 : 0,
+    avgProfitRate: dashboardAverageProfitRate(closedRows),
+    status,
+    statusDetail,
+    candidateCount: dashboardNumber(candidateCount),
+    detailHref,
+    recent7Days: dashboardRealizedHistory(sellLogs, recentDateKeys)
+  };
+}
+
+app.get("/api/strategy-dashboard-summary", (req, res) => {
+  try {
+    const mainState = loadState();
+    const waveState = loadWaveState();
+    const fastState = loadFastState();
+    const waveSummary = waveState.summary || getWaveSummary();
+    const fastSummary = getFastSummary(fastState);
+    const recentDateKeys = dashboardRecentDateKeys(7);
+    const today = recentDateKeys[recentDateKeys.length - 1];
+
+    const mainLogs = Array.isArray(mainState.tradeLogs) ? mainState.tradeLogs : [];
+    const mainHoldings = Array.isArray(mainState.holdings) ? mainState.holdings : [];
+    const mainRawSellLogs = mainLogs.filter(isReportSellLog);
+    const mainPositionSummary = buildReportPositionSummary(
+      mainLogs,
+      mainHoldings,
+      mainRawSellLogs
+    );
+    const mainSellLogs = mainPositionSummary.resolvedSellLogs;
+    const mainInitialCapital = dashboardNumber(mainState.initialCapital, 100000000);
+    const mainHolding = dashboardHoldingSnapshot(mainHoldings);
+    const mainTotalAsset = dashboardNumber(mainState.totalCash) + mainHolding.evalAmount;
+
+    function makeMainStrategyMetric(group, label, icon, detailHref) {
+      const upperGroup = String(group).toUpperCase();
+      const holdings = mainHoldings.filter(
+        holding => reportStrategy(holding) === upperGroup
+      );
+      const buyLogs = mainLogs.filter(
+        log => REPORT_BUY_TYPES.has(log.type) && reportStrategy(log) === upperGroup
+      );
+      const sellLogs = mainSellLogs.filter(
+        log => reportStrategy(log) === upperGroup
+      );
+      const closedRows = mainPositionSummary.closedPositions.filter(
+        position => position.strategyGroup === upperGroup
+      );
+      const todayBuyCount = buyLogs.filter(log => dashboardLogDate(log) === today).length;
+
+      let status = holdings.length > 0
+        ? `${holdings.length}종목 보유 중`
+        : todayBuyCount > 0
+          ? "오늘 거래 완료"
+          : "신규매수 대기";
+      let statusDetail = "성과자료 정상";
+
+      if (upperGroup === "OPEN") {
+        if (mainState.openSkipped === true) {
+          status = "오늘 미매수";
+          statusDetail = mainState.openSkipReason || "OPEN 조건 미충족";
+        } else if (mainState.openCompleted === true && holdings.length === 0) {
+          status = mainState.openBuyCode ? "오늘 거래 완료" : "오늘 평가 완료";
+          statusDetail = mainState.openBuyCode
+            ? `${mainState.openBuyName || mainState.openBuyCode} 선정`
+            : "매수 종목 없음";
+        } else if (mainState.openCompleted !== true) {
+          status = "후보 관찰 중";
+          statusDetail = "OPEN 학습 화면에서 상세 확인";
+        }
+      }
+
+      return dashboardMetric({
+        id: upperGroup,
+        label,
+        icon,
+        accountType: "SHARED",
+        accountLabel: "메인 1억원 공유계좌",
+        initialCapital: mainInitialCapital,
+        contributionBase: mainInitialCapital,
+        holdings,
+        buyLogs,
+        sellLogs,
+        closedRows,
+        recentDateKeys,
+        status,
+        statusDetail,
+        detailHref,
+        candidateCount: dashboardNumber(
+          mainState.buyDecisionStats?.[upperGroup]?.checked
+        )
+      });
+    }
+
+    const waveLogs = Array.isArray(waveState.tradeLogs) ? waveState.tradeLogs : [];
+    const waveHoldings = Array.isArray(waveState.holdings) ? waveState.holdings : [];
+    const waveBuyLogs = waveLogs.filter(log => String(log.type || "") === "WAVE_BUY");
+    const waveSellLogs = waveLogs.filter(log =>
+      String(log.type || "").startsWith("WAVE_") &&
+      String(log.type || "") !== "WAVE_BUY" &&
+      Number.isFinite(Number(log.profit))
+    );
+    const waveInitialCapital = dashboardNumber(waveState.initialCapital, 100000000);
+    const waveHolding = dashboardHoldingSnapshot(waveHoldings);
+    const waveTotalAsset = dashboardNumber(waveState.totalCash) + waveHolding.evalAmount;
+    const waveStatus = waveHoldings.length > 0
+      ? `${waveHoldings.length}종목 HOLD`
+      : dashboardNumber(waveSummary.triggerCount) > 0
+        ? `${dashboardNumber(waveSummary.triggerCount)}종목 TRIGGER`
+        : dashboardNumber(waveSummary.readyCount) > 0
+          ? `${dashboardNumber(waveSummary.readyCount)}종목 READY`
+          : dashboardNumber(waveSummary.watchCount) > 0
+            ? `${dashboardNumber(waveSummary.watchCount)}종목 WATCH`
+            : "후보 대기";
+
+    const waveMetric = dashboardMetric({
+      id: "WAVE",
+      label: "WAVE",
+      icon: "🌊",
+      accountType: "INDEPENDENT",
+      accountLabel: "WAVE 독립계좌",
+      initialCapital: waveInitialCapital,
+      totalAsset: waveTotalAsset,
+      contributionBase: waveInitialCapital,
+      holdings: waveHoldings,
+      buyLogs: waveBuyLogs,
+      sellLogs: waveSellLogs,
+      closedRows: waveSellLogs,
+      recentDateKeys,
+      status: waveStatus,
+      statusDetail: `WATCH ${dashboardNumber(waveSummary.watchCount)} · READY ${dashboardNumber(waveSummary.readyCount)} · TRIGGER ${dashboardNumber(waveSummary.triggerCount)}`,
+      detailHref: "wave.html",
+      candidateCount: dashboardNumber(waveSummary.candidateCount)
+    });
+
+    const fastLogs = Array.isArray(fastState.tradeLogs) ? fastState.tradeLogs : [];
+    const fastHoldings = Array.isArray(fastState.holdings) ? fastState.holdings : [];
+    const fastBuyLogs = fastLogs.filter(log => String(log.type || "") === "FAST_BUY");
+    const fastSellLogs = fastLogs.filter(log =>
+      String(log.type || "").startsWith("FAST_") &&
+      String(log.type || "") !== "FAST_BUY" &&
+      Number.isFinite(Number(log.profit))
+    );
+    const fastInitialCapital = dashboardNumber(fastState.initialCapital, 50000000);
+    const fastHolding = dashboardHoldingSnapshot(fastHoldings);
+    const fastTotalAsset = dashboardNumber(fastState.totalCash) + fastHolding.evalAmount;
+    const fastStatus = fastHoldings.length > 0
+      ? `${fastHoldings.length}종목 보유 중`
+      : dashboardNumber(fastSummary.readyCount) > 0
+        ? `${dashboardNumber(fastSummary.readyCount)}종목 READY`
+        : fastSummary.lastRunReason || "후보 대기";
+
+    const fastMetric = dashboardMetric({
+      id: "FAST",
+      label: "FAST",
+      icon: "⚡",
+      accountType: "INDEPENDENT",
+      accountLabel: "FAST 독립계좌",
+      initialCapital: fastInitialCapital,
+      totalAsset: fastTotalAsset,
+      contributionBase: fastInitialCapital,
+      holdings: fastHoldings,
+      buyLogs: fastBuyLogs,
+      sellLogs: fastSellLogs,
+      closedRows: fastSellLogs,
+      recentDateKeys,
+      status: fastStatus,
+      statusDetail: `READY ${dashboardNumber(fastSummary.readyCount)} · 후보 ${dashboardNumber(fastSummary.candidateCount)}`,
+      detailHref: "fast.html",
+      candidateCount: dashboardNumber(fastSummary.candidateCount)
+    });
+
+    const strategies = [
+      makeMainStrategyMetric("OPEN", "OPEN", "🚀", "open-learning.html"),
+      makeMainStrategyMetric("CORE", "CORE", "🛡️", null),
+      makeMainStrategyMetric("VOLUME", "VOLUME", "📊", null),
+      waveMetric,
+      fastMetric
+    ];
+
+    const unifiedHoldings = [
+      ...mainHoldings.map(holding =>
+        dashboardNormalizeHolding(holding, reportStrategy(holding), "MAIN")
+      ),
+      ...waveHoldings.map(holding =>
+        dashboardNormalizeHolding(holding, "WAVE", "WAVE")
+      ),
+      ...fastHoldings.map(holding =>
+        dashboardNormalizeHolding(holding, "FAST", "FAST")
+      )
+    ].sort((a, b) => {
+      const strategyOrder = { OPEN: 1, CORE: 2, VOLUME: 3, WAVE: 4, FAST: 5 };
+      return (
+        dashboardNumber(strategyOrder[a.strategyGroup], 9) -
+        dashboardNumber(strategyOrder[b.strategyGroup], 9)
+      ) || dashboardNumber(b.profitRate) - dashboardNumber(a.profitRate);
+    });
+
+    const unifiedSells = [
+      ...mainSellLogs.map((log, index) => ({
+        ...dashboardNormalizeSell(log, reportStrategy(log), "MAIN"),
+        sourceOrder: index
+      })),
+      ...waveSellLogs.map((log, index) => ({
+        ...dashboardNormalizeSell(log, "WAVE", "WAVE"),
+        sourceOrder: index
+      })),
+      ...fastSellLogs.map((log, index) => ({
+        ...dashboardNormalizeSell(log, "FAST", "FAST"),
+        sourceOrder: index
+      }))
+    ].sort((a, b) => {
+      const timestampDiff = dashboardNumber(b.timestampMs) - dashboardNumber(a.timestampMs);
+      if (timestampDiff) return timestampDiff;
+      const dateDiff = String(b.date || "").localeCompare(String(a.date || ""));
+      if (dateDiff) return dateDiff;
+      return dashboardNumber(b.sourceOrder) - dashboardNumber(a.sourceOrder);
+    }).slice(0, 100);
+
+    function makeMainCandidateOverview(group, label, icon) {
+      const stats = mainState.buyDecisionStats?.[group] || {};
+      const sourceRows = group === "CORE"
+        ? mainState.coreCandidateWatchList
+        : mainState.volumeCandidateWatchList;
+      const topCandidates = (Array.isArray(sourceRows) ? sourceRows : [])
+        .map(row => dashboardCandidateRow(row))
+        .sort((a, b) => dashboardNumber(b.score) - dashboardNumber(a.score))
+        .slice(0, 5);
+      const checked = dashboardNumber(stats.checked);
+      const passed = dashboardNumber(stats.passed);
+      const bought = dashboardNumber(stats.bought);
+      const rejected = dashboardCountReasons(
+        stats.conditionRejected || stats.rejected,
+        stats.operationalBlocked
+      );
+      return {
+        id: group,
+        label,
+        icon,
+        status: topCandidates.length > 0 ? "후보 평가 중" : "후보 대기",
+        statusDetail: `검토 ${checked} · 통과 ${passed} · 매수 ${bought}`,
+        checked,
+        passed,
+        bought,
+        rejected,
+        watch: topCandidates.length,
+        ready: passed,
+        trigger: 0,
+        topCandidates,
+        detailHref: null
+      };
+    }
+
+    const openHistoryRows = Object.values(mainState.openCandidateHistory || {});
+    const openCandidates = openHistoryRows
+      .map(row => dashboardCandidateRow(row))
+      .sort((a, b) => dashboardNumber(b.score) - dashboardNumber(a.score))
+      .slice(0, 5);
+    const openBought = mainLogs.filter(log =>
+      log.type === "OPEN_BUY" && dashboardLogDate(log) === today
+    ).length;
+    const openCandidateOverview = {
+      id: "OPEN",
+      label: "OPEN",
+      icon: "🚀",
+      status: mainState.openSkipped
+        ? "오늘 미매수"
+        : mainState.openCompleted
+          ? "오늘 평가 완료"
+          : "후보 관찰 중",
+      statusDetail:
+        mainState.openSkipReason ||
+        (mainState.openBuyCode
+          ? `${mainState.openBuyName || mainState.openBuyCode} 선정`
+          : "OPEN 학습에서 상세 확인"),
+      checked: openHistoryRows.length,
+      passed: openBought,
+      bought: openBought,
+      rejected: mainState.openSkipped ? 1 : 0,
+      watch: mainState.openCompleted ? 0 : openCandidates.length,
+      ready: 0,
+      trigger: 0,
+      topCandidates: openCandidates,
+      detailHref: "open-learning.html"
+    };
+
+    const waveCandidateOverview = {
+      id: "WAVE",
+      label: "WAVE",
+      icon: "🌊",
+      status: waveStatus,
+      statusDetail: `WATCH ${dashboardNumber(waveSummary.watchCount)} · READY ${dashboardNumber(waveSummary.readyCount)} · TRIGGER ${dashboardNumber(waveSummary.triggerCount)}`,
+      checked: dashboardNumber(waveSummary.candidateCount),
+      passed: dashboardNumber(waveSummary.readyCount) + dashboardNumber(waveSummary.triggerCount),
+      bought: dashboardNumber(waveSummary.todayBuyCount),
+      rejected: Array.isArray(waveState.excluded) ? waveState.excluded.length : 0,
+      watch: dashboardNumber(waveSummary.watchCount),
+      ready: dashboardNumber(waveSummary.readyCount),
+      trigger: dashboardNumber(waveSummary.triggerCount),
+      topCandidates: (Array.isArray(waveSummary.topCandidates) ? waveSummary.topCandidates : [])
+        .map(row => dashboardCandidateRow(row))
+        .slice(0, 5),
+      detailHref: "wave.html"
+    };
+
+    const fastCandidateOverview = {
+      id: "FAST",
+      label: "FAST",
+      icon: "⚡",
+      status: fastStatus,
+      statusDetail: `WATCH ${Math.max(0, dashboardNumber(fastSummary.candidateCount) - dashboardNumber(fastSummary.readyCount))} · READY ${dashboardNumber(fastSummary.readyCount)}`,
+      checked: dashboardNumber(fastSummary.candidateCount),
+      passed: dashboardNumber(fastSummary.readyCount),
+      bought: dashboardNumber(fastSummary.todayBuyCount),
+      rejected: 0,
+      watch: Math.max(
+        0,
+        dashboardNumber(fastSummary.candidateCount) - dashboardNumber(fastSummary.readyCount)
+      ),
+      ready: dashboardNumber(fastSummary.readyCount),
+      trigger: 0,
+      topCandidates: (Array.isArray(fastSummary.candidates) ? fastSummary.candidates : [])
+        .map(row => dashboardCandidateRow(row))
+        .sort((a, b) => dashboardNumber(b.score) - dashboardNumber(a.score))
+        .slice(0, 5),
+      detailHref: "fast.html"
+    };
+
+    const candidateOverview = [
+      openCandidateOverview,
+      makeMainCandidateOverview("CORE", "CORE", "🛡️"),
+      makeMainCandidateOverview("VOLUME", "VOLUME", "📊"),
+      waveCandidateOverview,
+      fastCandidateOverview
+    ];
+
+    const mainStrategyMetrics = strategies.filter(strategy =>
+      ["OPEN", "CORE", "VOLUME"].includes(strategy.id)
+    );
+    const mainStrategyNetProfit = mainStrategyMetrics.reduce(
+      (sum, strategy) => sum + dashboardNumber(strategy.netProfit),
+      0
+    );
+    const mainAccountNetProfit = mainTotalAsset - mainInitialCapital;
+    const mainReconciliationDifference =
+      mainAccountNetProfit - mainStrategyNetProfit;
+    const mainReconciliation = {
+      accountNetProfit: mainAccountNetProfit,
+      strategyNetProfit: mainStrategyNetProfit,
+      difference: mainReconciliationDifference,
+      matched: Math.abs(mainReconciliationDifference) < 1,
+      recognizedBuyCount: mainPositionSummary.buyRecords.length,
+      recognizedSellFillCount: mainSellLogs.length,
+      recognizedClosedPositionCount: mainPositionSummary.closedPositions.length
+    };
+
+    if (!mainReconciliation.matched) {
+      console.warn(
+        `[전략성과 정합성 경고] 메인계좌 ${Math.round(mainAccountNetProfit).toLocaleString()}원 / ` +
+        `OPEN·CORE·VOLUME 합계 ${Math.round(mainStrategyNetProfit).toLocaleString()}원 / ` +
+        `차이 ${Math.round(mainReconciliationDifference).toLocaleString()}원`
+      );
+    }
+
+    const combinedInitialCapital =
+      mainInitialCapital + waveInitialCapital + fastInitialCapital;
+    const combinedCurrentAsset = mainTotalAsset + waveTotalAsset + fastTotalAsset;
+    const combinedProfit = combinedCurrentAsset - combinedInitialCapital;
+    const combinedTodayRealizedProfit = strategies.reduce(
+      (sum, strategy) => sum + dashboardNumber(strategy.todayRealizedProfit),
+      0
+    );
+
+    res.json({
+      ok: true,
+      asOf: new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }),
+      calculationNote: "OPEN·CORE·VOLUME은 매수·매도 연결기록 기준 메인계좌 손익기여, WAVE·FAST는 독립계좌 수익률",
+      mainReconciliation,
+      overall: {
+        initialCapital: combinedInitialCapital,
+        currentAsset: combinedCurrentAsset,
+        netProfit: combinedProfit,
+        profitRate: combinedInitialCapital > 0
+          ? (combinedProfit / combinedInitialCapital) * 100
+          : 0,
+        todayRealizedProfit: combinedTodayRealizedProfit,
+        holdingCount: strategies.reduce(
+          (sum, strategy) => sum + dashboardNumber(strategy.holdingCount),
+          0
+        )
+      },
+      accounts: [
+        {
+          id: "MAIN",
+          label: "OPEN·CORE·VOLUME",
+          initialCapital: mainInitialCapital,
+          currentAsset: mainTotalAsset,
+          netProfit: mainTotalAsset - mainInitialCapital
+        },
+        {
+          id: "WAVE",
+          label: "WAVE",
+          initialCapital: waveInitialCapital,
+          currentAsset: waveTotalAsset,
+          netProfit: waveTotalAsset - waveInitialCapital
+        },
+        {
+          id: "FAST",
+          label: "FAST",
+          initialCapital: fastInitialCapital,
+          currentAsset: fastTotalAsset,
+          netProfit: fastTotalAsset - fastInitialCapital
+        }
+      ],
+      strategies,
+      recentDateKeys,
+      details: {
+        holdings: unifiedHoldings,
+        candidateOverview,
+        recentSells: unifiedSells
+      }
+    });
+  } catch (error) {
+    console.error("[/api/strategy-dashboard-summary 오류]", error);
+    res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
 app.get("/api/performance-summary", (req, res) => {
   try {
     const state = loadState();
@@ -3011,15 +4218,16 @@ app.get("/api/performance-summary", (req, res) => {
       ? state.tradeLogs
       : [];
 
-    const sellLogs = tradeLogs.filter(log => REPORT_SELL_TYPES.has(log.type));
+    const rawSellLogs = tradeLogs.filter(isReportSellLog);
     const holdings = Array.isArray(state.holdings)
       ? state.holdings
       : [];
     const positionSummary = buildReportPositionSummary(
       tradeLogs,
       holdings,
-      sellLogs
+      rawSellLogs
     );
+    const sellLogs = positionSummary.resolvedSellLogs;
     const closedPositions = positionSummary.closedPositions;
     const winTrades = closedPositions.filter(
       position => Number(position.profit || 0) > 0
@@ -4125,6 +5333,13 @@ function buildOpenCandidateGrowth(day = {}, selectedCode = "") {
             ? ((Number(item.highestPrice) - Number(first.price)) / Number(first.price)) * 100
             : null,
         lastReason: item.lastReason || last.reason || "",
+        passWithoutMarketCount: Number(item.passWithoutMarketCount || 0),
+        everMarketOnlyBlocked: item.everMarketOnlyBlocked === true,
+        finalMarketOnlyBlocked: item.finalMarketOnlyBlocked === true,
+        finalDecisionWithoutMarket: item.finalDecisionWithoutMarket || "",
+        lastWithoutMarketReason: item.lastWithoutMarketReason || "",
+        lastWithoutMarketRejectCategory: item.lastWithoutMarketRejectCategory || "",
+        lastWithoutMarketRejectStage: item.lastWithoutMarketRejectStage || "",
         rejectCategory:
           item.finalRejectCategory ||
           item.lastRejectCategory ||
@@ -4432,22 +5647,42 @@ app.get("/api/open-surge-analysis", async (req, res) => {
     const minRate = Math.max(0.1, Math.min(29, Number.isFinite(requestedMinRate) ? requestedMinRate : defaultMinRate));
     const limit = Math.max(1, Math.min(50, Number(req.query.limit || 20)));
     const date = String(req.query.date || todayKstKey()).trim();
+    const hotSnapshot = readJsonFileSafe(HOT_CANDIDATES_FILE, { items: [], earlyRows: [] }) || { items: [], earlyRows: [] };
+    let rankingSource = "KIWOOM_CHANGE_RATE";
+    let rankRows = [];
 
-    const rankData = await requestKiwoomRank("ka10027", {
-      mrkt_tp: "000",
-      sort_tp: "1",
-      trde_qty_cnd: "0000",
-      stk_cnd: "4",
-      crd_cnd: "0",
-      updown_incls: "0",
-      pric_cnd: "8",
-      trde_prica_cnd: "0",
-      stex_tp: "3"
-    });
-
-    const rankRows = findFirstArrayByKeys(rankData, [
-      "pred_pre_flu_rt_upper", "items", "output"
-    ]);
+    if (phase === "OPEN_LIVE" && date === todayKstKey()) {
+      /*
+       * 09:00~09:30에는 분석화면 새로고침이 키움 순위 API를 추가 호출하지 않는다.
+       * HOT 스캐너가 이미 저장한 현재·조기 후보를 이용해 실시간 참고표만 만든다.
+       */
+      const cachedRows = [
+        ...(Array.isArray(hotApiCache.data?.items) ? hotApiCache.data.items : []),
+        ...(Array.isArray(hotSnapshot.items) ? hotSnapshot.items : []),
+        ...(Array.isArray(hotSnapshot.earlyRows) ? hotSnapshot.earlyRows : [])
+      ];
+      rankRows = Array.from(new Map(
+        cachedRows
+          .map(item => [normalizeOpenStockCode(item.code || item.stk_cd || ""), item])
+          .filter(([code]) => Boolean(code))
+      ).values());
+      rankingSource = "HOT_LOCAL_CACHE";
+    } else {
+      const rankData = await requestKiwoomRank("ka10027", {
+        mrkt_tp: "000",
+        sort_tp: "1",
+        trde_qty_cnd: "0000",
+        stk_cnd: "4",
+        crd_cnd: "0",
+        updown_incls: "0",
+        pric_cnd: "8",
+        trde_prica_cnd: "0",
+        stex_tp: "3"
+      });
+      rankRows = findFirstArrayByKeys(rankData, [
+        "pred_pre_flu_rt_upper", "items", "output"
+      ]);
+    }
 
     const leaders = rankRows
       .map(row => normalizeHotRankRow(row, "CHANGE_RATE"))
@@ -4457,7 +5692,6 @@ app.get("/api/open-surge-analysis", async (req, res) => {
       .sort((a, b) => Number(b.changeRate || 0) - Number(a.changeRate || 0))
       .slice(0, limit);
 
-    const hotSnapshot = readJsonFileSafe(HOT_CANDIDATES_FILE, { items: [] }) || { items: [] };
     const hotCodes = new Set((Array.isArray(hotSnapshot.items) ? hotSnapshot.items : [])
       .map(item => normalizeOpenStockCode(item.code || item.stk_cd || ""))
       .filter(Boolean));
@@ -4545,6 +5779,37 @@ app.get("/api/open-surge-analysis", async (req, res) => {
       return Boolean(hhmm && hhmm >= "09:00" && hhmm <= "09:30");
     }
 
+    function isAfterOpenWindow(value) {
+      const hhmm = extractKstHHMM(value);
+      return Boolean(hhmm && hhmm > "09:30");
+    }
+
+    function classifyEffectiveDecision(candidate, bought) {
+      const firstGateDecision = classifyDecision(candidate, bought);
+      if (bought || !candidate) return firstGateDecision;
+
+      if (
+        candidate.finalMarketOnlyBlocked === true ||
+        (
+          candidate.everMarketOnlyBlocked === true &&
+          Number(candidate.passWithoutMarketCount || 0) > 0
+        ) ||
+        candidate.finalDecisionWithoutMarket === "시장제외 매수가능"
+      ) {
+        return "시장만 차단";
+      }
+
+      if (
+        firstGateDecision === "시장·섹터" &&
+        candidate.lastWithoutMarketRejectCategory &&
+        candidate.lastWithoutMarketRejectCategory !== "시장·섹터"
+      ) {
+        return candidate.lastWithoutMarketRejectCategory;
+      }
+
+      return firstGateDecision;
+    }
+
     const rows = leaders.map((leader, index) => {
       const normalizedCode = normalizeOpenStockCode(leader.code);
       const candidate = growthByCode.get(normalizedCode) || null;
@@ -4553,13 +5818,15 @@ app.get("/api/open-surge-analysis", async (req, res) => {
       const hotFirstDetectedAt = hotRecord?.firstDetectedAt || null;
       const hotDetectedWithinOpenWindow = isWithinOpenWindow(hotFirstDetectedAt);
       const openFoundWithinWindow = Boolean(candidate && isWithinOpenWindow(candidate.firstSeenAt));
-      const hotDetectedAfterOpen = Boolean(
-        hotRecord && !hotDetectedWithinOpenWindow
-      );
+      const hotDetectedAfterOpen = Boolean(hotRecord && isAfterOpenWindow(hotFirstDetectedAt));
+      const openFoundAfterWindow = Boolean(candidate && isAfterOpenWindow(candidate.firstSeenAt));
+      const firstGateDecision = classifyDecision(candidate, bought);
       const decision =
-        !bought && !candidate && hotDetectedAfterOpen
+        !bought && openFoundAfterWindow
+          ? "OPEN 종료 후 발견"
+          : !bought && !candidate && hotDetectedAfterOpen
           ? "OPEN 종료 후 HOT 발견"
-          : classifyDecision(candidate, bought);
+          : classifyEffectiveDecision(candidate, bought);
       const analysisCategory = bought
         ? "실제 매수"
         : !hotRecord
@@ -4605,6 +5872,7 @@ app.get("/api/open-surge-analysis", async (req, res) => {
         hotDetectedWithinOpenWindow,
         hotDetectedAfterOpen,
         openFoundWithinWindow,
+        openFoundAfterWindow,
         openOpportunity: hotDetectedWithinOpenWindow || openFoundWithinWindow,
         everHotMatched: candidate?.everHotMatched === true,
         everDirectHotCandidate: candidate?.everDirectHotCandidate === true,
@@ -4614,6 +5882,9 @@ app.get("/api/open-surge-analysis", async (req, res) => {
         passedMomentumStage: candidate?.passedMomentumStage === true,
         hasDetailedTracking: candidate?.hasDetailedTracking === true,
         lastReason: candidate?.lastReason || "",
+        firstGateDecision,
+        withoutMarketDecision: candidate?.finalDecisionWithoutMarket || candidate?.lastWithoutMarketRejectCategory || "",
+        marketOnlyBlocked: candidate?.finalMarketOnlyBlocked === true || candidate?.everMarketOnlyBlocked === true,
         decision,
         category: analysisCategory,
         judgement: decision
@@ -4622,10 +5893,8 @@ app.get("/api/open-surge-analysis", async (req, res) => {
 
     const reasonCount = {};
     for (const row of rows) {
-      // OPEN 종료 뒤 처음 HOT에 잡힌 종목은 미포착 원인 통계에서 제외한다.
-      if (row.hotDetectedAfterOpen && !row.openFoundWithinWindow) {
-        continue;
-      }
+      // OPEN 시간 안에 실제 포착 기회가 있었던 종목만 미포착 원인에 포함한다.
+      if (!row.openOpportunity) continue;
       reasonCount[row.decision] = Number(reasonCount[row.decision] || 0) + 1;
     }
     const reasonStats = Object.entries(reasonCount)
@@ -4643,6 +5912,9 @@ app.get("/api/open-surge-analysis", async (req, res) => {
     const openWindowBoughtCount = rows.filter(row => row.openOpportunity && row.bought).length;
     const openWindowHotToOpenMissedCount = rows.filter(
       row => row.hotDetectedWithinOpenWindow && !row.openFoundWithinWindow
+    ).length;
+    const openWindowMarketOnlyBlockedCount = rows.filter(
+      row => row.openFoundWithinWindow && row.marketOnlyBlocked && !row.bought
     ).length;
     const postOpenHotCount = rows.filter(
       row => row.hotDetectedAfterOpen
@@ -4664,11 +5936,21 @@ app.get("/api/open-surge-analysis", async (req, res) => {
       }
       diagnosis.push(`${notFoundCount}개는 하루 전체 기준 OPEN 후보에 없었으며, OPEN 시간 내 판단은 위 시간구간 통계를 사용해야 합니다.`);
       diagnosis.push(`가장 많은 미포착 원인은 '${topReason}'입니다.`);
-      if (notFoundCount > foundCount) diagnosis.push("우선 개선 대상은 매수조건보다 후보 발굴 범위와 HOT 순위 유입입니다.");
-      else diagnosis.push("후보 발굴은 작동했으므로 거래량·점수·지속강도 탈락 기준을 우선 검토해야 합니다.");
-      const foundButMissed = rows.filter(row => row.openFound && !row.bought);
+      if (openWindowHotToOpenMissedCount > 0) {
+        diagnosis.push("우선 개선 대상은 OPEN 시간 내 HOT→OPEN 전달과 후보 평가 지연입니다.");
+      } else if (openWindowFoundCount > 0) {
+        diagnosis.push("OPEN 시간 내 후보 발굴·HOT 전달은 작동했으므로 실제 통과조건과 시장차단 가상성과를 우선 검토해야 합니다.");
+      } else {
+        diagnosis.push("OPEN 시간 내 포착기회가 부족해 후보 발굴 범위를 계속 관찰해야 합니다.");
+      }
+      if (openWindowMarketOnlyBlockedCount > 0) {
+        diagnosis.push(`시장조건 하나만으로 차단된 후보는 ${openWindowMarketOnlyBlockedCount}개이며, 다른 조건 탈락과 분리해 표시합니다.`);
+      }
+      const foundButMissed = rows.filter(
+        row => row.openFoundWithinWindow && !row.bought
+      );
       if (foundButMissed.length) {
-        diagnosis.push(`발견 후 놓친 급등주는 ${foundButMissed.slice(0, 3).map(row => row.name).join(", ")}입니다.`);
+        diagnosis.push(`매수시간 안에 발견 후 미매수된 급등주는 ${foundButMissed.slice(0, 3).map(row => row.name).join(", ")}입니다.`);
       }
     }
 
@@ -4676,6 +5958,7 @@ app.get("/api/open-surge-analysis", async (req, res) => {
       ok: true,
       date,
       phase,
+      rankingSource,
       phaseLabel: phase === "OPEN_LIVE" ? "OPEN 실시간" : phase === "MARKET_LIVE" ? "장중 실시간" : phase === "PREOPEN" ? "장전 대기" : "장 종료 최종",
       isFinal: phase === "FINAL",
       autoMode,
@@ -4704,6 +5987,7 @@ app.get("/api/open-surge-analysis", async (req, res) => {
         openWindowFoundCount,
         openWindowBoughtCount,
         openWindowHotToOpenMissedCount,
+        openWindowMarketOnlyBlockedCount,
         postOpenHotCount
       },
       reasonStats,
@@ -6340,4 +7624,5 @@ app.listen(PORT, () => {
   startOpenStrategy();
   startServerAutoTrader();
   startWaveStrategy();
+  startFastStrategy();
 });

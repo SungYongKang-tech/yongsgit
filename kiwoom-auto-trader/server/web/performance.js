@@ -15,6 +15,331 @@ function formatWon(value) {
       return sign + num.toFixed(2) + "%";
     }
 
+    function formatCompactWon(value) {
+      const num = Number(value || 0);
+      const sign = num > 0 ? "+" : num < 0 ? "-" : "";
+      const absolute = Math.abs(num);
+      if (absolute >= 100000000) return `${sign}${(absolute / 100000000).toFixed(2)}억`;
+      if (absolute >= 10000) return `${sign}${Math.round(absolute / 10000).toLocaleString()}만`;
+      return `${sign}${Math.round(absolute).toLocaleString()}`;
+    }
+
+    function dashboardProfitClass(value) {
+      const number = Number(value || 0);
+      return number > 0 ? "plus" : number < 0 ? "minus" : "";
+    }
+
+    function buildStrategySparkline(rows = [], netProfit = 0) {
+      const values = Array.isArray(rows)
+        ? rows.map(row => Number(row.profit || 0))
+        : [];
+      while (values.length < 7) values.unshift(0);
+      const displayValues = values.slice(-7);
+      const width = 210;
+      const height = 42;
+      const padding = 4;
+      const centerY = height / 2;
+      const maxAbs = Math.max(1, ...displayValues.map(value => Math.abs(value)));
+      const points = displayValues.map((value, index) => {
+        const x = padding + (index * (width - padding * 2)) / Math.max(1, displayValues.length - 1);
+        const y = centerY - (value / maxAbs) * (centerY - padding);
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      }).join(" ");
+      const color = Number(netProfit || 0) > 0
+        ? "#4ade80"
+        : Number(netProfit || 0) < 0
+          ? "#f87171"
+          : "#94a3b8";
+
+      return `
+        <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="최근 7일 실현손익 흐름">
+          <line x1="${padding}" y1="${centerY}" x2="${width - padding}" y2="${centerY}" class="strategy-spark-base"></line>
+          <polyline points="${points}" class="strategy-spark-line" style="stroke:${color}"></polyline>
+        </svg>`;
+    }
+
+    function renderStrategyFlowTable(strategies = [], dateKeys = []) {
+      const box = document.getElementById("strategyFlowTable");
+      if (!box) return;
+      if (!Array.isArray(strategies) || !strategies.length) {
+        box.innerHTML = '<div class="empty">전략별 거래자료가 없습니다.</div>';
+        return;
+      }
+
+      const dates = Array.isArray(dateKeys) && dateKeys.length
+        ? dateKeys
+        : strategies[0]?.recent7Days?.map(row => row.date) || [];
+      const header = dates.map(date => {
+        const parts = String(date).split("-");
+        return `<th>${Number(parts[1] || 0)}/${Number(parts[2] || 0)}</th>`;
+      }).join("");
+      const rows = strategies.map(strategy => {
+        const profitMap = new Map(
+          (strategy.recent7Days || []).map(row => [String(row.date), Number(row.profit || 0)])
+        );
+        const cells = dates.map(date => {
+          const profit = Number(profitMap.get(String(date)) || 0);
+          return `<td class="${dashboardProfitClass(profit)}">${formatCompactWon(profit)}</td>`;
+        }).join("");
+        return `<tr><td><b>${escapeHtml(strategy.icon || "")} ${escapeHtml(strategy.label || strategy.id)}</b></td>${cells}</tr>`;
+      }).join("");
+
+      box.innerHTML = `
+        <table class="strategy-flow-table">
+          <thead><tr><th>전략</th>${header}</tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+    }
+
+    let latestStrategyDashboardData = null;
+    const unifiedDashboardFilters = {
+      holdings: "ALL",
+      candidates: "ALL",
+      sells: "ALL"
+    };
+
+    function setUnifiedDashboardFilter(type, value, button) {
+      if (!Object.prototype.hasOwnProperty.call(unifiedDashboardFilters, type)) return;
+      unifiedDashboardFilters[type] = String(value || "ALL").toUpperCase();
+      const group = button?.closest?.(`[data-filter-group="${type}"]`);
+      group?.querySelectorAll?.(".unified-filter-btn").forEach(item => {
+        item.classList.toggle("active", item === button);
+      });
+      renderUnifiedDashboardDetails(latestStrategyDashboardData || {});
+    }
+
+    function matchesUnifiedFilter(item, type) {
+      const filter = unifiedDashboardFilters[type] || "ALL";
+      return filter === "ALL" || String(item.strategyGroup || item.id || "").toUpperCase() === filter;
+    }
+
+    function renderUnifiedHoldings(details = {}) {
+      const box = document.getElementById("unifiedHoldingBox");
+      if (!box) return;
+      const rows = (Array.isArray(details.holdings) ? details.holdings : [])
+        .filter(item => matchesUnifiedFilter(item, "holdings"));
+      if (!rows.length) {
+        box.className = "empty";
+        box.innerHTML = unifiedDashboardFilters.holdings === "ALL"
+          ? "현재 전체 전략 보유종목이 없습니다."
+          : `${escapeHtml(unifiedDashboardFilters.holdings)} 보유종목이 없습니다.`;
+        return;
+      }
+
+      box.className = "unified-holding-grid";
+      box.innerHTML = rows.map(item => {
+        const profitClass = dashboardProfitClass(item.profit);
+        const code = String(item.code || "");
+        const button = item.manualSellAllowed
+          ? `<button type="button" class="unified-manual-sell" data-manual-sell="true" data-code="${escapeHtml(code)}" data-name="${escapeHtml(item.name || code)}" data-qty="${Number(item.qty || 0)}">메인계좌 모의매도</button>`
+          : `<div class="unified-auto-note">${escapeHtml(item.strategyGroup)} 전략에서 자동 청산관리 중</div>`;
+        return `
+          <article class="unified-holding-card ${escapeHtml(item.strategyGroup)}">
+            <div class="unified-card-head">
+              <div><div class="unified-card-name">${escapeHtml(item.name || code)}</div><div class="unified-card-sub">${escapeHtml(code)} · ${escapeHtml(item.accountLabel || "")}</div></div>
+              <div class="unified-strategy-badge">${escapeHtml(item.strategyGroup)} · ${escapeHtml(item.status || "HOLD")}</div>
+            </div>
+            <div class="unified-profit-main ${profitClass}">${formatWon(item.profit)} <span style="font-size:13px">${formatRate(item.profitRate)}</span></div>
+            <div class="unified-profit-sub">매수 ${formatPlainWon(item.buyPrice)} → 현재 ${formatPlainWon(item.currentPrice)}</div>
+            <div class="unified-info-grid">
+              <div class="unified-info-item"><div class="unified-info-label">수량</div><div class="unified-info-value">${Number(item.qty || 0).toLocaleString()}주</div></div>
+              <div class="unified-info-item"><div class="unified-info-label">평가금액</div><div class="unified-info-value">${formatCompactWon(item.evalAmount)}원</div></div>
+              <div class="unified-info-item"><div class="unified-info-label">최고수익</div><div class="unified-info-value ${dashboardProfitClass(item.maxProfitRate)}">${formatRate(item.maxProfitRate)}</div></div>
+              <div class="unified-info-item"><div class="unified-info-label">고점대비</div><div class="unified-info-value ${dashboardProfitClass(item.drawdownFromHigh)}">${formatRate(item.drawdownFromHigh)}</div></div>
+              <div class="unified-info-item"><div class="unified-info-label">매수점수</div><div class="unified-info-value">${Number(item.score || 0).toFixed(0)}점</div></div>
+              <div class="unified-info-item"><div class="unified-info-label">매수시각</div><div class="unified-info-value">${escapeHtml(formatKstBuyTime(item.buyAtMs || item.buyAt, item.buyAt))}</div></div>
+            </div>
+            ${button}
+          </article>`;
+      }).join("");
+
+      box.querySelectorAll('[data-manual-sell="true"]').forEach(button => {
+        button.addEventListener("click", () => manualSellHolding(
+          button.dataset.code,
+          button.dataset.name,
+          Number(button.dataset.qty || 0)
+        ));
+      });
+    }
+
+    function renderUnifiedCandidates(details = {}) {
+      const box = document.getElementById("unifiedCandidateBox");
+      if (!box) return;
+      const rows = (Array.isArray(details.candidateOverview) ? details.candidateOverview : [])
+        .filter(item => matchesUnifiedFilter(item, "candidates"));
+      if (!rows.length) {
+        box.className = "empty";
+        box.innerHTML = "선택한 전략의 후보자료가 없습니다.";
+        return;
+      }
+      box.className = "unified-detail-grid";
+      box.innerHTML = rows.map(item => {
+        const candidates = Array.isArray(item.topCandidates) ? item.topCandidates : [];
+        const candidateRows = candidates.length
+          ? candidates.slice(0, 5).map((candidate, index) => `
+              <div class="candidate-top-row">
+                <b>${index + 1}. ${escapeHtml(candidate.name || candidate.code)}</b>
+                <span>${Number(candidate.score || 0).toFixed(0)}점</span>
+                <span class="${dashboardProfitClass(candidate.changeRate)}">${formatRate(candidate.changeRate)}</span>
+                <div class="candidate-top-reason">${escapeHtml(candidate.status || "WATCH")} · ${escapeHtml(candidate.reason || "관찰 중")}</div>
+              </div>`).join("")
+          : '<div class="unified-auto-note">현재 상위 후보자료가 없습니다.</div>';
+        const detailLink = item.detailHref
+          ? `<a class="candidate-detail-link" href="${escapeHtml(item.detailHref)}">${escapeHtml(item.label)} 상세화면 열기</a>`
+          : "";
+        return `
+          <article class="unified-candidate-card ${escapeHtml(item.id)}">
+            <div class="unified-card-head">
+              <div><div class="unified-card-name">${escapeHtml(item.icon)} ${escapeHtml(item.label)}</div><div class="unified-card-sub">${escapeHtml(item.statusDetail || "후보자료 정상")}</div></div>
+              <div class="unified-strategy-badge">${escapeHtml(item.status || "대기")}</div>
+            </div>
+            <div class="candidate-count-grid">
+              <div class="candidate-count-item"><span>검토</span><b>${Number(item.checked || 0)}</b></div>
+              <div class="candidate-count-item"><span>관찰</span><b>${Number(item.watch || 0)}</b></div>
+              <div class="candidate-count-item"><span>통과</span><b>${Number(item.passed || 0)}</b></div>
+              <div class="candidate-count-item"><span>매수</span><b>${Number(item.bought || 0)}</b></div>
+            </div>
+            <div class="candidate-top-list">${candidateRows}</div>
+            ${detailLink}
+          </article>`;
+      }).join("");
+    }
+
+    function renderUnifiedStats(strategies = []) {
+      const box = document.getElementById("unifiedStatsBox");
+      if (!box) return;
+      if (!Array.isArray(strategies) || !strategies.length) {
+        box.innerHTML = '<div class="empty">전략 통계가 없습니다.</div>';
+        return;
+      }
+      box.innerHTML = `
+        <table class="unified-stats-table">
+          <thead><tr><th>전략</th><th>현재자산</th><th>순손익</th><th>수익률</th><th>실현</th><th>평가</th><th>보유</th><th>매수/청산</th><th>승/패</th><th>승률</th><th>평균수익률</th></tr></thead>
+          <tbody>${strategies.map(item => `
+            <tr>
+              <td><b>${escapeHtml(item.icon)} ${escapeHtml(item.label)}</b><span class="unified-stats-account">${escapeHtml(item.accountLabel || "")}</span></td>
+              <td>${item.totalAsset === null || item.totalAsset === undefined ? "공유계좌" : formatPlainWon(item.totalAsset)}</td>
+              <td class="${dashboardProfitClass(item.netProfit)}"><b>${formatWon(item.netProfit)}</b></td>
+              <td class="${dashboardProfitClass(item.profitRate)}">${formatRate(item.profitRate)}</td>
+              <td class="${dashboardProfitClass(item.realizedProfit)}">${formatWon(item.realizedProfit)}</td>
+              <td class="${dashboardProfitClass(item.unrealizedProfit)}">${formatWon(item.unrealizedProfit)}</td>
+              <td>${Number(item.holdingCount || 0)}종목</td>
+              <td>${Number(item.totalBuyCount || 0)} / ${Number(item.totalSellCount || 0)}</td>
+              <td>${Number(item.wins || 0)} / ${Number(item.losses || 0)}</td>
+              <td>${Number(item.winRate || 0).toFixed(1)}%</td>
+              <td class="${dashboardProfitClass(item.avgProfitRate)}">${formatRate(item.avgProfitRate)}</td>
+            </tr>`).join("")}</tbody>
+        </table>`;
+    }
+
+    function renderUnifiedSells(details = {}) {
+      const box = document.getElementById("unifiedRecentSellsBox");
+      if (!box) return;
+      const rows = (Array.isArray(details.recentSells) ? details.recentSells : [])
+        .filter(item => matchesUnifiedFilter(item, "sells"));
+      if (!rows.length) {
+        box.className = "empty";
+        box.innerHTML = "선택한 전략의 매도내역이 없습니다.";
+        return;
+      }
+      box.className = "unified-sell-list";
+      box.innerHTML = rows.map(item => `
+        <article class="unified-sell-card ${escapeHtml(item.strategyGroup)}">
+          <div class="unified-card-head">
+            <div><div class="unified-card-name">${escapeHtml(item.name || item.code)}</div><div class="unified-card-sub">${escapeHtml(item.code)} · ${escapeHtml(item.date || "")} ${escapeHtml(item.time || "")}</div></div>
+            <div class="unified-strategy-badge">${escapeHtml(item.strategyGroup)} · ${escapeHtml(String(item.type || "SELL").replace(`${item.strategyGroup}_`, ""))}</div>
+          </div>
+          <div class="unified-profit-main ${dashboardProfitClass(item.profit)}">${formatWon(item.profit)} <span style="font-size:13px">${formatRate(item.profitRate)}</span></div>
+          <div class="unified-info-grid">
+            <div class="unified-info-item"><div class="unified-info-label">매도가</div><div class="unified-info-value">${formatPlainWon(item.price)}</div></div>
+            <div class="unified-info-item"><div class="unified-info-label">수량</div><div class="unified-info-value">${Number(item.qty || 0).toLocaleString()}주</div></div>
+            <div class="unified-info-item"><div class="unified-info-label">최고수익</div><div class="unified-info-value ${dashboardProfitClass(item.maxProfitRate)}">${formatRate(item.maxProfitRate)}</div></div>
+          </div>
+          <div class="unified-sell-reason">${escapeHtml(item.reason || "매도조건 충족")}</div>
+        </article>`).join("");
+    }
+
+    function renderUnifiedDashboardDetails(data = {}) {
+      const details = data.details || {};
+      renderUnifiedHoldings(details);
+      renderUnifiedCandidates(details);
+      renderUnifiedStats(Array.isArray(data.strategies) ? data.strategies : []);
+      renderUnifiedSells(details);
+    }
+
+    function renderStrategyDashboard(data = {}) {
+      latestStrategyDashboardData = data;
+      const overall = data.overall || {};
+      const strategies = Array.isArray(data.strategies) ? data.strategies : [];
+      const accounts = Array.isArray(data.accounts) ? data.accounts : [];
+
+      setValue("combinedCurrentAsset", formatPlainWon(overall.currentAsset));
+      setValue("combinedNetProfit", formatWon(overall.netProfit), "money");
+      setValue("combinedProfitRate", formatRate(overall.profitRate), "rate");
+      setValue("combinedTodayRealized", formatWon(overall.todayRealizedProfit), "money");
+      setValue("combinedHoldingCount", `${Number(overall.holdingCount || 0)}종목`);
+
+      const note = document.getElementById("strategyCalculationNote");
+      if (note) note.textContent = data.calculationNote || "전략별 통합성과";
+
+      const accountBox = document.getElementById("accountSummaryRow");
+      if (accountBox) {
+        accountBox.innerHTML = accounts.map(account => `
+          <div class="account-summary-item">
+            <span>${escapeHtml(account.label || account.id)} · ${formatPlainWon(account.initialCapital)}</span>
+            <b class="${dashboardProfitClass(account.netProfit)}">${formatWon(account.netProfit)}</b>
+          </div>`).join("") || '<div class="account-summary-item"><span>계좌자료 없음</span><b>-</b></div>';
+      }
+
+      const grid = document.getElementById("strategyPerformanceGrid");
+      if (grid) {
+        grid.innerHTML = strategies.map(strategy => {
+          const tag = strategy.detailHref ? "a" : "article";
+          const href = strategy.detailHref
+            ? ` href="${escapeHtml(strategy.detailHref)}"`
+            : "";
+          const netClass = dashboardProfitClass(strategy.netProfit);
+          const rateClass = dashboardProfitClass(strategy.profitRate);
+          return `
+            <${tag}${href} class="strategy-performance-card ${escapeHtml(strategy.id)}">
+              <div class="strategy-card-head">
+                <div><div class="strategy-card-title">${escapeHtml(strategy.icon)} ${escapeHtml(strategy.label)}</div><div class="strategy-account-label">${escapeHtml(strategy.accountLabel || "")}</div></div>
+                <div class="strategy-status" title="${escapeHtml(strategy.statusDetail || "")}">${escapeHtml(strategy.status || "대기")}</div>
+              </div>
+              <div class="strategy-net-label">누적 순손익</div>
+              <div class="strategy-net-profit ${netClass}">${formatWon(strategy.netProfit)}</div>
+              <div class="strategy-rate-row"><span>${escapeHtml(strategy.rateLabel || "수익률")}</span><b class="${rateClass}">${formatRate(strategy.profitRate)}</b></div>
+              <div class="strategy-mini-grid">
+                <div class="strategy-mini-item"><div class="strategy-mini-label">실현 / 평가</div><div class="strategy-mini-value"><span class="${dashboardProfitClass(strategy.realizedProfit)}">${formatCompactWon(strategy.realizedProfit)}</span> / <span class="${dashboardProfitClass(strategy.unrealizedProfit)}">${formatCompactWon(strategy.unrealizedProfit)}</span></div></div>
+                <div class="strategy-mini-item"><div class="strategy-mini-label">보유 / 오늘 매수</div><div class="strategy-mini-value">${Number(strategy.holdingCount || 0)}종목 / ${Number(strategy.todayBuyCount || 0)}회</div></div>
+                <div class="strategy-mini-item"><div class="strategy-mini-label">승 / 패</div><div class="strategy-mini-value">${Number(strategy.wins || 0)}승 / ${Number(strategy.losses || 0)}패</div></div>
+                <div class="strategy-mini-item"><div class="strategy-mini-label">승률 / 평균</div><div class="strategy-mini-value">${Number(strategy.winRate || 0).toFixed(0)}% / ${formatRate(strategy.avgProfitRate)}</div></div>
+              </div>
+              <div class="strategy-sparkline">${buildStrategySparkline(strategy.recent7Days, strategy.netProfit)}</div>
+              <div class="strategy-card-detail" title="${escapeHtml(strategy.statusDetail || "")}">${escapeHtml(strategy.statusDetail || "성과자료 정상")}${strategy.detailHref ? " · 상세보기" : ""}</div>
+            </${tag}>`;
+        }).join("") || '<div class="dashboard-data-error">전략성과 데이터가 없습니다.</div>';
+      }
+
+      renderStrategyFlowTable(strategies, data.recentDateKeys || []);
+      renderUnifiedDashboardDetails(data);
+    }
+
+    async function loadStrategyDashboardSummary() {
+      try {
+        const response = await fetch("/api/strategy-dashboard-summary", { cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok || data.ok === false) {
+          throw new Error(data.message || `HTTP ${response.status}`);
+        }
+        renderStrategyDashboard(data);
+      } catch (error) {
+        console.error("전략 통합성과 조회 오류", error);
+        const grid = document.getElementById("strategyPerformanceGrid");
+        if (grid) grid.innerHTML = `<div class="dashboard-data-error">전략 통합성과를 불러오지 못했습니다. · ${escapeHtml(error.message)}</div>`;
+      }
+    }
+
     function strategyLabel(group) {
   const normalized = normalizeStrategyGroup(group);
 
@@ -1066,7 +1391,10 @@ async function refreshMissedWinners() {
           `${formatRate(data.profitRate || 0)})`
         );
 
-        await loadPerformanceSummary();
+        await Promise.all([
+          loadStrategyDashboardSummary(),
+          loadPerformanceSummary()
+        ]);
       } catch (error) {
         console.error("수동 매도 오류", error);
         alert(error.message || "수동 매도 중 오류가 발생했습니다.");
@@ -1634,6 +1962,7 @@ const openHotDurationSeconds = Number(item.hotDurationSeconds || openDiagnostic.
 
     function renderRecentSells(list) {
       const box = document.getElementById("recentSellsBox");
+      if (!box) return;
 
       if (!Array.isArray(list) || list.length === 0) {
         box.className = "empty";
@@ -2284,8 +2613,8 @@ setMarketTemperature(mt);
       }
     }
 
+    loadStrategyDashboardSummary();
     loadPerformanceSummary();
-    loadOpenLiveStatus();
     loadMissedWinnersAnalysis();
+    setInterval(loadStrategyDashboardSummary, 30000);
     setInterval(loadPerformanceSummary, 30000);
-    setInterval(loadOpenLiveStatus, 10000);

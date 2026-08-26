@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>FAST 모의매수</title>
+  <style>
+    :root{color-scheme:dark;--bg:#080d18;--panel:#111827;--line:#263247;--muted:#94a3b8;--text:#f8fafc;--red:#ef4444;--green:#22c55e;--yellow:#facc15;--blue:#60a5fa}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 85% 0,#31101b 0,transparent 30%),var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Noto Sans KR",sans-serif}
+    button{border:0;border-radius:9px;padding:9px 12px;background:#334155;color:white;font-weight:800;cursor:pointer}button:hover{filter:brightness(1.12)}button:disabled{opacity:.55;cursor:wait}
+    .wrap{max-width:1180px;margin:auto;padding:16px}.head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}.title{display:flex;align-items:center;gap:10px}.title h1{font-size:22px;margin:0}.badge{font-size:11px;color:#fecaca;background:#7f1d1d;border:1px solid #b91c1c;border-radius:999px;padding:4px 8px}.actions{display:flex;gap:7px}.run{background:#dc2626}.reset{background:#7f1d1d}.status{font-size:12px;color:var(--muted);margin-bottom:12px}
+    .grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}.metric,.card{background:rgba(17,24,39,.93);border:1px solid var(--line);border-radius:14px}.metric{padding:12px;text-align:center}.label{font-size:11px;color:var(--muted);margin-bottom:5px}.value{font-size:18px;font-weight:900}.positive{color:#4ade80}.negative{color:#f87171}.warn{color:var(--yellow)}
+    .card{padding:14px;margin-top:11px}.card h2{font-size:16px;margin:0 0 11px}.settings{display:grid;grid-template-columns:repeat(6,1fr);gap:7px}.setting{background:#0b1220;border-radius:10px;padding:9px}.setting b{display:block;margin-top:4px;font-size:14px}.note{color:#cbd5e1;font-size:12px;line-height:1.55;margin-top:9px}
+    table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:9px 7px;border-bottom:1px solid #243044;text-align:right;white-space:nowrap}th{color:#94a3b8;font-weight:700}th:first-child,td:first-child{text-align:left}.scroll{overflow:auto}.name{font-weight:900;color:#f8fafc}.sub{font-size:10px;color:#94a3b8;margin-top:2px}.pill{display:inline-block;border-radius:999px;padding:3px 7px;font-size:10px;font-weight:900}.ready{background:#14532d;color:#bbf7d0}.watch{background:#1e3a8a;color:#bfdbfe}.block{background:#7f1d1d;color:#fecaca}.empty{text-align:center;color:#64748b;padding:22px}.reason{min-width:230px;max-width:360px;white-space:normal;text-align:left;line-height:1.35}.reason-main{color:#e2e8f0}.reason-more{color:#94a3b8;font-size:10px;margin-top:3px}.enriched{color:#67e8f9}.split{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,.65fr);gap:11px}.market{display:flex;justify-content:space-between;align-items:center;gap:10px;background:#0b1220;border-radius:10px;padding:10px;margin-bottom:10px}.market strong{font-size:17px}.foot{color:#64748b;font-size:11px;text-align:center;padding:18px 0}
+    @media(max-width:900px){.grid{grid-template-columns:repeat(3,1fr)}.settings{grid-template-columns:repeat(3,1fr)}.split{grid-template-columns:1fr}}
+    @media(max-width:560px){.wrap{padding:10px}.head{align-items:flex-start;flex-wrap:wrap}.actions{width:100%;display:grid;grid-template-columns:repeat(3,1fr)}.grid{grid-template-columns:repeat(2,1fr)}.settings{grid-template-columns:repeat(2,1fr)}.metric{padding:10px 5px}.value{font-size:15px}}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header class="head">
+      <div class="title"><h1>⚡ FAST 모의매수</h1><span class="badge">초기급등 전용</span></div>
+      <div class="actions">
+        <button onclick="location.href='performance.html'">대시보드</button>
+        <button id="runButton" class="run" onclick="runOnce()">지금 평가</button>
+        <button id="resetButton" class="reset" onclick="resetFast()">계좌 초기화</button>
+      </div>
+    </header>
+    <div id="status" class="status">FAST 상태를 불러오는 중...</div>
+
+    <section class="grid">
+      <div class="metric"><div class="label">FAST 자산</div><div id="totalAsset" class="value">-</div></div>
+      <div class="metric"><div class="label">현금</div><div id="cash" class="value">-</div></div>
+      <div class="metric"><div class="label">실현손익</div><div id="realized" class="value">-</div></div>
+      <div class="metric"><div class="label">보유손익</div><div id="unrealized" class="value">-</div></div>
+      <div class="metric"><div class="label">보유</div><div id="holdingCount" class="value">-</div></div>
+      <div class="metric"><div class="label">오늘 매수</div><div id="buyCount" class="value">-</div></div>
+    </section>
+
+    <section class="card">
+      <h2>운영 설정</h2>
+      <div class="settings">
+        <div class="setting"><span class="label">초기금액</span><b id="initialCapital">-</b></div>
+        <div class="setting"><span class="label">종목당 20%</span><b id="positionAmount">-</b></div>
+        <div class="setting"><span class="label">최대 보유</span><b id="maxHolding">-</b></div>
+        <div class="setting"><span class="label">일일 매수</span><b id="maxDailyBuy">-</b></div>
+        <div class="setting"><span class="label">매수 시간</span><b id="buyWindow">-</b></div>
+        <div class="setting"><span class="label">시장 방어</span><b id="marketPolicy">-</b></div>
+      </div>
+      <p class="note">FAST는 기존 CORE·VOLUME·OPEN·WAVE와 별도인 모의계좌입니다. 종목당 매일 최초 총자산의 20%씩 최대 5종목을 매수합니다. 시장 15점 미만은 절대차단합니다. 약세장에서는 기존 엄격경로 외에 1.5~8% 초기돌파 경로와 7~18% 후기지속 경로를 운영하며, 두 경로 모두 교차순위·거래대금·지속성·실시간 당일위치를 재확인한 뒤에만 매수합니다.</p>
+    </section>
+
+    <section class="card">
+      <h2>현재 보유종목</h2>
+      <div class="scroll"><table><thead><tr><th>종목</th><th>매수가</th><th>현재가</th><th>수량</th><th>매수금액</th><th>수익률</th><th>최고</th></tr></thead><tbody id="holdings"></tbody></table></div>
+    </section>
+
+    <section class="split">
+      <div class="card">
+        <h2>FAST 상위 후보</h2>
+        <div class="market"><span>장전 시장</span><strong id="marketScore">-</strong></div>
+        <div class="scroll"><table><thead><tr><th>종목</th><th>상태</th><th>FAST</th><th>상승</th><th>거래량</th><th>당일위치</th><th>HOT</th><th>관찰</th><th>판단</th></tr></thead><tbody id="candidates"></tbody></table></div>
+      </div>
+      <div class="card">
+        <h2>최근 FAST 거래</h2>
+        <div class="scroll"><table><thead><tr><th>종목</th><th>구분</th><th>가격</th><th>수량</th><th>손익</th><th>시간</th></tr></thead><tbody id="trades"></tbody></table></div>
+      </div>
+    </section>
+    <div class="foot">3초 자동갱신 · 실제 주문이 아닌 독립 모의매매</div>
+  </main>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const won = value => `${Math.round(Number(value || 0)).toLocaleString('ko-KR')}원`;
+    const pct = value => `${Number(value || 0) >= 0 ? '+' : ''}${Number(value || 0).toFixed(2)}%`;
+    const safe = value => String(value ?? '').replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+    const colorClass = value => Number(value || 0) > 0 ? 'positive' : Number(value || 0) < 0 ? 'negative' : '';
+    const statusClass = value => value === 'READY' ? 'ready' : value === 'BLOCK' ? 'block' : 'watch';
+
+    function emptyRow(columns, message) {
+      return `<tr><td class="empty" colspan="${columns}">${safe(message)}</td></tr>`;
+    }
+
+    function render(data) {
+      $('totalAsset').textContent = won(data.totalAsset);
+      $('cash').textContent = won(data.cash);
+      $('realized').textContent = won(data.realizedProfit);
+      $('realized').className = `value ${colorClass(data.realizedProfit)}`;
+      $('unrealized').textContent = won(data.unrealizedProfit);
+      $('unrealized').className = `value ${colorClass(data.unrealizedProfit)}`;
+      $('holdingCount').textContent = `${Number(data.holdingCount || 0)} / ${Number(data.maxHoldingCount || 5)}종목`;
+      $('buyCount').textContent = `${Number(data.todayBuyCount || 0)} / ${Number(data.maxDailyBuyCount || 5)}회`;
+      $('initialCapital').textContent = won(data.initialCapital);
+      $('positionAmount').textContent = `${won(data.positionAmount)} · ${Number(data.positionRatio || 0) * 100}%`;
+      $('maxHolding').textContent = `${Number(data.maxHoldingCount || 0)}종목`;
+      $('maxDailyBuy').textContent = `${Number(data.maxDailyBuyCount || 0)}회`;
+      $('buyWindow').textContent = `${data.buyStartTime || '-'} ~ ${data.buyEndTime || '-'}`;
+      $('marketPolicy').textContent = `<${Number(data.absoluteMarketBlockScore || 15)} 차단 · 약세장 개별주 확인`;
+      $('marketScore').textContent = data.market?.available ? `${Number(data.market.score || 0).toFixed(1)}점 · ${safe(data.market.type || '')}` : '자료 대기';
+      $('status').textContent = `${data.lastRunAt || data.updatedAt || '-'} · ${data.lastRunReason || '평가 대기'} · READY ${Number(data.readyCount || 0)} / 후보 ${Number(data.candidateCount || 0)}`;
+
+      const holdings = Array.isArray(data.holdings) ? data.holdings : [];
+      $('holdings').innerHTML = holdings.length ? holdings.map(item => `
+        <tr>
+          <td><div class="name">${safe(item.name || item.code)}</div><div class="sub">${safe(item.code)} · ${safe(item.buyAt || '')}</div></td>
+          <td>${won(item.buyPrice)}</td><td>${won(item.currentPrice || item.buyPrice)}</td><td>${Number(item.qty || 0).toLocaleString('ko-KR')}주</td>
+          <td>${won(item.buyAmount)}</td><td class="${colorClass(item.profitRate)}"><b>${pct(item.profitRate)}</b></td><td>${pct(item.maxProfitRate)}</td>
+        </tr>`).join('') : emptyRow(7, '현재 FAST 보유종목이 없습니다.');
+
+      const candidates = Array.isArray(data.candidates) ? data.candidates.slice(0, 15) : [];
+      $('candidates').innerHTML = candidates.length ? candidates.map(item => {
+        const ev = item.evaluation || {};
+        const mainReason = item.reason || ev.reason || '-';
+        const moreReason = item.secondaryReason || ev.secondaryReason || '';
+        const trackLabel = ev.entryTrack === 'EARLY_BREAKOUT' ? '초기돌파' : ev.entryTrack === 'LATE_CONTINUATION' ? '후기지속' : '엄격경로';
+        const enriched = ev.realtimeEnriched ? '<div class="sub enriched">실시간 상세시세 보완</div>' : '';
+        return `<tr>
+          <td><div class="name">${safe(item.name || item.code)}</div><div class="sub">${safe(item.code)} · ${trackLabel}</div>${enriched}</td>
+          <td><span class="pill ${statusClass(item.status)}">${safe(item.status || 'WATCH')}</span></td>
+          <td><b>${Number(item.fastScore || 0).toFixed(1)}</b></td><td>${pct(ev.changeRate)}</td><td>${Number(ev.volumeRatio || 0).toFixed(0)}%</td>
+          <td>${Number(ev.dayPosition || 0).toFixed(0)}%</td><td>${Number(ev.hotScore || 0).toFixed(1)}</td><td>${Number(ev.sampleCount || 0)}회</td>
+          <td class="reason" title="${safe(item.diagnosticReason || ev.diagnosticReason || mainReason)}"><div class="reason-main">${safe(mainReason)}</div>${moreReason ? `<div class="reason-more">추가 · ${safe(moreReason)}</div>` : ''}</td>
+        </tr>`;
+      }).join('') : emptyRow(9, 'HOT 관찰자료를 기다리고 있습니다.');
+
+      const trades = Array.isArray(data.recentTrades) ? data.recentTrades.slice(0, 15) : [];
+      $('trades').innerHTML = trades.length ? trades.map(item => `
+        <tr><td><div class="name">${safe(item.name || item.code)}</div><div class="sub">${safe(item.code)}</div></td>
+        <td><span class="pill ${String(item.type || '').includes('BUY') ? 'ready' : 'watch'}">${safe(String(item.type || '').replace('FAST_', ''))}</span></td>
+        <td>${won(item.price)}</td><td>${Number(item.qty || 0).toLocaleString('ko-KR')}주</td>
+        <td class="${colorClass(item.profit)}">${String(item.type || '').includes('SELL') ? won(item.profit) : '-'}</td><td>${safe(item.time || '-')}</td></tr>`).join('') : emptyRow(6, '아직 FAST 거래가 없습니다.');
+    }
+
+    async function loadSummary() {
+      try {
+        const response = await fetch('/api/fast-summary', { cache: 'no-store' });
+        const data = await response.json();
+        if (!response.ok || data.ok === false) throw new Error(data.message || `HTTP ${response.status}`);
+        render(data);
+      } catch (error) {
+        $('status').textContent = `FAST 상태 조회 실패 · ${error.message}`;
+      }
+    }
+
+    async function requestAction(url, button, pendingText) {
+      const previous = button.textContent;
+      button.disabled = true;
+      button.textContent = pendingText;
+      try {
+        const response = await fetch(url, { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok || data.ok === false) throw new Error(data.message || `HTTP ${response.status}`);
+        if (data.summary) render(data.summary);
+        else await loadSummary();
+      } catch (error) {
+        alert(error.message);
+      } finally {
+        button.disabled = false;
+        button.textContent = previous;
+      }
+    }
+
+    function runOnce() { return requestAction('/api/fast-run-once', $('runButton'), '평가 중...'); }
+    function resetFast() {
+      if (!confirm('FAST 모의계좌의 보유·거래·후보 이력을 모두 지우고 5천만원으로 초기화할까요?\n다른 전략 계좌에는 영향이 없습니다.')) return;
+      return requestAction('/api/fast-reset', $('resetButton'), '초기화 중...');
+    }
+
+    loadSummary();
+    setInterval(loadSummary, 3000);
+  </script>
+</body>
+</html>

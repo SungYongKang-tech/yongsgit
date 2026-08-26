@@ -12,12 +12,12 @@ const settings = {
   endTime: "13:30",
   earlyScanLoopMs: 5 * 1000,
   normalScanLoopMs: 15 * 1000,
-  maxCandidates: 40,
+  maxCandidates: 50,
   // 최종 HOT 조건에 도달하기 전 상승 초기 후보도 별도로 보존한다.
   earlyCandidateEnabled: true,
-  earlyCandidateMaxCount: 30,
+  earlyCandidateMaxCount: 40,
   earlyMinChangeRate: 1.5,
-  earlyMaxChangeRate: 7.0,
+  earlyMaxChangeRate: 8.0,
   earlyMinTradeVolumeRatio: 75,
   earlyMinDayPositionRate: 55,
   earlyMinMomentumSamples: 2,
@@ -33,10 +33,11 @@ const settings = {
   errorBackoffMaxMs: 60 * 1000,
 
   // HOT에서 5분 이상 사라졌다가 다시 나타나면 새로운 상승 에피소드로 본다.
+  // 단, 당일 최초발견 시각·스냅샷은 에피소드가 바뀌어도 절대 덮어쓰지 않는다.
   historyEpisodeResetMs: 5 * 60 * 1000,
 
-  // OPEN 전용: 최근 60초 표본으로 상승 지속성을 계산한다.
-  openMomentumWindowMs: 60 * 1000,
+  // FAST와 같은 150초 창으로 순위 API의 15~30초 갱신 간격에서도 4회 관찰이 가능하게 한다.
+  openMomentumWindowMs: 150 * 1000,
   openMomentumMinSamples: 3,
 
   // 같은 업종에서 여러 종목이 동시에 강할 때 후보순위에만 소폭 가산한다.
@@ -46,7 +47,12 @@ const settings = {
   sectorBreadthMinChangeRate: 1.5,
   sectorBreadthMinVolumeRatio: 110,
   sectorBreadthMinDayPosition: 60,
-  sectorBreadthMaxBonus: 5
+  sectorBreadthMaxBonus: 5,
+
+  // HOT 점수의 거래량 항목은 275% 이상에서 이미 만점이다.
+  // 수백만% 같은 비정상 원본값이 지속강도/누적이력을 오염시키지 않도록
+  // 충분히 넓은 5,000%(50배)에서 방어적으로 상한을 둔다.
+  tradeVolumeRatioSanityMax: 5000
 };
 
 function nowText() {
@@ -128,7 +134,7 @@ function readPreviousHotCandidates() {
 
 
 function readHotHistory() {
-  const fallback = { version: 2, date: todayKey(), updatedAt: null, detected: {} };
+  const fallback = { version: 3, date: todayKey(), updatedAt: null, detected: {} };
   if (!fs.existsSync(HOT_HISTORY_FILE)) return fallback;
 
   try {
@@ -197,18 +203,33 @@ function updateHotHistory(rows = []) {
       item.candidateSource || "HOT"
     ].filter(Boolean)));
 
-    const latestSnapshot = makeHotHistorySnapshot(item);
-    const firstSnapshot = resetEpisode
+    const safeTradeVolumeRatio = sanitizeTradeVolumeRatio(item.tradeVolumeRatio);
+    const latestSnapshot = makeHotHistorySnapshot({
+      ...item,
+      tradeVolumeRatio: safeTradeVolumeRatio
+    });
+    const firstSnapshot = previous.firstSnapshot || latestSnapshot;
+    const episodeFirstSnapshot = resetEpisode || !previousLastDetectedAtMs
       ? latestSnapshot
-      : (previous.firstSnapshot || latestSnapshot);
+      : (previous.episodeFirstSnapshot || previous.firstSnapshot || latestSnapshot);
+    const firstDetectedAt = previous.firstDetectedAt || now;
+    const firstDetectedAtMs = Number(previous.firstDetectedAtMs || nowMs);
+    const episodeFirstDetectedAt = resetEpisode || !previousLastDetectedAtMs
+      ? now
+      : (previous.episodeFirstDetectedAt || previous.firstDetectedAt || now);
+    const episodeFirstDetectedAtMs = resetEpisode || !previousLastDetectedAtMs
+      ? nowMs
+      : Number(previous.episodeFirstDetectedAtMs || previous.firstDetectedAtMs || nowMs);
 
     history.detected[code] = {
       code,
       name: item.name || previous.name || code,
-      firstDetectedAt: resetEpisode ? now : (previous.firstDetectedAt || now),
-      firstDetectedAtMs: resetEpisode
-        ? nowMs
-        : Number(previous.firstDetectedAtMs || nowMs),
+      // 당일 최초발견은 장 종료 비교의 기준이므로 재등장해도 유지한다.
+      firstDetectedAt,
+      firstDetectedAtMs,
+      // 재등장 구간 분석은 별도의 에피소드 필드로 기록한다.
+      episodeFirstDetectedAt,
+      episodeFirstDetectedAtMs,
       lastDetectedAt: now,
       lastDetectedAtMs: nowMs,
       detectionCount: Number(previous.detectionCount || 0) + 1,
@@ -217,25 +238,35 @@ function updateHotHistory(rows = []) {
         : Number(previous.episodeDetectionCount || 0) + 1,
       episodeCount: Number(previous.episodeCount || 0) + (resetEpisode || !previousLastDetectedAtMs ? 1 : 0),
       maxChangeRate: Math.max(Number(previous.maxChangeRate || -999), Number(item.changeRate || 0)),
-      maxTradeVolumeRatio: Math.max(Number(previous.maxTradeVolumeRatio || 0), Number(item.tradeVolumeRatio || 0)),
+      maxTradeVolumeRatio: Math.max(
+        sanitizeTradeVolumeRatio(previous.maxTradeVolumeRatio),
+        safeTradeVolumeRatio
+      ),
       maxDayPosition: Math.max(Number(previous.maxDayPosition || 0), Number(item.dayPosition || 0)),
       maxHotScore: Math.max(Number(previous.maxHotScore || 0), Number(item.hotScore || 0)),
       maxMomentumScore: Math.max(Number(previous.maxMomentumScore || 0), Number(item.openMomentumScore || 0)),
       firstChangeRate: Number(
-        resetEpisode
-          ? latestSnapshot.changeRate
-          : (previous.firstChangeRate ?? firstSnapshot.changeRate ?? item.changeRate ?? 0)
+        previous.firstChangeRate ?? firstSnapshot.changeRate ?? item.changeRate ?? 0
       ),
       firstPrice: Number(
-        resetEpisode
+        previous.firstPrice ?? firstSnapshot.currentPrice ?? item.currentPrice ?? 0
+      ),
+      episodeFirstChangeRate: Number(
+        resetEpisode || !previousLastDetectedAtMs
+          ? latestSnapshot.changeRate
+          : (previous.episodeFirstChangeRate ?? episodeFirstSnapshot.changeRate ?? item.changeRate ?? 0)
+      ),
+      episodeFirstPrice: Number(
+        resetEpisode || !previousLastDetectedAtMs
           ? latestSnapshot.currentPrice
-          : (previous.firstPrice ?? firstSnapshot.currentPrice ?? item.currentPrice ?? 0)
+          : (previous.episodeFirstPrice ?? episodeFirstSnapshot.currentPrice ?? item.currentPrice ?? 0)
       ),
       latestChangeRate: Number(item.changeRate || 0),
-      latestTradeVolumeRatio: Number(item.tradeVolumeRatio || 0),
+      latestTradeVolumeRatio: safeTradeVolumeRatio,
       latestDayPosition: Number(item.dayPosition || 0),
       latestDiscoverScore: Number(item.discoverScore || 0),
       firstSnapshot,
+      episodeFirstSnapshot,
       latestSnapshot,
       latestRank: Number(item.rank || 0),
       bestRank: previous.bestRank
@@ -245,7 +276,7 @@ function updateHotHistory(rows = []) {
     };
   }
 
-  history.version = 2;
+  history.version = 3;
   history.date = todayKey();
   history.updatedAt = now;
   history.updatedAtMs = nowMs;
@@ -261,6 +292,13 @@ function toNumber(value) {
       .trim()
   );
   return Number.isFinite(number) ? number : 0;
+}
+
+function sanitizeTradeVolumeRatio(value) {
+  const rawValue = toNumber(value);
+  const maxValue = Math.max(100, Number(settings.tradeVolumeRatioSanityMax || 5000));
+  if (!Number.isFinite(rawValue) || rawValue <= 0) return 0;
+  return Math.min(maxValue, rawValue);
 }
 
 async function fetchJson(url) {
@@ -325,23 +363,16 @@ function getTradeVolumeRatio(item = {}) {
     );
 
     return Number.isFinite(changeRate)
-      ? Math.max(0, 100 + changeRate)
+      ? sanitizeTradeVolumeRatio(100 + changeRate)
       : 0;
   }
 
-  const ratio = Number(
-    String(
-      item.tradeVolumeRatio ??
-      item.volumeRatio ??
-      item.hotVolumeRatio ??
-      0
-    )
-      .replace(/[+,%]/g, "")
-      .replace(/,/g, "")
-      .trim()
+  return sanitizeTradeVolumeRatio(
+    item.tradeVolumeRatio ??
+    item.volumeRatio ??
+    item.hotVolumeRatio ??
+    0
   );
-
-  return Number.isFinite(ratio) ? Math.max(0, ratio) : 0;
 }
 
 function isExcludedStock(item = {}) {
@@ -457,6 +488,9 @@ function normalizeCandidate(item = {}) {
   ));
 
   const changeRate = getChangeRate(item);
+  const rawTradeVolumeRatio = toNumber(
+    item.tradeVolumeRatio ?? item.volumeRatio ?? item.hotVolumeRatio ?? 0
+  );
   const tradeVolumeRatio = getTradeVolumeRatio(item);
   const dayPosition = getDayPositionRate(item, currentPrice);
 
@@ -486,6 +520,9 @@ function normalizeCandidate(item = {}) {
     price: currentPrice,
     changeRate,
     tradeVolumeRatio,
+    tradeVolumeRatioRaw: toNumber(item.tradeVolumeRatioRaw || rawTradeVolumeRatio),
+    tradeVolumeRatioSanitized:
+      rawTradeVolumeRatio > Number(settings.tradeVolumeRatioSanityMax || 5000),
     dayPosition,
     discoverScore,
     hotScore: Number(hotScore.toFixed(1)),
@@ -612,6 +649,7 @@ async function scanHotCandidates() {
         Number(item.tradeVolumeRatio || 0) >= Number(settings.earlyMinTradeVolumeRatio || 75)
       )
       .filter(item =>
+        Number(item.dayPosition || 0) === 0 ||
         Number(item.dayPosition || 0) >= Number(settings.earlyMinDayPositionRate || 55)
       )
       .sort((a, b) =>
