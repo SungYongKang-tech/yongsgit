@@ -2,11 +2,14 @@ const fs = require("fs");
 const path = require("path");
 
 const API_BASE = process.env.SY_QUANT_API_BASE || "http://127.0.0.1:3000";
+
+// SY Quant MASTER 단일계좌 공통 자금관리
+const portfolioManager = require("./portfolio-manager");
 const STATE_FILE = path.join(__dirname, "paper-state-wave.json");
 const HOT_HISTORY_FILE = path.join(__dirname, "hot-candidates-history.json");
 const OPEN_MARKET_FILE = path.join(__dirname, "open-market.json");
 
-const STRATEGY_VERSION = "1.5.6";
+const STRATEGY_VERSION = "1.5.6-MASTER";
 const ANALYSIS_RULE_VERSION = "20260826-live-rotation-money-volume-sanity-v8";
 const WATCH_CAP_DROP_REASON = "활성후보 상한 / 우선순위 밖";
 
@@ -90,7 +93,7 @@ const SETTINGS = {
   // READY 종목도 실제 매수 순간 +7%를 넘으면 추격하지 않는다.
   currentDayMaxChangeRateForBuy: 7.0,
 
-  // 모의매수: WAVE 전용 독립 가상계좌, 종목당 최초자산 10%
+  // MASTER 단일계좌에서 WAVE 종목당 최초자산 10%를 요청한다.
   positionRatio: 0.10,
   maxHoldingCount: 5,
   maxDailyBuyCount: 2,
@@ -201,6 +204,65 @@ function writeJsonAtomic(filePath, data) {
   fs.renameSync(temp, filePath);
 }
 
+
+function getWaveMasterSnapshot() {
+  const masterState = portfolioManager.loadMasterState();
+  portfolioManager.ensureMasterState(masterState);
+
+  return {
+    masterState,
+    ...portfolioManager.getStrategyAccountSnapshot(
+      masterState,
+      "WAVE"
+    )
+  };
+}
+
+function applyMasterAccountToWaveState(state) {
+  const snapshot = getWaveMasterSnapshot();
+
+  state.accountMode = "MASTER_SHARED";
+  state.initialCapital = snapshot.initialCapital;
+  state.totalCash = snapshot.totalCash;
+  state.holdings = snapshot.holdings;
+  state.tradeLogs = snapshot.tradeLogs;
+  state.masterTotalAsset = snapshot.totalAsset;
+  state.masterStrategyExposure = snapshot.strategyExposure;
+
+  return state;
+}
+
+function persistWaveHoldingMarksToMaster(state) {
+  if (!Array.isArray(state?.holdings)) {
+    return {
+      ok: true,
+      updated: 0
+    };
+  }
+
+  return portfolioManager.updateStrategyHoldingMarks(
+    "WAVE",
+    state.holdings
+  );
+}
+
+function makeWaveLocalStateForSave(state) {
+  const localState = JSON.parse(
+    JSON.stringify(state || {})
+  );
+
+  localState.accountMode = "MASTER_SHARED";
+
+  delete localState.initialCapital;
+  delete localState.totalCash;
+  delete localState.holdings;
+  delete localState.tradeLogs;
+  delete localState.masterTotalAsset;
+  delete localState.masterStrategyExposure;
+
+  return localState;
+}
+
 function createInitialState() {
   return {
     version: 2,
@@ -235,18 +297,18 @@ function createInitialState() {
 function loadState() {
   if (!fs.existsSync(STATE_FILE)) {
     const state = createInitialState();
-    writeJsonAtomic(STATE_FILE, state);
+    applyMasterAccountToWaveState(state);
+    saveState(state);
     return state;
   }
 
   try {
     const state = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
     if (!Array.isArray(state.watchlist)) state.watchlist = [];
-    if (!Array.isArray(state.holdings)) state.holdings = [];
-    if (!Array.isArray(state.tradeLogs)) state.tradeLogs = [];
+
+    // 예전 WAVE 독립계좌 값은 무시하고 MASTER 값을 사용한다.
+    applyMasterAccountToWaveState(state);
     if (!state.dailyStats || typeof state.dailyStats !== "object") state.dailyStats = {};
-    if (!Number.isFinite(Number(state.totalCash))) state.totalCash = SETTINGS.initialCapital;
-    if (!Number.isFinite(Number(state.initialCapital))) state.initialCapital = SETTINGS.initialCapital;
     if (!Number.isFinite(Number(state.evaluationCursor))) state.evaluationCursor = 0;
     if (!state.preEvaluation || typeof state.preEvaluation !== "object") {
       state.preEvaluation = {
@@ -335,7 +397,11 @@ function loadState() {
     return state;
   } catch (err) {
     console.error("[WAVE 상태파일 읽기 오류]", err.message);
-    return createInitialState();
+    const fallbackState = createInitialState();
+    applyMasterAccountToWaveState(fallbackState);
+    fallbackState.localStateReadError = err.message;
+    fallbackState.localStateReadErrorAt = nowText();
+    return fallbackState;
   }
 }
 
@@ -350,24 +416,47 @@ function clearLiveTrigger(candidate) {
 function saveState(state) {
   state.updatedAt = nowText();
   state.updatedAtMs = Date.now();
-  writeJsonAtomic(STATE_FILE, state);
+
+  persistWaveHoldingMarksToMaster(state);
+
+  writeJsonAtomic(
+    STATE_FILE,
+    makeWaveLocalStateForSave(state)
+  );
 }
 
 function calculatePortfolioSnapshot(state) {
-  const invested = (state.holdings || []).reduce(
-    (sum, item) => sum + toNumber(item.currentPrice || item.buyPrice) * toNumber(item.qty),
+  const snapshot = getWaveMasterSnapshot();
+
+  const waveHoldings = Array.isArray(state?.holdings)
+    ? state.holdings
+    : snapshot.holdings;
+
+  const invested = waveHoldings.reduce(
+    (sum, item) =>
+      sum +
+      toNumber(item.currentPrice || item.buyPrice) *
+      toNumber(item.qty),
     0
   );
-  const unrealizedProfit = (state.holdings || []).reduce(
-    (sum, item) => sum +
-      (toNumber(item.currentPrice || item.buyPrice) - toNumber(item.buyPrice)) * toNumber(item.qty),
+
+  const unrealizedProfit = waveHoldings.reduce(
+    (sum, item) =>
+      sum +
+      (
+        toNumber(item.currentPrice || item.buyPrice) -
+        toNumber(item.buyPrice)
+      ) *
+      toNumber(item.qty),
     0
   );
-  const totalCash = toNumber(state.totalCash);
+
   return {
-    totalCash,
+    totalCash: toNumber(snapshot.masterState.totalCash),
     invested,
-    equity: totalCash + invested,
+    strategyInvested: invested,
+    equity: portfolioManager.getEquity(snapshot.masterState),
+    masterEquity: portfolioManager.getEquity(snapshot.masterState),
     unrealizedProfit
   };
 }
@@ -1414,7 +1503,26 @@ function getTriggerReadiness({
 
 function getTodayBuyCount(state) {
   const date = todayKey();
-  return state.tradeLogs.filter(log => log.date === date && log.type === "WAVE_BUY").length;
+
+  try {
+    const masterState =
+      portfolioManager.loadMasterState();
+
+    return portfolioManager
+      .getStrategyTradeLogs(masterState, "WAVE")
+      .filter(
+        log =>
+          log.date === date &&
+          log.type === "WAVE_BUY"
+      )
+      .length;
+  } catch (_) {
+    return (state.tradeLogs || []).filter(
+      log =>
+        log.date === date &&
+        log.type === "WAVE_BUY"
+    ).length;
+  }
 }
 
 function isBuyTime() {
@@ -1463,25 +1571,71 @@ function logWaveBuyBlock(candidate, reason) {
 
 function paperBuy(state, candidate, analysis) {
   const price = toNumber(analysis.currentPrice);
+
   if (!price) {
     logWaveBuyBlock(candidate, "현재가 없음");
     return false;
   }
-  if (state.holdings.some(item => item.code === candidate.code)) {
-    logWaveBuyBlock(candidate, "동일종목 이미 보유중");
+
+  applyMasterAccountToWaveState(state);
+
+  const masterState =
+    portfolioManager.loadMasterState();
+
+  portfolioManager.ensureMasterState(masterState);
+
+  const strategyCheck =
+    portfolioManager.canStrategyTrade(
+      masterState,
+      "WAVE"
+    );
+
+  if (!strategyCheck.ok) {
+    logWaveBuyBlock(
+      candidate,
+      `MASTER / ${strategyCheck.reason}`
+    );
     return false;
   }
+
+  const duplicate =
+    portfolioManager.findHoldingByCode(
+      masterState,
+      candidate.code
+    );
+
+  if (duplicate) {
+    const owner =
+      duplicate.ownerStrategy ||
+      duplicate.strategyGroup ||
+      duplicate.strategy ||
+      "UNKNOWN";
+
+    logWaveBuyBlock(
+      candidate,
+      `MASTER 동일종목 보유중 / ${owner}`
+    );
+    return false;
+  }
+
   if (state.holdings.length >= SETTINGS.maxHoldingCount) {
-    logWaveBuyBlock(candidate, `보유한도 ${state.holdings.length}/${SETTINGS.maxHoldingCount}종목`);
+    logWaveBuyBlock(
+      candidate,
+      `WAVE 보유한도 ${state.holdings.length}/${SETTINGS.maxHoldingCount}종목`
+    );
     return false;
   }
 
   const todayBuyCount = getTodayBuyCount(state);
-  const effectiveDailyBuyLimit = getEffectiveDailyBuyLimit(analysis);
+  const effectiveDailyBuyLimit =
+    getEffectiveDailyBuyLimit(analysis);
+
   if (todayBuyCount >= effectiveDailyBuyLimit) {
-    const weakMarketText = analysis.weakMarketRiskLimited
-      ? ` / 매우 약한 시장 ${toNumber(analysis.marketScore).toFixed(1)}점`
-      : "";
+    const weakMarketText =
+      analysis.weakMarketRiskLimited
+        ? ` / 매우 약한 시장 ${toNumber(analysis.marketScore).toFixed(1)}점`
+        : "";
+
     logWaveBuyBlock(
       candidate,
       `오늘 매수한도 ${todayBuyCount}/${effectiveDailyBuyLimit}종목${weakMarketText}`
@@ -1489,76 +1643,104 @@ function paperBuy(state, candidate, analysis) {
     return false;
   }
 
-  const targetAmount = toNumber(state.initialCapital) * SETTINGS.positionRatio;
-  const buyAmount = Math.min(targetAmount, toNumber(state.totalCash));
-  const qty = Math.floor(buyAmount / price);
-  if (qty <= 0) {
-    logWaveBuyBlock(candidate, `가용현금 부족 / ${toNumber(state.totalCash).toLocaleString("ko-KR")}원`);
+  const targetAmount =
+    toNumber(masterState.initialCapital) *
+    SETTINGS.positionRatio;
+
+  const availability =
+    portfolioManager.getAvailableCash(
+      masterState,
+      { strategy: "WAVE" }
+    );
+
+  const requestedAmount = Math.min(
+    targetAmount,
+    toNumber(availability.availableCash)
+  );
+
+  if (requestedAmount < price) {
+    logWaveBuyBlock(
+      candidate,
+      `MASTER 가용현금 부족 / ${toNumber(availability.availableCash).toLocaleString("ko-KR")}원`
+    );
     return false;
   }
 
-  const amount = qty * price;
-  const holding = {
-    code: candidate.code,
-    name: candidate.name,
-    strategyGroup: "WAVE",
-    buyPrice: price,
-    currentPrice: price,
-    highestPrice: price,
-    lowestPrice: price,
-    qty,
-    buyAmount: amount,
-    buyDate: todayKey(),
-    buyTime: nowText(),
-    buyTimeMs: Date.now(),
-    pullbackLowPrice: toNumber(analysis.pullback.pullbackLowPrice),
-    peakBeforeBuy: toNumber(analysis.pullback.peakPrice),
-    buyScore: toNumber(analysis.totalScore),
-    buyFoundationScore: toNumber(analysis.foundationScore),
-    buyAnalysis: analysis
-  };
+  const buyTimeMs = Date.now();
 
-  state.holdings.push(holding);
-  state.totalCash -= amount;
-  state.tradeLogs.push({
-    type: "WAVE_BUY",
-    strategyGroup: "WAVE",
-    date: todayKey(),
-    time: nowText(),
+  const result = portfolioManager.executeBuy({
+    strategy: "WAVE",
     code: candidate.code,
     name: candidate.name,
     price,
-    qty,
-    amount,
-    score: analysis.totalScore,
-    foundationScore: analysis.foundationScore,
-    whyScore: analysis.why.score,
-    moneyScore: analysis.money.score,
-    sectorScore: analysis.sector.score,
-    trendScore: analysis.trend.score,
-    pullbackScore: analysis.pullback.score,
-    reboundScore: analysis.rebound.score,
-    marketScore: toNumber(analysis.marketScore),
-    effectiveDailyBuyLimit,
-    reason: analysis.buyReason
+    requestedAmount,
+    timestampMs: buyTimeMs,
+    buyAt: nowText(),
+    holding: {
+      name: candidate.name,
+      highestPrice: price,
+      lowestPrice: price,
+      buyTime: nowText(),
+      buyTimeMs,
+      pullbackLowPrice:
+        toNumber(analysis.pullback.pullbackLowPrice),
+      peakBeforeBuy:
+        toNumber(analysis.pullback.peakPrice),
+      buyScore:
+        toNumber(analysis.totalScore),
+      buyFoundationScore:
+        toNumber(analysis.foundationScore),
+      buyAnalysis: analysis
+    },
+    logType: "WAVE_BUY",
+    tradeLog: {
+      score: analysis.totalScore,
+      foundationScore: analysis.foundationScore,
+      whyScore: analysis.why.score,
+      moneyScore: analysis.money.score,
+      sectorScore: analysis.sector.score,
+      trendScore: analysis.trend.score,
+      pullbackScore: analysis.pullback.score,
+      reboundScore: analysis.rebound.score,
+      marketScore: toNumber(analysis.marketScore),
+      effectiveDailyBuyLimit,
+      reason: analysis.buyReason
+    }
   });
+
+  if (!result.ok) {
+    logWaveBuyBlock(
+      candidate,
+      `MASTER / ${result.reason || "매수승인 실패"}`
+    );
+    applyMasterAccountToWaveState(state);
+    return false;
+  }
+
+  applyMasterAccountToWaveState(state);
 
   candidate.status = "HOLD";
   candidate.boughtAt = nowText();
   candidate.boughtDate = todayKey();
   candidate.buyPrice = price;
   candidate.buyScore = analysis.totalScore;
-  candidate.pullbackLowPrice = toNumber(analysis.pullback.pullbackLowPrice);
+  candidate.pullbackLowPrice =
+    toNumber(analysis.pullback.pullbackLowPrice);
+  candidate.positionId =
+    result.holding?.positionId || null;
   candidate.lastBuyBlockReason = null;
   candidate.lastBuyBlockAt = null;
   candidate.lastBuyBlockAtMs = 0;
+
   ensureDailyStats(state).bought += 1;
 
   console.log(
-    `[WAVE 모의매수] ${candidate.name} / ${price.toLocaleString()}원 / ${qty}주 / ` +
-    `총점 ${analysis.totalScore} / WHY ${analysis.why.score} MONEY ${analysis.money.score} ` +
-    `SECTOR ${analysis.sector.score} PULLBACK ${analysis.pullback.score} REBOUND ${analysis.rebound.score}`
+    `[WAVE MASTER 모의매수] ${candidate.name} / ` +
+    `${price.toLocaleString()}원 / ${result.qty}주 / ` +
+    `${toNumber(result.buyAmount).toLocaleString()}원 / ` +
+    `총점 ${analysis.totalScore}`
   );
+
   return true;
 }
 
@@ -1579,34 +1761,74 @@ function getWaveProtectFloorProfitRate(maxProfitRateValue) {
 
 function paperSell(state, holding, price, type, reason) {
   const sellPrice = toNumber(price);
-  if (!sellPrice || !holding) return false;
+
+  if (!sellPrice || !holding) {
+    return false;
+  }
+
   const qty = toNumber(holding.qty);
   const buyPrice = toNumber(holding.buyPrice);
-  const amount = sellPrice * qty;
-  const profit = (sellPrice - buyPrice) * qty;
-  const profitRate = buyPrice > 0 ? ((sellPrice - buyPrice) / buyPrice) * 100 : 0;
 
-  state.totalCash += amount;
-  state.holdings = state.holdings.filter(item => item !== holding);
-  state.tradeLogs.push({
-    type,
-    strategyGroup: "WAVE",
-    date: todayKey(),
-    time: nowText(),
+  if (qty <= 0 || buyPrice <= 0) {
+    return false;
+  }
+
+  persistWaveHoldingMarksToMaster(state);
+
+  const maxProfitRate =
+    buyPrice > 0
+      ? (
+          (
+            toNumber(holding.highestPrice) -
+            buyPrice
+          ) /
+          buyPrice
+        ) * 100
+      : 0;
+
+  const maxLossRate =
+    buyPrice > 0
+      ? (
+          (
+            toNumber(holding.lowestPrice) -
+            buyPrice
+          ) /
+          buyPrice
+        ) * 100
+      : 0;
+
+  const result = portfolioManager.executeSell({
+    strategy: "WAVE",
+    positionId: holding.positionId || null,
     code: holding.code,
-    name: holding.name,
     price: sellPrice,
-    qty,
-    amount,
-    buyPrice,
-    profit,
-    profitRate,
-    maxProfitRate: buyPrice > 0 ? ((toNumber(holding.highestPrice) - buyPrice) / buyPrice) * 100 : 0,
-    maxLossRate: buyPrice > 0 ? ((toNumber(holding.lowestPrice) - buyPrice) / buyPrice) * 100 : 0,
-    reason
+    logType: type,
+    reason,
+    tradeLog: {
+      maxProfitRate,
+      maxLossRate
+    }
   });
 
-  const candidate = state.watchlist.find(item => item.code === holding.code);
+  if (!result.ok) {
+    console.log(
+      `[WAVE MASTER 매도실패] ${holding.name} / ` +
+      `${result.reason || "알 수 없는 오류"}`
+    );
+    applyMasterAccountToWaveState(state);
+    return false;
+  }
+
+  applyMasterAccountToWaveState(state);
+
+  const profit = toNumber(result.profit);
+  const profitRate = toNumber(result.profitRate);
+
+  const candidate =
+    state.watchlist.find(
+      item => item.code === holding.code
+    );
+
   if (candidate) {
     candidate.status = "SOLD";
     candidate.soldAt = nowText();
@@ -1621,7 +1843,11 @@ function paperSell(state, holding, price, type, reason) {
   stats.sold += 1;
   stats.realizedProfit += profit;
 
-  console.log(`[WAVE 모의매도] ${holding.name} / ${type} / ${profitRate.toFixed(2)}% / ${reason}`);
+  console.log(
+    `[WAVE MASTER 모의매도] ${holding.name} / ` +
+    `${type} / ${profitRate.toFixed(2)}% / ${reason}`
+  );
+
   return true;
 }
 
@@ -2278,18 +2504,26 @@ function makeSummary(state) {
     todayStats?.startEquity !== null &&
     Number.isFinite(Number(todayStats.startEquity));
   const startEquity = hasStartEquity ? Number(todayStats.startEquity) : null;
-  const todayEquityChange = hasStartEquity
-    ? portfolio.equity - startEquity
-    : null;
-  const todayReturnRate = hasStartEquity && startEquity > 0
-    ? (todayEquityChange / startEquity) * 100
-    : null;
+  /*
+   * MASTER 자산/현금은 계좌 전체 값이지만,
+   * WAVE 화면과 WAVE 로그의 "당일손익"은 WAVE 전략 기여분만 계산한다.
+   * 오늘 실현손익 + 장 시작 대비 WAVE 보유손익 변화 = WAVE 당일손익.
+   */
   const dailyStartUnrealizedProfit = hasStartEquity
     ? toNumber(todayStats?.startUnrealizedProfit)
-    : null;
+    : 0;
   const todayUnrealizedChange = hasStartEquity
     ? portfolio.unrealizedProfit - dailyStartUnrealizedProfit
-    : null;
+    : portfolio.unrealizedProfit;
+  const todayEquityChange =
+    todayRealizedProfit + todayUnrealizedChange;
+  const masterInitialCapital = toNumber(
+    getWaveMasterSnapshot().masterState.initialCapital,
+    SETTINGS.initialCapital
+  );
+  const todayReturnRate = masterInitialCapital > 0
+    ? (todayEquityChange / masterInitialCapital) * 100
+    : 0;
   const latestHoldingPriceCheck = state.holdings
     .slice()
     .sort((a, b) => toNumber(b.lastCheckedAtMs) - toNumber(a.lastCheckedAtMs))[0] || null;
@@ -2656,7 +2890,7 @@ function startWaveStrategy() {
 
 function getWaveSummary() {
   const state = loadState();
-  return state.summary || makeSummary(state);
+  return makeSummary(state);
 }
 
 module.exports = {

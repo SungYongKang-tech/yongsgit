@@ -2,12 +2,17 @@ const fs = require("fs");
 const path = require("path");
 
 const API_BASE = process.env.SY_QUANT_API_BASE || "http://127.0.0.1:3000";
+
+// SY Quant MASTER 단일계좌 공통 자금관리
+const portfolioManager = require("./portfolio-manager");
 const STATE_FILE = path.join(__dirname, "paper-state-fast.json");
 const HOT_CANDIDATES_FILE = path.join(__dirname, "hot-candidates.json");
 const HOT_HISTORY_FILE = path.join(__dirname, "hot-candidates-history.json");
 const OPEN_MARKET_FILE = path.join(__dirname, "open-market.json");
 
-const STRATEGY_VERSION = "1.3.2";
+const STRATEGY_VERSION = "1.3.2-MASTER";
+
+const FAST_MASTER_POSITION_RATIO = 0.10;
 
 const SETTINGS = {
   enabled: true,
@@ -182,6 +187,66 @@ function writeJsonAtomic(filePath, value) {
   fs.renameSync(tempPath, filePath);
 }
 
+
+function getFastMasterSnapshot() {
+  const masterState = portfolioManager.loadMasterState();
+  portfolioManager.ensureMasterState(masterState);
+
+  return {
+    masterState,
+    ...portfolioManager.getStrategyAccountSnapshot(
+      masterState,
+      "FAST"
+    )
+  };
+}
+
+function applyMasterAccountToFastState(state) {
+  const snapshot = getFastMasterSnapshot();
+
+  state.accountMode = "MASTER_SHARED";
+  state.initialCapital = snapshot.initialCapital;
+  state.totalCash = snapshot.totalCash;
+  state.holdings = snapshot.holdings;
+  state.tradeLogs = snapshot.tradeLogs;
+  state.masterTotalAsset = snapshot.totalAsset;
+  state.masterStrategyExposure = snapshot.strategyExposure;
+
+  return state;
+}
+
+function persistFastHoldingMarksToMaster(state) {
+  if (!Array.isArray(state?.holdings)) {
+    return {
+      ok: true,
+      updated: 0
+    };
+  }
+
+  return portfolioManager.updateStrategyHoldingMarks(
+    "FAST",
+    state.holdings
+  );
+}
+
+function makeFastLocalStateForSave(state) {
+  const localState = JSON.parse(
+    JSON.stringify(state || {})
+  );
+
+  localState.accountMode = "MASTER_SHARED";
+
+  // 돈/보유/거래는 MASTER paper-state-core.json이 유일한 원본.
+  delete localState.initialCapital;
+  delete localState.totalCash;
+  delete localState.holdings;
+  delete localState.tradeLogs;
+  delete localState.masterTotalAsset;
+  delete localState.masterStrategyExposure;
+
+  return localState;
+}
+
 function createInitialState() {
   return {
     version: 1,
@@ -203,45 +268,78 @@ function createInitialState() {
 }
 
 function normalizeState(state = {}) {
-  if (!Array.isArray(state.holdings)) state.holdings = [];
-  if (!Array.isArray(state.tradeLogs)) state.tradeLogs = [];
   if (!Array.isArray(state.candidates)) state.candidates = [];
-  if (!state.dailyStats || typeof state.dailyStats !== "object") state.dailyStats = {};
-  if (!Number.isFinite(Number(state.initialCapital))) state.initialCapital = SETTINGS.initialCapital;
-  if (!Number.isFinite(Number(state.totalCash))) state.totalCash = SETTINGS.initialCapital;
+  if (!state.dailyStats || typeof state.dailyStats !== "object") {
+    state.dailyStats = {};
+  }
+
   state.strategy = "FAST";
   state.strategyVersion = STRATEGY_VERSION;
+  state.accountMode = "MASTER_SHARED";
 
   if (state.candidateDate !== todayKey()) {
     state.candidateDate = todayKey();
     state.candidates = [];
   }
+
+  applyMasterAccountToFastState(state);
+
   return state;
 }
 
 function loadFastState() {
   if (!fs.existsSync(STATE_FILE)) {
     const initial = createInitialState();
-    writeJsonAtomic(STATE_FILE, initial);
+    normalizeState(initial);
+    saveFastState(initial);
     return initial;
   }
-  return normalizeState(readJson(STATE_FILE, createInitialState()) || createInitialState());
+
+  return normalizeState(
+    readJson(
+      STATE_FILE,
+      createInitialState()
+    ) || createInitialState()
+  );
 }
 
 function saveFastState(state) {
   state.updatedAt = nowText();
-  writeJsonAtomic(STATE_FILE, state);
+
+  // FAST 보유의 현재가/최고가/수익률 등 위험관리 값을 MASTER에 반영.
+  persistFastHoldingMarksToMaster(state);
+
+  // FAST 파일에는 후보·관찰·dailyStats만 저장.
+  writeJsonAtomic(
+    STATE_FILE,
+    makeFastLocalStateForSave(state)
+  );
+
   return state;
 }
 
 function resetFastState() {
+  // FAST 로컬 후보/통계만 초기화한다.
+  // MASTER 현금/보유/거래는 최종 통합 리셋 API가 별도로 담당한다.
   const state = createInitialState();
+  normalizeState(state);
+
+  state.candidates = [];
+  state.dailyStats = {};
+  state.candidateDate = todayKey();
+  state.lastRunAt = null;
+  state.lastRunAtMs = 0;
+  state.lastRunReason = "FAST 로컬상태 초기화";
+
   saveFastState(state);
   return state;
 }
 
 function getDailyStats(state, date = todayKey()) {
-  if (!state.dailyStats[date] || typeof state.dailyStats[date] !== "object") {
+  if (
+    !state.dailyStats[date] ||
+    typeof state.dailyStats[date] !== "object"
+  ) {
     state.dailyStats[date] = {
       date,
       buyCount: 0,
@@ -254,33 +352,43 @@ function getDailyStats(state, date = todayKey()) {
       passedCount: 0,
       allocationBaseAsset: 0,
       positionAmount: 0,
-      positionRatio: SETTINGS.positionRatio
+      positionRatio: FAST_MASTER_POSITION_RATIO
     };
   }
-  const daily = state.dailyStats[date];
-  if (!daily.boughtCodes || typeof daily.boughtCodes !== "object") daily.boughtCodes = {};
 
-  /*
-   * 종목당 매수금액은 고정 1천만원이 아니라 그날 FAST 총자산의 20%다.
-   * 장중 평가손익 때문에 매수할 때마다 금액이 바뀌지 않도록 당일 최초
-   * 계산한 기준자산과 종목당 금액을 dailyStats에 저장해 하루 동안 고정한다.
-   */
+  const daily = state.dailyStats[date];
+
+  if (
+    !daily.boughtCodes ||
+    typeof daily.boughtCodes !== "object"
+  ) {
+    daily.boughtCodes = {};
+  }
+
   if (
     !Number.isFinite(Number(daily.allocationBaseAsset)) ||
     Number(daily.allocationBaseAsset) <= 0 ||
     !Number.isFinite(Number(daily.positionAmount)) ||
     Number(daily.positionAmount) <= 0
   ) {
-    const portfolio = calculatePortfolio(state);
+    const masterState =
+      portfolioManager.loadMasterState();
+
     const baseAsset = Math.max(
       0,
-      Math.floor(toNumber(portfolio.totalAsset) || toNumber(state.initialCapital))
+      Math.floor(
+        portfolioManager.getEquity(masterState)
+      )
     );
+
     daily.allocationBaseAsset = baseAsset;
-    daily.positionRatio = SETTINGS.positionRatio;
-    daily.positionAmount = Math.floor(baseAsset * SETTINGS.positionRatio);
+    daily.positionRatio = FAST_MASTER_POSITION_RATIO;
+    daily.positionAmount = Math.floor(
+      baseAsset * FAST_MASTER_POSITION_RATIO
+    );
     daily.allocationFixedAt = nowText();
   }
+
   return daily;
 }
 
@@ -829,114 +937,236 @@ function wasBoughtToday(state, code) {
 function paperBuy(state, candidate, snapshot, evaluation) {
   const daily = getDailyStats(state);
   const code = normalizeCode(candidate.code);
+
   if (!evaluation.pass) return false;
-  if (state.holdings.some(item => item.code === code)) return false;
+
+  applyMasterAccountToFastState(state);
+
+  const masterState =
+    portfolioManager.loadMasterState();
+
+  portfolioManager.ensureMasterState(masterState);
+
+  const strategyCheck =
+    portfolioManager.canStrategyTrade(
+      masterState,
+      "FAST"
+    );
+
+  if (!strategyCheck.ok) {
+    candidate.status = "WATCH";
+    candidate.reason =
+      `MASTER / ${strategyCheck.reason}`;
+    return false;
+  }
+
+  const duplicate =
+    portfolioManager.findHoldingByCode(
+      masterState,
+      code
+    );
+
+  if (duplicate) {
+    const owner =
+      duplicate.ownerStrategy ||
+      duplicate.strategyGroup ||
+      duplicate.strategy ||
+      "UNKNOWN";
+
+    candidate.status = "WATCH";
+    candidate.reason =
+      `MASTER 동일종목 보유중 / ${owner}`;
+    return false;
+  }
+
   if (wasBoughtToday(state, code)) return false;
   if (state.holdings.length >= SETTINGS.maxHoldingCount) return false;
   if (toNumber(daily.buyCount) >= SETTINGS.maxDailyBuyCount) return false;
 
-  const price = Math.abs(toNumber(evaluation.currentPrice));
-  const dailyPositionAmount = Math.max(0, toNumber(daily.positionAmount));
-  const targetAmount = Math.min(dailyPositionAmount, toNumber(state.totalCash));
-  const qty = Math.floor(targetAmount / price);
-  if (!price || qty <= 0 || targetAmount < dailyPositionAmount * 0.95) return false;
+  const price =
+    Math.abs(toNumber(evaluation.currentPrice));
 
-  const buyAmount = qty * price;
+  if (!price) return false;
+
+  const dailyPositionAmount =
+    Math.max(
+      0,
+      toNumber(daily.positionAmount)
+    );
+
+  const availability =
+    portfolioManager.getAvailableCash(
+      masterState,
+      { strategy: "FAST" }
+    );
+
+  const targetAmount = Math.min(
+    dailyPositionAmount,
+    toNumber(availability.availableCash)
+  );
+
+  const qty = Math.floor(
+    targetAmount / price
+  );
+
+  // 기존 FAST 규칙 유지:
+  // 목표금액의 95% 미만밖에 살 수 없으면 신규매수를 포기한다.
+  if (
+    qty <= 0 ||
+    targetAmount < dailyPositionAmount * 0.95
+  ) {
+    candidate.status = "WATCH";
+    candidate.reason =
+      `MASTER 가용현금 부족 / ` +
+      `${toNumber(availability.availableCash).toLocaleString("ko-KR")}원`;
+    return false;
+  }
+
   const timestampMs = Date.now();
-  const holding = {
-    strategy: "FAST",
-    strategyGroup: "FAST",
-    code,
-    name: candidate.name || snapshot.name || code,
-    buyPrice: price,
-    currentPrice: price,
-    highestPrice: price,
-    qty,
-    buyAmount,
-    buyDate: todayKey(),
-    buyAt: nowText(),
-    buyAtMs: timestampMs,
-    firstChangeRate: evaluation.firstChangeRate,
-    buyChangeRate: evaluation.changeRate,
-    buyVolumeRatio: evaluation.volumeRatio,
-    buyDayPosition: evaluation.dayPosition,
-    fastScore: evaluation.fastScore,
-    marketScore: evaluation.marketScore,
-    maxProfitRate: 0,
-    profitRate: 0,
-    entryTrack: evaluation.entryTrack || "STANDARD",
-    reason: `FAST ${evaluation.entryTrack || "STANDARD"} 재검증 통과`
-  };
 
-  state.totalCash = toNumber(state.totalCash) - buyAmount;
-  state.holdings.push(holding);
-  state.tradeLogs.push({
-    type: "FAST_BUY",
+  const result = portfolioManager.executeBuy({
     strategy: "FAST",
-    strategyGroup: "FAST",
     code,
-    name: holding.name,
+    name:
+      candidate.name ||
+      snapshot.name ||
+      code,
     price,
-    qty,
-    amount: buyAmount,
-    date: todayKey(),
-    time: nowText(),
+    requestedAmount: targetAmount,
     timestampMs,
-    evaluation
+    buyAt: nowText(),
+    holding: {
+      name:
+        candidate.name ||
+        snapshot.name ||
+        code,
+      highestPrice: price,
+      firstChangeRate: evaluation.firstChangeRate,
+      buyChangeRate: evaluation.changeRate,
+      buyVolumeRatio: evaluation.volumeRatio,
+      buyDayPosition: evaluation.dayPosition,
+      fastScore: evaluation.fastScore,
+      marketScore: evaluation.marketScore,
+      maxProfitRate: 0,
+      profitRate: 0,
+      entryTrack:
+        evaluation.entryTrack || "STANDARD",
+      reason:
+        `FAST ${evaluation.entryTrack || "STANDARD"} 재검증 통과`
+    },
+    logType: "FAST_BUY",
+    tradeLog: {
+      evaluation
+    }
   });
-  daily.buyCount = toNumber(daily.buyCount) + 1;
-  daily.boughtCodes[code] = holding.name;
+
+  if (!result.ok) {
+    candidate.status = "WATCH";
+    candidate.reason =
+      `MASTER / ${result.reason || "매수승인 실패"}`;
+    applyMasterAccountToFastState(state);
+    return false;
+  }
+
+  applyMasterAccountToFastState(state);
+
+  daily.buyCount =
+    toNumber(daily.buyCount) + 1;
+
+  daily.boughtCodes[code] =
+    result.holding?.name ||
+    candidate.name ||
+    code;
+
   candidate.status = "BOUGHT";
-  candidate.reason = `FAST ${evaluation.entryTrack || "STANDARD"} 매수 ${price.toLocaleString()}원`;
+  candidate.reason =
+    `FAST ${evaluation.entryTrack || "STANDARD"} ` +
+    `매수 ${price.toLocaleString()}원`;
 
   console.log(
-    `[FAST BUY] ${holding.name}(${code}) / ${price.toLocaleString()}원 / ` +
-    `${qty.toLocaleString()}주 / ${buyAmount.toLocaleString()}원 / ` +
-    `상승 ${evaluation.changeRate.toFixed(2)}% / FAST ${evaluation.fastScore.toFixed(1)}점`
+    `[FAST MASTER BUY] ` +
+    `${result.holding?.name || candidate.name || code}(${code}) / ` +
+    `${price.toLocaleString()}원 / ` +
+    `${toNumber(result.qty).toLocaleString()}주 / ` +
+    `${toNumber(result.buyAmount).toLocaleString()}원 / ` +
+    `상승 ${evaluation.changeRate.toFixed(2)}% / ` +
+    `FAST ${evaluation.fastScore.toFixed(1)}점`
   );
+
   return true;
 }
 
 function paperSell(state, holding, price, type, reason) {
-  const qty = toNumber(holding.qty);
-  const proceeds = price * qty;
-  const buyAmount = toNumber(holding.buyAmount || holding.buyPrice * qty);
-  const profit = proceeds - buyAmount;
-  const profitRate = toNumber(holding.buyPrice) > 0
-    ? ((price - toNumber(holding.buyPrice)) / toNumber(holding.buyPrice)) * 100
-    : 0;
-  const timestampMs = Date.now();
+  const sellPrice = Math.abs(toNumber(price));
 
-  state.totalCash = toNumber(state.totalCash) + proceeds;
-  state.holdings = state.holdings.filter(item => item !== holding);
-  state.tradeLogs.push({
-    type,
+  if (!holding || !sellPrice) {
+    return false;
+  }
+
+  persistFastHoldingMarksToMaster(state);
+
+  const result = portfolioManager.executeSell({
     strategy: "FAST",
-    strategyGroup: "FAST",
+    positionId:
+      holding.positionId || null,
     code: holding.code,
-    name: holding.name,
-    price,
-    qty,
-    proceeds,
-    profit,
-    profitRate,
-    maxProfitRate: toNumber(holding.maxProfitRate),
-    date: todayKey(),
-    time: nowText(),
-    timestampMs,
-    reason
+    price: sellPrice,
+    logType: type,
+    reason,
+    tradeLog: {
+      maxProfitRate:
+        toNumber(holding.maxProfitRate),
+      drawdownFromHigh:
+        toNumber(holding.drawdownFromHigh),
+      fastScore:
+        toNumber(holding.fastScore),
+      entryTrack:
+        holding.entryTrack || "STANDARD"
+    }
   });
 
+  if (!result.ok) {
+    console.log(
+      `[FAST MASTER SELL 실패] ` +
+      `${holding.name}(${holding.code}) / ` +
+      `${result.reason || "알 수 없는 오류"}`
+    );
+    applyMasterAccountToFastState(state);
+    return false;
+  }
+
+  applyMasterAccountToFastState(state);
+
+  const profit =
+    toNumber(result.profit);
+
+  const profitRate =
+    toNumber(result.profitRate);
+
   const daily = getDailyStats(state);
-  daily.sellCount = toNumber(daily.sellCount) + 1;
-  daily.realizedProfit = toNumber(daily.realizedProfit) + profit;
-  if (profit > 0) daily.winCount = toNumber(daily.winCount) + 1;
-  else if (profit < 0) daily.lossCount = toNumber(daily.lossCount) + 1;
+
+  daily.sellCount =
+    toNumber(daily.sellCount) + 1;
+
+  daily.realizedProfit =
+    toNumber(daily.realizedProfit) + profit;
+
+  if (profit > 0) {
+    daily.winCount =
+      toNumber(daily.winCount) + 1;
+  } else if (profit < 0) {
+    daily.lossCount =
+      toNumber(daily.lossCount) + 1;
+  }
 
   console.log(
-    `[FAST SELL] ${holding.name}(${holding.code}) / ${price.toLocaleString()}원 / ` +
-    `${profitRate >= 0 ? "+" : ""}${profitRate.toFixed(2)}% / ${reason}`
+    `[FAST MASTER SELL] ` +
+    `${holding.name}(${holding.code}) / ` +
+    `${sellPrice.toLocaleString()}원 / ` +
+    `${profitRate >= 0 ? "+" : ""}${profitRate.toFixed(2)}% / ` +
+    `${reason}`
   );
+
   return true;
 }
 
@@ -1071,23 +1301,65 @@ async function tryFastBuys(state, evaluations, marketData) {
 }
 
 function calculatePortfolio(state) {
-  const holdingsValue = state.holdings.reduce(
-    (sum, holding) => sum + toNumber(holding.currentPrice || holding.buyPrice) * toNumber(holding.qty),
+  const snapshot = getFastMasterSnapshot();
+
+  const fastHoldings =
+    Array.isArray(state?.holdings)
+      ? state.holdings
+      : snapshot.holdings;
+
+  const holdingsValue = fastHoldings.reduce(
+    (sum, holding) =>
+      sum +
+      toNumber(
+        holding.currentPrice ||
+        holding.buyPrice
+      ) *
+      toNumber(holding.qty),
     0
   );
-  const unrealizedProfit = state.holdings.reduce(
-    (sum, holding) => sum +
-      (toNumber(holding.currentPrice || holding.buyPrice) - toNumber(holding.buyPrice)) * toNumber(holding.qty),
+
+  const unrealizedProfit = fastHoldings.reduce(
+    (sum, holding) =>
+      sum +
+      (
+        toNumber(
+          holding.currentPrice ||
+          holding.buyPrice
+        ) -
+        toNumber(holding.buyPrice)
+      ) *
+      toNumber(holding.qty),
     0
   );
-  const realizedProfit = state.tradeLogs.reduce(
-    (sum, log) => sum + (String(log.type || "").includes("SELL") ? toNumber(log.profit) : 0),
+
+  const fastLogs =
+    portfolioManager.getStrategyTradeLogs(
+      snapshot.masterState,
+      "FAST"
+    );
+
+  const realizedProfit = fastLogs.reduce(
+    (sum, log) =>
+      sum +
+      (
+        String(log.type || "").includes("SELL")
+          ? toNumber(log.profit)
+          : 0
+      ),
     0
   );
+
   return {
-    totalAsset: toNumber(state.totalCash) + holdingsValue,
-    cash: toNumber(state.totalCash),
+    totalAsset:
+      portfolioManager.getEquity(
+        snapshot.masterState
+      ),
+    cash:
+      toNumber(snapshot.masterState.totalCash),
     holdingsValue,
+    strategyHoldingsValue: holdingsValue,
+    strategyExposure: snapshot.strategyExposure,
     realizedProfit,
     unrealizedProfit
   };
@@ -1109,7 +1381,7 @@ function getFastSummary(stateInput = null) {
     allocationDate: daily.date,
     allocationFixedAt: daily.allocationFixedAt || null,
     allocationBaseAsset: toNumber(daily.allocationBaseAsset),
-    positionRatio: SETTINGS.positionRatio,
+    positionRatio: FAST_MASTER_POSITION_RATIO,
     positionAmount: toNumber(daily.positionAmount),
     maxHoldingCount: SETTINGS.maxHoldingCount,
     maxDailyBuyCount: SETTINGS.maxDailyBuyCount,
@@ -1219,8 +1491,8 @@ function startFastStrategy() {
   }
   started = true;
   console.log(
-    `[FAST] V${STRATEGY_VERSION} 시작 / 초기 ${SETTINGS.initialCapital.toLocaleString()}원 / ` +
-    `종목당 당일 기준자산 ${(SETTINGS.positionRatio * 100).toFixed(0)}% / 최대 ${SETTINGS.maxHoldingCount}종목 / ` +
+    `[FAST] V${STRATEGY_VERSION} 시작 / MASTER 단일계좌 / ` +
+    `종목당 당일 MASTER 기준자산 ${(FAST_MASTER_POSITION_RATIO * 100).toFixed(0)}% / 최대 ${SETTINGS.maxHoldingCount}종목 / ` +
     `매수 ${SETTINGS.buyStartTime}~${SETTINGS.buyEndTime}`
   );
   void fastLoop();

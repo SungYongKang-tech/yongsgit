@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta name="theme-color" content="#07111f" />
+  <title>SY Quant 일일 분석</title>
+  <style>
+    *{box-sizing:border-box}
+    :root{
+      --bg:#07111f;--panel:#111827;--panel2:#0f172a;--line:#263247;
+      --text:#f8fafc;--muted:#94a3b8;--red:#f87171;--blue:#60a5fa;
+      --green:#4ade80;--yellow:#facc15
+    }
+    body{
+      margin:0;padding:14px;background:var(--bg);color:var(--text);
+      font-family:Arial,"Noto Sans KR",sans-serif
+    }
+    .wrap{max-width:900px;margin:auto}
+    .header{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px}
+    h1{margin:0;font-size:28px;line-height:1.2}
+    .actions{display:flex;gap:6px}
+    button{
+      border:0;border-radius:10px;padding:11px 14px;background:#2563eb;
+      color:white;font-weight:900;cursor:pointer;font-size:14px
+    }
+    .intro{
+      border:1px solid #2563eb;border-radius:14px;padding:12px;
+      background:linear-gradient(145deg,#0f1b2d,#0f172a);margin-bottom:10px
+    }
+    .intro-title{font-size:18px;font-weight:900;color:#dbeafe}
+    .intro-text{margin-top:7px;color:#cbd5e1;font-size:14px;line-height:1.7}
+    .summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:10px}
+    .summary-card,.card{background:var(--panel);border:1px solid var(--line);border-radius:13px}
+    .summary-card{padding:13px 10px;text-align:center}
+    .label{font-size:12px;color:var(--muted);font-weight:700}
+    .value{margin-top:6px;font-size:20px;font-weight:900}
+    .plus{color:var(--red)} .minus{color:var(--blue)}
+    .card{padding:14px;margin-top:12px}
+    .card h2{margin:0 0 10px;font-size:19px}
+    .legend{color:var(--muted);font-size:13px;line-height:1.6;margin-bottom:10px}
+    .strategy-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+    .strategy{
+      background:var(--panel2);border:1px solid var(--line);border-top:4px solid #64748b;
+      border-radius:10px;padding:11px;min-width:0
+    }
+    .strategy.OPEN{border-top-color:#f59e0b}.strategy.CORE{border-top-color:#3b82f6}
+    .strategy.VOLUME{border-top-color:#8b5cf6}.strategy.WAVE{border-top-color:#14b8a6}
+    .strategy.FAST{border-top-color:#ef4444}
+    .strategy-name{font-size:15px;font-weight:900}
+    .strategy-profit{margin-top:8px;font-size:19px;font-weight:900}
+    .strategy-sub{margin-top:6px;color:var(--muted);font-size:11px;line-height:1.5}
+    .day-list{display:flex;flex-direction:column;gap:8px}
+    .day-card{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:13px}
+    .day-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+    .day-date{font-size:18px;font-weight:900}
+    .day-total{font-size:22px;font-weight:900}
+    .day-strategies{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-top:8px}
+    .day-strategy{background:#111827;border-radius:9px;padding:9px 6px;text-align:center}
+    .day-strategy span{display:block;color:var(--muted);font-size:11px;font-weight:700}
+    .day-strategy b{display:block;margin-top:4px;font-size:14px}
+    .empty{padding:24px 16px;text-align:center;color:var(--muted);font-size:14px;line-height:1.6}
+    .status{margin-top:12px;text-align:center;color:var(--muted);font-size:12px}
+    @media(max-width:650px){
+      body{padding:10px}
+      .wrap{max-width:none}
+      .header{align-items:flex-start;flex-wrap:wrap;margin-bottom:14px}
+      h1{font-size:26px}
+      .actions{width:100%;display:grid;grid-template-columns:1fr 1fr}
+      .actions button{width:100%;font-size:14px;padding:12px 8px}
+      .intro{padding:14px}
+      .intro-title{font-size:18px}
+      .intro-text{font-size:14px}
+      .summary-grid{grid-template-columns:repeat(2,1fr);gap:8px}
+      .summary-card{min-height:82px;padding:13px 8px}
+      .label{font-size:12px}
+      .value{font-size:20px}
+      .card{padding:13px}
+      .card h2{font-size:19px}
+      .legend{font-size:13px}
+      .strategy-grid{grid-template-columns:repeat(2,1fr);gap:8px}
+      .strategy{padding:11px;min-height:105px}
+      .strategy-name{font-size:15px}
+      .strategy-profit{font-size:19px}
+      .strategy-sub{font-size:11px}
+      .day-card{padding:13px}
+      .day-date{font-size:18px}
+      .day-total{font-size:22px}
+      .day-strategies{grid-template-columns:repeat(2,1fr);gap:7px}
+      .day-strategy{padding:9px}
+      .day-strategy span{font-size:11px}
+      .day-strategy b{font-size:14px}
+    }
+
+    @media(max-width:380px){
+      h1{font-size:24px}
+      .summary-grid{grid-template-columns:1fr 1fr}
+      .value{font-size:18px}
+      .strategy-grid{grid-template-columns:1fr}
+      .strategy{min-height:auto}
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <h1>📈 일일 분석</h1>
+    <div class="actions">
+      <button onclick="location.href='performance.html'">대시보드</button>
+      <button onclick="location.href='index.html'">홈</button>
+    </div>
+  </div>
+
+  <section class="intro">
+    <div class="intro-title">MASTER 1억원의 날짜별 성과</div>
+    <div class="intro-text">
+      5개 전략은 별도 계좌가 아닙니다. 아래 숫자는 같은 MASTER 계좌 안에서
+      각 전략이 그날 확정한 실현손익을 나눠서 보여줍니다.
+      현재 화면은 최근 7거래일을 기준으로 비교합니다.
+    </div>
+  </section>
+
+  <section class="summary-grid">
+    <div class="summary-card"><div class="label">최근 7일 실현손익</div><div id="sum7" class="value">-</div></div>
+    <div class="summary-card"><div class="label">수익 난 날</div><div id="winDays" class="value">-</div></div>
+    <div class="summary-card"><div class="label">손실 난 날</div><div id="lossDays" class="value">-</div></div>
+    <div class="summary-card"><div class="label">가장 좋은 날</div><div id="bestDay" class="value">-</div></div>
+  </section>
+
+  <section class="card">
+    <h2>5개 전략 최근 7일 합계</h2>
+    <div class="legend">어떤 전략이 MASTER 손익에 가장 많이 기여했는지 비교합니다.</div>
+    <div id="strategyGrid" class="strategy-grid">
+      <div class="empty" style="grid-column:1/-1">전략자료를 불러오는 중...</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>날짜별 실현손익</h2>
+    <div class="legend">각 날짜의 총손익은 아래 5개 전략 실현손익의 합계입니다.</div>
+    <div id="dayList" class="day-list">
+      <div class="empty">일일자료를 불러오는 중...</div>
+    </div>
+  </section>
+
+  <div id="status" class="status">자료 확인 중...</div>
+</div>
+
+<script>
+const STRATEGIES = ["OPEN","CORE","VOLUME","WAVE","FAST"];
+const META = {
+  OPEN:{icon:"🚀",desc:"장초 단기 급등"},
+  CORE:{icon:"🛡️",desc:"강한 주도주 추세"},
+  VOLUME:{icon:"📊",desc:"거래량 급증"},
+  WAVE:{icon:"🌊",desc:"눌림 후 반등"},
+  FAST:{icon:"⚡",desc:"초기 급등 빠른 진입"}
+};
+
+function num(v){ const n=Number(v||0); return Number.isFinite(n)?n:0; }
+function won(v){
+  const n=num(v); const sign=n>0?"+":"";
+  return sign + Math.round(n).toLocaleString("ko-KR") + "원";
+}
+function compact(v){
+  const n=num(v), a=Math.abs(n), sign=n>0?"+":n<0?"-":"";
+  if(a>=100000000) return sign+(a/100000000).toFixed(2)+"억";
+  if(a>=10000) return sign+Math.round(a/10000).toLocaleString("ko-KR")+"만";
+  return sign+Math.round(a).toLocaleString("ko-KR");
+}
+function cls(v){ return num(v)>0?"plus":num(v)<0?"minus":""; }
+function esc(v){
+  return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
+}
+function shortDate(date){
+  const p=String(date||"").split("-");
+  return p.length===3 ? `${Number(p[1])}/${Number(p[2])}` : String(date||"-");
+}
+
+async function loadDaily(){
+  const status=document.getElementById("status");
+  try{
+    const res=await fetch("/api/strategy-dashboard-summary",{cache:"no-store"});
+    const data=await res.json();
+    if(!res.ok || data.ok===false) throw new Error(data.message||`HTTP ${res.status}`);
+
+    const strategies=Array.isArray(data.strategies)?data.strategies:[];
+    const dates=Array.isArray(data.recentDateKeys)?data.recentDateKeys:[];
+    const byId=new Map(strategies.map(s=>[String(s.id||"").toUpperCase(),s]));
+
+    const strategyGrid=document.getElementById("strategyGrid");
+    strategyGrid.innerHTML=STRATEGIES.map(id=>{
+      const s=byId.get(id)||{};
+      const rows=Array.isArray(s.recent7Days)?s.recent7Days:[];
+      const total=rows.reduce((sum,r)=>sum+num(r.profit),0);
+      return `<div class="strategy ${id}">
+        <div class="strategy-name">${META[id].icon} ${id}</div>
+        <div class="strategy-profit ${cls(total)}">${won(total)}</div>
+        <div class="strategy-sub">${META[id].desc}<br>최근 ${rows.length || dates.length}일 실현손익</div>
+      </div>`;
+    }).join("");
+
+    const dailyRows=dates.map(date=>{
+      const strategyProfits={};
+      let total=0;
+      for(const id of STRATEGIES){
+        const s=byId.get(id)||{};
+        const row=(s.recent7Days||[]).find(r=>String(r.date)===String(date));
+        const p=num(row?.profit);
+        strategyProfits[id]=p;
+        total+=p;
+      }
+      return {date,total,strategyProfits};
+    });
+
+    const sum7=dailyRows.reduce((s,r)=>s+r.total,0);
+    const wins=dailyRows.filter(r=>r.total>0).length;
+    const losses=dailyRows.filter(r=>r.total<0).length;
+    const best=[...dailyRows].sort((a,b)=>b.total-a.total)[0];
+
+    const sum7El=document.getElementById("sum7");
+    sum7El.textContent=won(sum7); sum7El.className="value "+cls(sum7);
+    document.getElementById("winDays").textContent=`${wins}일`;
+    document.getElementById("lossDays").textContent=`${losses}일`;
+
+    const bestEl=document.getElementById("bestDay");
+    if(best){
+      bestEl.textContent=`${shortDate(best.date)} ${compact(best.total)}`;
+      bestEl.className="value "+cls(best.total);
+    }else{
+      bestEl.textContent="-";
+    }
+
+    const dayList=document.getElementById("dayList");
+    const rows=[...dailyRows].reverse();
+    dayList.innerHTML=rows.length ? rows.map(row=>`
+      <article class="day-card">
+        <div class="day-head">
+          <div class="day-date">${esc(row.date)}</div>
+          <div class="day-total ${cls(row.total)}">${won(row.total)}</div>
+        </div>
+        <div class="day-strategies">
+          ${STRATEGIES.map(id=>`
+            <div class="day-strategy">
+              <span>${META[id].icon} ${id}</span>
+              <b class="${cls(row.strategyProfits[id])}">${compact(row.strategyProfits[id])}</b>
+            </div>`).join("")}
+        </div>
+      </article>`).join("") :
+      '<div class="empty">아직 일일 거래 데이터가 없습니다.</div>';
+
+    status.textContent=`MASTER 최근 ${dates.length}일 · ${new Date().toLocaleTimeString("ko-KR")} 갱신`;
+  }catch(err){
+    console.error(err);
+    document.getElementById("strategyGrid").innerHTML=
+      '<div class="empty" style="grid-column:1/-1">전략자료를 불러오지 못했습니다.</div>';
+    document.getElementById("dayList").innerHTML=
+      `<div class="empty">일일 분석 조회 실패 · ${esc(err.message)}</div>`;
+    status.textContent="API 확인 필요";
+  }
+}
+
+loadDaily();
+setInterval(loadDaily,30000);
+</script>
+</body>
+</html>

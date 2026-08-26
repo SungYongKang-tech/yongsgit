@@ -3,868 +3,232 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SY Quant 서버관리</title>
-  <link rel="stylesheet" href="./style.css" />
-
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>SY Quant MASTER 서버관리</title>
   <style>
-    .admin-top-summary {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 8px;
-      margin: 10px 0 12px;
+    * { box-sizing: border-box; }
+    :root {
+      --bg:#0b1220; --panel:#111827; --panel2:#172033; --line:#334155;
+      --text:#f8fafc; --muted:#94a3b8; --blue:#2563eb; --green:#15803d;
+      --red:#b91c1c; --amber:#b45309; --teal:#0f766e; --purple:#7c3aed;
     }
-
-    .admin-summary-card {
-      background: #111827;
-      border: 1px solid #374151;
-      border-radius: 12px;
-      padding: 10px;
+    body {
+      margin:0; padding:12px; background:var(--bg); color:var(--text);
+      font-family:Arial,"Noto Sans KR",sans-serif;
     }
-
-    .admin-summary-label {
-      font-size: 12px;
-      color: #9ca3af;
-      margin-bottom: 5px;
+    .page { max-width:980px; margin:0 auto; }
+    .header { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; flex-wrap:wrap; }
+    h1 { margin:0; font-size:26px; line-height:1.2; }
+    .subtitle { color:var(--muted); font-size:13px; margin-top:5px; line-height:1.45; }
+    .actions { display:flex; gap:6px; flex-wrap:wrap; }
+    button,.link-btn {
+      border:0; border-radius:10px; min-height:42px; padding:9px 12px;
+      font-weight:800; color:white; background:var(--blue); cursor:pointer;
+      text-decoration:none; display:inline-flex; align-items:center; justify-content:center;
     }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    .secondary { background:#475569; }
+    .safe { background:var(--green); }
+    .warn { background:var(--amber); }
+    .danger { background:var(--red); }
+    .teal { background:var(--teal); }
 
-    .admin-summary-value {
-      font-size: 16px;
-      font-weight: 800;
-      color: #f9fafb;
-      text-align: right;
+    .notice {
+      margin:12px 0; padding:11px 12px; border-radius:12px;
+      background:#0f172a; border:1px solid #1d4ed8; color:#bfdbfe;
+      font-size:12px; line-height:1.6;
     }
-
-    .admin-summary-sub {
-      font-size: 11px;
-      color: #9ca3af;
-      margin-top: 5px;
-      line-height: 1.35;
+    .notice strong { color:#fff; }
+    .statusbar {
+      display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap;
+      margin:10px 0; padding:9px 11px; border:1px solid var(--line);
+      background:var(--panel); border-radius:11px; color:var(--muted); font-size:12px;
     }
+    .ok { color:#86efac; } .bad { color:#fca5a5; } .amber-text { color:#fcd34d; }
 
-    .quick-menu {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 8px;
-      margin: 10px 0 12px;
+    .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:7px; }
+    .metric,.card {
+      background:var(--panel); border:1px solid var(--line); border-radius:13px;
+      padding:11px;
     }
+    .metric-label { color:var(--muted); font-size:11px; font-weight:700; }
+    .metric-value { margin-top:6px; font-size:19px; font-weight:900; text-align:right; }
+    .metric-sub { margin-top:5px; color:var(--muted); font-size:10px; text-align:right; }
 
-    .quick-menu button {
-      width: 100%;
-      min-height: 42px;
+    .section { margin-top:16px; }
+    .section-title { display:flex; justify-content:space-between; gap:8px; align-items:end; margin-bottom:8px; }
+    .section-title h2 { margin:0; font-size:18px; }
+    .section-title span { color:var(--muted); font-size:11px; }
+
+    .strategy-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:7px; }
+    .strategy-card { min-width:0; }
+    .strategy-head { display:flex; justify-content:space-between; gap:5px; align-items:center; }
+    .strategy-name { font-size:15px; font-weight:900; }
+    .badge { border-radius:999px; padding:4px 7px; font-size:10px; font-weight:900; background:#334155; }
+    .badge.active { background:#14532d; color:#bbf7d0; }
+    .badge.paused { background:#7f1d1d; color:#fecaca; }
+    .badge.reduced { background:#78350f; color:#fde68a; }
+    .strategy-main { margin-top:9px; font-size:16px; font-weight:900; text-align:right; }
+    .strategy-sub { margin-top:4px; color:var(--muted); font-size:10px; line-height:1.45; min-height:29px; }
+    .strategy-actions { display:grid; grid-template-columns:1fr 1fr; gap:5px; margin-top:8px; }
+    .strategy-actions button { min-height:35px; padding:6px; font-size:11px; }
+
+    .control-card { background:var(--panel); border:1px solid var(--line); border-radius:13px; padding:12px; }
+    .control-title { font-size:15px; font-weight:900; }
+    .control-desc { margin-top:5px; color:var(--muted); font-size:11px; line-height:1.55; }
+    .control-buttons { display:flex; gap:7px; flex-wrap:wrap; margin-top:10px; }
+    .control-buttons button { flex:1; min-width:160px; }
+
+    .risk-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:7px; margin-top:9px; }
+    .mini { background:#0f172a; border-radius:10px; padding:9px; }
+    .mini span { color:var(--muted); font-size:10px; display:block; }
+    .mini b { display:block; margin-top:5px; text-align:right; font-size:13px; }
+
+    .danger-box { border-color:#7f1d1d; background:rgba(127,29,29,.16); }
+    .danger-box .control-title { color:#fecaca; }
+
+    .footer { margin:16px 0 5px; color:var(--muted); font-size:10px; text-align:center; line-height:1.5; }
+
+    @media(max-width:760px) {
+      .grid { grid-template-columns:repeat(2,1fr); }
+      .strategy-grid { grid-template-columns:repeat(2,1fr); }
+      .risk-grid { grid-template-columns:repeat(2,1fr); }
+      .actions { width:100%; }
+      .actions .link-btn,.actions button { flex:1; }
     }
-
-    .quick-menu .today-detail-btn {
-      background: #7c3aed;
+    @media(max-width:390px) {
+      body { padding:8px; }
+      h1 { font-size:23px; }
+      .strategy-grid { grid-template-columns:1fr; }
+      .strategy-card .strategy-sub { min-height:0; }
     }
-
-    .quick-menu .server-btn {
-      background: #0f766e;
-    }
-
-    .quick-menu .danger-light-btn {
-      background: #991b1b;
-    }
-
-    .server-paper-btn-group {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      justify-content: flex-end;
-    }
-
-    .server-paper-btn-group .small-btn {
-      min-height: 36px;
-    }
-
-    .admin-section-title {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 8px;
-      margin: 14px 0 8px;
-      font-weight: 800;
-      color: #f9fafb;
-    }
-
-    .admin-section-title small {
-      font-size: 11px;
-      color: #9ca3af;
-      font-weight: 500;
-    }
-
-    .risk-help-box {
-      background: #111827;
-      border: 1px solid #374151;
-      border-radius: 12px;
-      padding: 10px;
-      margin: 10px 0;
-      font-size: 12px;
-      color: #d1d5db;
-      line-height: 1.5;
-    }
-
-    .risk-help-box b {
-      color: #fbbf24;
-    }
-
-    .danger-zone {
-      border: 1px solid #7f1d1d;
-      background: rgba(127, 29, 29, 0.25);
-      border-radius: 14px;
-      padding: 10px;
-      margin: 12px 0;
-    }
-
-    .danger-zone-title {
-      color: #fecaca;
-      font-size: 13px;
-      font-weight: 800;
-      margin-bottom: 8px;
-    }
-
-    .emergency-row {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .emergency-row button {
-      flex: 1;
-      min-width: 130px;
-    }
-
-    .trade-time-row {
-      display: grid;
-      grid-template-columns: 1fr auto 1fr;
-      gap: 8px;
-      align-items: center;
-      margin: 10px 0;
-    }
-
-    .trade-time-row button {
-      grid-column: 1 / -1;
-    }
-
-    .watch-actions,
-    .sort-row,
-    .hold-sort-row,
-    .discover-preset-row,
-    .auto-discover-btn-row,
-    .backtest-preset-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-    }
-
-    .setting-grid {
-      gap: 8px;
-    }
-
-    .setting-card {
-      min-width: 0;
-    }
-
-    .setting-title {
-      line-height: 1.3;
-    }
-
-    .setting-row input,
-    .discover-setting-row input,
-    .watch-add-row input,
-    .search-row input,
-    .backtest-row input,
-    .backtest-row select {
-      min-height: 38px;
-    }
-
-    details.backtest-box summary {
-      cursor: pointer;
-      font-weight: 800;
-      padding: 10px 0;
-    }
-
-    @media (min-width: 900px) {
-      .admin-top-summary {
-        grid-template-columns: repeat(4, 1fr);
-      }
-
-      .quick-menu {
-        grid-template-columns: repeat(4, 1fr);
-      }
-
-      .trade-time-row {
-        grid-template-columns: 1fr auto 1fr auto;
-      }
-
-      .trade-time-row button {
-        grid-column: auto;
-      }
-    }
-
-    @media (max-width: 720px) {
-      .header-row,
-      .server-paper-title-row,
-      .trade-log-title-row,
-      .watch-title-row {
-        align-items: flex-start;
-      }
-
-      .server-paper-btn-group {
-        justify-content: stretch;
-      }
-
-      .server-paper-btn-group .small-btn {
-        flex: 1 1 48%;
-      }
-
-      .quick-menu {
-        grid-template-columns: 1fr 1fr;
-      }
-
-      .admin-top-summary {
-        grid-template-columns: 1fr 1fr;
-      }
-    }
-
-    .legacy-hidden {
-      display: none !important;
-    }
-
-    .admin-guide {
-      background: #0f172a;
-      border: 1px solid #334155;
-      border-radius: 12px;
-      padding: 10px 12px;
-      margin: 10px 0 12px;
-      color: #cbd5e1;
-      font-size: 12px;
-      line-height: 1.55;
-    }
-
-    .admin-guide b {
-      color: #fbbf24;
-    }
-
-    .control-summary {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 8px;
-      margin: 10px 0 12px;
-    }
-
-    .control-summary .admin-summary-card {
-      min-height: 76px;
-    }
-
-    @media (min-width: 900px) {
-      .control-summary {
-        grid-template-columns: repeat(4, 1fr);
-      }
-    }
-
-
-    /* 서버 운영상태 패널은 노트북/태블릿에서도 숨기지 않는다. */
-    .app {
-      display: grid !important;
-      grid-template-columns: minmax(0, 1fr) !important;
-      gap: 14px !important;
-    }
-
-    .left-panel,
-    .right-panel {
-      display: block !important;
-      visibility: visible !important;
-      opacity: 1 !important;
-      min-width: 0 !important;
-      width: auto !important;
-    }
-
-    @media (min-width: 1180px) {
-      .app {
-        grid-template-columns: minmax(0, 1fr) minmax(430px, 0.85fr) !important;
-        align-items: start;
-      }
-    }
-
   </style>
-
 </head>
-
 <body>
-  <div class="app">
-
-    <div class="left-panel">
-      <header>
-        <div id="testModeBanner" class="test-mode-banner">
-          ⚠ 테스트모드 실행 중 · 실제 주문 아님 · 장외 가상매매 허용
-        </div>
-
-        <div id="apiWarningBanner" class="api-warning-banner" style="display:none;">
-  ⚠ API 요청 제한으로 자동갱신이 일시 중지되었습니다. 1~3분 후 다시 조회하세요.
-</div>
-<div id="apiStatusBar" class="api-status-bar">
-  API 대기중
-</div>
-<div id="tradeToast" class="trade-toast" style="display:none;"></div>
-
-        <h1>SY Quant 서버관리</h1>
-<p>Core/Volume 자동매매 상태 · 위험관리 · 긴급제어</p>
-      </header>
-
-      <div class="quick-menu">
-        <button type="button" onclick="location.href='performance.html'">
-          📊 메인 대시보드
-        </button>
-
-        <button type="button" class="today-detail-btn" onclick="location.href='today-trade-analysis.html'">
-          🔎 오늘 상세
-        </button>
-
-        <button type="button" onclick="location.href='daily-summary.html'">
-          📈 일일 분석
-        </button>
-
-        <button type="button" class="server-btn" onclick="document.getElementById('loadServerPaperBtn')?.click()">
-          🔄 서버 조회
-        </button>
-      </div>
-
-      <div class="admin-guide">
-        평소에는 <b>메인 대시보드</b>만 사용하고, 이 화면은 자동매매 중지·재개, 토큰 발급,
-        손실제한 확인, 서버상태 조회 등 비상관리 작업에 사용합니다.
-      </div>
-
-      <div class="admin-top-summary">
-        <div class="admin-summary-card">
-          <div class="admin-summary-label">운영 화면</div>
-          <div class="admin-summary-value">서버관리</div>
-          <div class="admin-summary-sub">상태 · 중지 · 재개 · 토큰</div>
-        </div>
-
-        <div class="admin-summary-card">
-          <div class="admin-summary-label">전략 구조</div>
-          <div class="admin-summary-value">C/V</div>
-          <div class="admin-summary-sub">Core · Volume</div>
-        </div>
-
-        <div class="admin-summary-card">
-          <div class="admin-summary-label">주요 확인</div>
-          <div class="admin-summary-value">손실제한</div>
-          <div class="admin-summary-sub">일일손실 · 연속손절 · 자동중지</div>
-        </div>
-
-        <div class="admin-summary-card">
-          <div class="admin-summary-label">사용 원칙</div>
-          <div class="admin-summary-value">비상시</div>
-          <div class="admin-summary-sub">평소에는 대시보드 사용</div>
-        </div>
-      </div>
-
-      <div class="admin-section-title legacy-hidden">
-        <span>① 종목 단일 조회</span>
-        <small>종목코드/종목명 검색</small>
-      </div>
-
-      <section class="search-card legacy-hidden">
-        <label for="stockCode">종목코드</label>
-        <div class="search-row">
-          <input
-            id="stockCode"
-            type="text"
-            value="005930"
-            placeholder="예: 005930"
-          />
-          <button id="searchBtn">조회</button>
-        </div>
-        <div class="suggest-list" id="suggestList"></div>
-      </section>
-
-      <section class="result-card legacy-hidden" id="resultCard">
-        <div class="empty">종목코드를 입력하고 조회하세요.</div>
-      </section>
-
-      <div class="admin-section-title legacy-hidden">
-        <span>② 종목 발굴 / 관심종목</span>
-        <small>스캔 조건과 자동발굴 관리</small>
-      </div>
-
-      <section class="watch-card legacy-hidden">
-        <div class="watch-title-row">
-          <h2>종목 발굴 / 관심종목</h2>
-
-          <div class="watch-actions">
-            <button id="loadWatchBtn">조회</button>
-            <button id="autoRefreshBtn">자동OFF</button>
-            <button id="testModeBtn">테스트OFF</button>
-          </div>
-        </div>
-
-        <div class="sort-row">
-          <button class="sort-btn active" data-sort="default">기본순</button>
-          <button class="sort-btn" data-sort="rate">상승률순</button>
-          <button class="sort-btn" data-sort="volume">거래량순</button>
-          <button class="sort-btn" data-sort="price">현재가순</button>
-        </div>
-
-        <div class="setting-grid">
-          <div class="setting-card full">
-            <div class="setting-title">알림 기준 (%)</div>
-            <div class="setting-row">
-              <input id="alertRateInput" type="number" value="5" step="0.1" />
-              <button id="saveAlertRateBtn">저장</button>
-            </div>
-          </div>
-
-          <div class="setting-card">
-            <div class="setting-title">진입 기준 (%)</div>
-            <div class="setting-row">
-              <input id="entryRateInput" type="number" value="3" step="0.1" />
-              <button id="saveEntryRateBtn">저장</button>
-            </div>
-          </div>
-
-          <div class="setting-card">
-            <div class="setting-title">거래대금 기준(억원)</div>
-<div class="setting-row">
-  <input id="volumeThresholdInput" type="number" placeholder="50" />
-  <button id="saveVolumeThresholdBtn">저장</button>
-</div>
-          </div>
-
-          <div class="setting-card compact-card">
-            <div class="setting-title">전체 투자금(원)</div>
-            <div class="setting-row only-input">
-              <input id="defaultBuyAmountInput" type="text" placeholder="10,000,000" />
-            </div>
-          </div>
-
-          <div class="setting-card compact-card">
-            <div class="setting-title">최대 보유종목(개)</div>
-            <div class="setting-row only-input">
-              <input id="maxHoldingCountInput" type="number" value="5" />
-            </div>
-          </div>
-
-          <div class="setting-card full save-card">
-            <button id="saveDefaultBuyAmountBtn" class="full-save-btn">투자설정 저장</button>
-          </div>
-
-          <div class="setting-card">
-            <div class="setting-title">하루 최대 손실금(원)</div>
-            <div class="setting-row">
-              <input id="dailyMaxLossInput" type="text" placeholder="30,000" />
-              <button id="saveDailyMaxLossBtn">저장</button>
-            </div>
-          </div>
-
-          <div class="setting-card">
-            <div class="setting-title">연속 손절 제한(회)</div>
-            <div class="setting-row">
-              <input id="maxConsecutiveLossInput" type="number" value="2" />
-              <button id="saveMaxConsecutiveLossBtn">저장</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="entry-box" id="entryBox">
-          <div class="empty">진입후보 종목이 없습니다.</div>
-        </div>
-
-        <div class="auto-discover-row">
-          <div class="auto-discover-card">
-            <div class="auto-discover-header">
-              <div>
-                <div class="auto-discover-title">종목 후보 발굴</div>
-                <div class="auto-discover-sub">CORE/VOLUME 후보 탐색</div>
-              </div>
-
-              <div id="autoDiscoverState" class="auto-discover-state off">OFF</div>
-            </div>
-
-            <div class="discover-setting-row">
-              <input id="discoverLimitInput" type="number" value="300" step="100" placeholder="스캔 종목 수" />
-              <input id="discoverMinScoreInput" type="number" value="5" step="1" placeholder="최소 점수" />
-            </div>
-
-            <div class="discover-preset-row">
-              <button type="button" class="discover-preset-btn" data-limit="200" data-score="6">보수형</button>
-              <button type="button" class="discover-preset-btn" data-limit="300" data-score="5">기본형</button>
-              <button type="button" class="discover-preset-btn" data-limit="500" data-score="4">공격형</button>
-            </div>
-
-            <div class="auto-discover-btn-row">
-              <button id="autoDiscoverBtn">1회 발굴</button>
-             
-              <button id="resetMorningAutoBtn" type="button">
-  발굴 시간 초기화
-</button>
-            </div>
-
-            <button id="runAllBacktestBtn">전체 자동 백테스트</button>
-          </div>
-        </div>
-
-        <div class="strong-stock-box" id="strongStockBox">
-          <div class="empty">오늘 발굴된 후보 종목이 없습니다.</div>
-        </div>
-
-        <div class="alert-box" id="alertBox">
-          <div class="empty">알림 조건에 맞는 종목이 없습니다.</div>
-        </div>
-
-        <div class="watch-add-row">
-          <input id="addStockCode" type="text" placeholder="종목명 또는 코드 추가 예: 삼성전자" />
-          <div class="suggest-list" id="addStockSuggestList"></div>
-          <button id="addStockBtn">추가</button>
-        </div>
-
-        <div class="watch-list" id="watchList"></div>
-      </section>
+<main class="page">
+  <div class="header">
+    <div>
+      <h1>⚙ SY Quant MASTER 서버관리</h1>
+      <div class="subtitle">MASTER 1억원 · OPEN · CORE · VOLUME · WAVE · FAST</div>
     </div>
-
-    <div class="right-panel">
-      <section class="hold-card">
-        <h2>서버 자동매매 관리</h2>
-
-                <div class="server-paper-box">
-  <div class="server-paper-title-row">
-
-  <div>
-    <div class="server-paper-title">
-      Core/Volume 운영 상태
-    </div>
-
-    <div id="serverAutoStateText" class="server-auto-state-text">
-      서버 자동매매 상태 확인중...
+    <div class="actions">
+      <a class="link-btn" href="performance.html">📊 대시보드</a>
+      <a class="link-btn secondary" href="today-trade-analysis.html">📋 오늘 거래</a>
+      <button id="refreshBtn" class="teal">🔄 서버 조회</button>
     </div>
   </div>
 
-  <div class="server-paper-btn-group">
-  <button id="toggleServerAutoBtn" class="small-btn">
-    서버 자동매매 OFF
-  </button>
-
-  <button id="loadServerPaperBtn" class="small-btn">
-    서버상태 조회
-  </button>
-
-  <button id="reissueTokenBtn" class="small-btn">
-  토큰 신규발급
-</button>
-
-<button
-  type="button"
-  class="small-btn"
-  onclick="location.href='performance.html'">
-  📊 메인 대시보드
-</button>
-
-<button
-  type="button"
-  class="small-btn"
-  onclick="location.href='today-trade-analysis.html'">
-  🔎 오늘 상세
-</button>
-
-  <button id="clearServerResultBtn" class="small-btn danger">
-    완료결과 삭제
-  </button>
-</div>
-
-</div>
-
-  <div id="serverPaperBox" class="server-paper-content">
-    <div class="empty">Core/Volume 서버 상태를 조회하세요.</div>
-  </div>
-</div>
-
-<div class="trade-log-box legacy-hidden">
-  <div class="trade-log-title-row">
-  <div class="trade-log-title">최근 Core/Volume 매매로그</div>
-
-  <button id="clearTradeLogBtn" class="small-btn danger">
-    서버로그 삭제
-  </button>
-
-  
-</div>
-
-  <div id="tradeLogList" class="trade-log-list">
-    <div class="empty">아직 발생한 매매 신호가 없습니다.</div>
+  <div class="notice">
+    <strong>안전한 관리자 화면입니다.</strong>
+    이 페이지는 종목을 자동으로 사고팔지 않습니다. 실제 매수·매도 판단은 각 전략 모듈과
+    <b>portfolio-manager.js</b>에서만 수행합니다. 평소에는 대시보드를 사용하고,
+    여기서는 MASTER 상태 확인과 신규매수 중지·재개, 토큰 관리만 하세요.
   </div>
 
-  <div class="trade-log-title-row" style="margin-top:14px;">
-    <div class="trade-log-title">매도 상세내역</div>
-    <button id="clearVirtualResultBtn" class="small-btn danger">
-      결과삭제
-    </button>
+  <div class="statusbar">
+    <span id="apiState">서버 상태 확인 중...</span>
+    <span id="updatedAt">-</span>
   </div>
 
-  <div id="virtualResultBox" class="virtual-result-box">
-    <div class="empty">완료된 모의투자 결과가 없습니다.</div>
-  </div>
-</div>
-
-
-        <div class="risk-help-box">
-          <b>운영 확인 순서</b><br>
-          ① 서버 자동매매 상태 확인 → ② 손실제한·매수중단 여부 확인 →
-          ③ 필요 시 자동매매 다시 켜기 → ④ 그래도 문제가 있으면 토큰 신규발급
-        </div>
-
-        <div class="danger-zone">
-          <div class="danger-zone-title">⚠ 비상 작업 · 꼭 필요한 경우에만 실행</div>
-          <div class="emergency-row">
-            <button id="emergencyStopBtn">긴급 전체중지</button>
-            <button id="resetHoldingsBtn" class="small-btn danger">
-              보유초기화
-            </button>
-          </div>
-        </div>
-
-        <div class="risk-help-box">
-          <b>거래시간</b><br>
-          서버 자동매매 운영시간을 변경할 때만 사용하세요. 평소에는 현재 설정을 유지하는 것이 안전합니다.
-        </div>
-
-        <div class="trade-time-row">
-          <input id="tradeStartTime" type="time" value="09:00" />
-          <span>~</span>
-          <input id="tradeEndTime" type="time" value="15:30" />
-          <button id="saveTradeTimeBtn">거래시간 저장</button>
-        </div>
-
-        <div class="hold-sort-row legacy-hidden">
-          <button class="hold-sort-btn active" data-hold-sort="default">
-            기본순
-          </button>
-          <button class="hold-sort-btn" data-hold-sort="profit">
-            손익순
-          </button>
-          <button class="hold-sort-btn" data-hold-sort="rate">
-            수익률순
-          </button>
-          <button class="hold-sort-btn" data-hold-sort="eval">
-            평가금액순
-          </button>
-        </div>
-
-        <div class="summary-box legacy-hidden" id="holdSummary" style="display:none;">
-          <div>
-            <span>총 평가금액</span>
-            <strong>0원</strong>
-          </div>
-          <div>
-            <span>총 손익</span>
-            <strong>0원</strong>
-          </div>
-        </div>
-
-       <div class="hold-rank-box legacy-hidden" id="holdRankBox" style="display:none;">
-          <div class="empty">보유종목 수익/손실 요약이 없습니다.</div>
-        </div>
-
-       <div class="trade-stat-box legacy-hidden" id="tradeStatBox" style="display:none;">
-
-          <div class="risk-help-box">
-            <b>확인 포인트</b><br>
-            자동매매가 멈췄다면 일일 손실한도, 매수중단 상태, CORE/VOLUME 보유한도를 먼저 확인하세요.
-          </div>
-
-          <div class="risk-status-box" id="riskStatusBox">
-  <div class="empty">리스크 상태가 없습니다.</div>
-</div>
-
-  <div class="empty">자동매매 통계가 없습니다.</div>
-</div>
-
-<button id="resumeAutoTradeBtn" class="backtest-btn">
-  ▶ 자동매매 중지 해제 및 다시 켜기
-</button>
-<!--
-        <div class="hold-add-row">
-          <input id="holdCode" type="text" placeholder="종목명 또는 코드" />
-          <input id="buyPrice" type="number" placeholder="매수가" />
-          <input id="holdQty" type="number" placeholder="수량" />
-          <input id="targetPrice" type="number" placeholder="목표가" />
-          <input id="secondTargetPrice" type="number" placeholder="2차목표가" />
-          <input id="trailingStopRate" type="number" placeholder="트레일링%" />
-          <input id="stopLossPrice" type="number" placeholder="손절가" />
-          <button id="addHoldBtn">추가</button>
-        </div>
-        <div class="suggest-list" id="holdSuggestList"></div>
--->
-       
-        <div class="hold-list legacy-hidden" id="holdList">
-  <div class="empty">보유종목을 추가하세요.</div>
-</div>
-    
-
-        </div>
-
-
-
-
-<details class="backtest-box legacy-hidden">
-  <summary>📈 백테스트</summary>
- 
-  <button id="toggleBacktestPanelBtn" type="button">
-  백테스트 펼치기
-</button>
-<div id="backtestPanel" class="backtest-panel collapsed">
-  <!-- 기존 백테스트 입력칸, 버튼, 결과 영역 전체 -->
-
-
-  <div class="backtest-row">
-    <input id="backtestCode" type="text" placeholder="종목명 또는 코드" />
-    <div class="suggest-list" id="backtestSuggestList"></div>
-    <select id="backtestPeriod">
-      <option value="7">최근 7일</option>
-      <option value="30" selected>최근 1개월</option>
-      <option value="90">최근 3개월</option>
-    </select>
-  </div>
-
-  <div class="backtest-row backtest-rate-row">
-
-  <div class="backtest-rate-box">
-    <label for="backtestTargetRate">
-      목표수익률 (%)
-    </label>
-
-    <input
-      id="backtestTargetRate"
-      type="number"
-      value="5"
-      step="0.1"
-    />
-  </div>
-
-  <div class="backtest-rate-box">
-  <label for="backtestTrailingRate">
-    트레일링 (%)
-  </label>
-
-  <input
-    id="backtestTrailingRate"
-    type="number"
-    value="3"
-    step="0.1"
-  />
-</div>
-
-  <div class="backtest-rate-box">
-    <label for="backtestStopRate">
-      손절률 (%)
-    </label>
-
-    <input
-      id="backtestStopRate"
-      type="number"
-      value="3"
-      step="0.1"
-    />
-  </div>
-
-</div>
-
-  <div class="backtest-input-group">
-  <label for="backtestInitialCash">초기 투자금</label>
-
-  <input
-    type="number"
-    id="backtestInitialCash"
-    value="10000000"
-    step="100000"
-  />
-</div>
- <div class="backtest-strategy-box">
-  <div class="backtest-preset-box">
-  <div class="backtest-preset-title">전략 프리셋</div>
-
-  <div class="backtest-preset-row">
-    <button type="button" class="preset-btn" data-preset="trend">
-      추세형
-    </button>
-
-    <button type="button" class="preset-btn" data-preset="short">
-      단타형
-    </button>
-
-    <button type="button" class="preset-btn" data-preset="safe">
-      안정형
-    </button>
-  </div>
-</div>
-
-  <div class="backtest-strategy-title">매수 전략 선택</div>
-
-  <label>
-    <input type="checkbox" id="strategyUpCandle" checked />
-    상승양봉
-  </label>
-
-  <label>
-    <input type="checkbox" id="strategyVolumeUp" checked />
-    거래량증가
-  </label>
-
-  <label>
-    <input type="checkbox" id="strategyCloseBreak" checked />
-    전일종가돌파
-  </label>
-
-  <label>
-    <input type="checkbox" id="strategyHighBreak" />
-    전일고가돌파
-  </label>
-</div>
-<div class="backtest-filter-box">
-  <div class="backtest-filter-title">
-    매수 제외 필터
-  </div>
-
-  <label>
-    <input type="checkbox" id="filterOverHeat" checked />
-    당일 급등(+7%) 제외
-  </label>
-
-  <label>
-    <input type="checkbox" id="filter3DayUp" checked />
-    3일 연속 상승 제외
-  </label>
-
-  <label>
-    <input type="checkbox" id="filterLowVolume" checked />
-    거래량 급감 제외
-  </label>
-
-  <label>
-    <input type="checkbox" id="filterWeakCandle" checked />
-    윗꼬리 긴 음봉 제외
-  </label>
-</div>
-
-  <button id="runBacktestBtn" class="backtest-btn">백테스트 실행</button>
-  <button id="compareBacktestBtn" class="backtest-btn">
-  전략 비교 실행
-</button>
-
-<button id="applyBestStrategyBtn" class="backtest-btn">
-  추천 전략 적용
-</button>
-
-
-<div id="backtestResult" class="backtest-result">
-    <div class="empty">백테스트 결과가 없습니다.</div>
-  </div>
-</div>
-</details>
-      </section>
+  <section class="grid">
+    <div class="metric">
+      <div class="metric-label">MASTER 자산</div>
+      <div class="metric-value" id="masterAsset">-</div>
+      <div class="metric-sub">공통계좌 전체</div>
     </div>
+    <div class="metric">
+      <div class="metric-label">MASTER 현금</div>
+      <div class="metric-value" id="masterCash">-</div>
+      <div class="metric-sub">현재 현금</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">투자중</div>
+      <div class="metric-value" id="masterExposure">-</div>
+      <div class="metric-sub" id="exposureLimitText">최대 90%</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">신규매수 가능</div>
+      <div class="metric-value" id="masterAvailable">-</div>
+      <div class="metric-sub" id="reserveText">최소현금 10%</div>
+    </div>
+  </section>
 
+  <section class="section">
+    <div class="section-title">
+      <h2>5개 전략 신규매수 상태</h2>
+      <span>PAUSED여도 기존 보유 매도관리는 계속</span>
+    </div>
+    <div id="strategyGrid" class="strategy-grid"></div>
+  </section>
+
+  <section class="section">
+    <div class="control-card">
+      <div class="control-title">MASTER 신규매수 일괄제어</div>
+      <div class="control-desc">
+        가장 안전한 비상 제어입니다. 5개 전략의 <b>신규매수만</b> 막거나 다시 허용합니다.
+        손절·트레일링·수익보호 등 기존 보유종목의 매도 위험관리는 중지하지 않습니다.
+      </div>
+      <div class="control-buttons">
+        <button id="pauseAllBtn" class="danger">⏸ 5전략 신규매수 전체중지</button>
+        <button id="resumeAllBtn" class="safe">▶ 5전략 신규매수 전체재개</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-title">
+      <h2>운영·리스크 확인</h2>
+      <span>읽기 전용</span>
+    </div>
+    <div class="control-card">
+      <div class="risk-grid">
+        <div class="mini"><span>보유종목</span><b id="holdingCount">-</b></div>
+        <div class="mini"><span>최소 보존현금</span><b id="reserveCash">-</b></div>
+        <div class="mini"><span>일일 손실한도</span><b id="dailyLossLimit">-</b></div>
+        <div class="mini"><span>신규매수 위험중지</span><b id="dailyBuyStopped">-</b></div>
+        <div class="mini"><span>마지막 CORE/VOLUME 실행</span><b id="lastRunAt">-</b></div>
+        <div class="mini"><span>마지막 매도점검</span><b id="lastSellCheckAt">-</b></div>
+        <div class="mini"><span>OPEN 완료</span><b id="openStatus">-</b></div>
+        <div class="mini"><span>MASTER 모드</span><b id="allocationMode">-</b></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="control-card danger-box">
+      <div class="control-title">고급 비상제어 · OPEN/CORE/VOLUME 엔진</div>
+      <div class="control-desc">
+        이 스위치는 MASTER 신규매수 PAUSED와 다릅니다. OFF하면
+        <b>OPEN·CORE·VOLUME의 매수뿐 아니라 해당 엔진의 매도 점검도 멈출 수 있습니다.</b>
+        일반적인 신규매수 중지는 위의 MASTER 일괄중지를 사용하세요.
+        WAVE·FAST에는 이 스위치가 적용되지 않습니다.
+      </div>
+      <div class="control-buttons">
+        <button id="engineToggleBtn" class="warn">상태 확인 중...</button>
+      </div>
+      <div class="control-desc" id="engineChangedAt"></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="control-card">
+      <div class="control-title">키움 토큰</div>
+      <div class="control-desc">
+        토큰 오류가 실제로 발생했을 때만 사용하세요. 신규발급 성공 후 kiwwm-server가 자동 재시작됩니다.
+      </div>
+      <div class="control-buttons">
+        <button id="reissueTokenBtn" class="purple">🔑 토큰 신규발급 + 서버재시작</button>
+      </div>
+    </div>
+  </section>
+
+  <div class="footer">
+    제거된 구형 기능: 브라우저 자동매수·자동매도 · /api/paper-buy · /api/paper-sell 호출 ·
+    보유초기화 · MASTER 거래로그 삭제 · 구형 백테스트/관심종목 자동거래
   </div>
-
-<script src="./app_old.js?v=20260726_server_admin_fixed_2"></script>
+</main>
+<script src="./app_old.js?v=20260826-master-admin-safe-v1"></script>
 </body>
 </html>

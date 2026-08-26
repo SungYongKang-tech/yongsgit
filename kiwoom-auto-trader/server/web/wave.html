@@ -58,6 +58,7 @@
     .empty { color:#9ca3af; text-align:center; background:#1f2937; border-radius:12px; padding:18px; }
     .error { color:#fecaca; background:#7f1d1d; border-radius:10px; padding:10px; font-size:12px; display:none; margin-bottom:10px; }
     .legend { color:#9ca3af; font-size:11px; line-height:1.55; margin-top:7px; }
+    .master-note { margin-bottom:10px; padding:9px 11px; border-radius:11px; background:#0f172a; border:1px solid #0f766e; color:#99f6e4; font-size:11px; line-height:1.5; }
     @media(min-width:800px){ body{max-width:760px;margin:0 auto;padding:18px;} }
     @media(max-width:620px){
       .header{align-items:flex-start;flex-wrap:wrap}.actions{width:100%}.actions button{flex:1}
@@ -79,16 +80,18 @@
 
   <div id="errorBox" class="error"></div>
 
+  <div class="master-note">MASTER 단일계좌 1억원을 OPEN·CORE·VOLUME·WAVE·FAST가 함께 사용합니다. 아래 MASTER 자산·현금은 공통계좌 전체 값이며, WAVE 실현·보유손익과 보유종목은 MASTER 안에서 WAVE가 만든 전략분만 표시합니다.</div>
+
   <div class="status-line">
     <div><span id="waveMode" class="mode wait">상태 확인 중</span></div>
     <div id="waveUpdatedAt">API 확인 중...</div>
   </div>
 
   <div class="grid">
-    <div class="metric"><div class="label">WAVE 자산</div><div class="value" id="equity">-</div></div>
-    <div class="metric"><div class="label">실현손익</div><div class="value" id="realizedProfit">-</div></div>
-    <div class="metric"><div class="label">보유손익</div><div class="value" id="unrealizedProfit">-</div></div>
-    <div class="metric"><div class="label">현금</div><div class="value" id="totalCash">-</div></div>
+    <div class="metric"><div class="label">MASTER 자산</div><div class="value" id="equity">-</div></div>
+    <div class="metric"><div class="label">WAVE 실현손익</div><div class="value" id="realizedProfit">-</div></div>
+    <div class="metric"><div class="label">WAVE 보유손익</div><div class="value" id="unrealizedProfit">-</div></div>
+    <div class="metric"><div class="label">MASTER 현금</div><div class="value" id="totalCash">-</div></div>
     <div class="metric"><div class="label">활성후보</div><div class="value" id="candidateCount">-</div></div>
     <div class="metric"><div class="label">WATCH</div><div class="value" id="watchCount">-</div></div>
     <div class="metric"><div class="label">READY</div><div class="value" id="readyCount">-</div></div>
@@ -109,11 +112,11 @@
       <div class="flow-item"><span>SOLD</span><b id="flowSold">0</b></div>
       <div class="flow-item"><span>제외</span><b id="flowDropped">0</b></div>
     </div>
-    <div class="legend">DISCOVERED → WATCH → READY → TRIGGER → HOLD → PROTECT → SOLD 순서로 진행합니다. READY는 종목·눌림 조건 통과, TRIGGER는 실제 반등을 1차 확인한 상태입니다. V1.5.1부터 TRIGGER 즉시 매수하지 않고 다음 5분 평가에서도 조건이 유지되어야 HOLD(모의매수)로 전환합니다. 전일 +10% 이상 급등 종목은 다음날 장 초반 쿨다운을 적용하고, 시가 대비 회복·직전 평가 대비 상승·당일 저점 회복을 함께 확인합니다.</div>
+    <div class="legend">DISCOVERED → WATCH → READY → TRIGGER → HOLD → PROTECT → SOLD 순서로 진행합니다. READY는 종목·눌림 조건 통과, TRIGGER는 실제 반등을 1차 확인한 상태입니다. TRIGGER 즉시 매수하지 않고 다음 평가에서도 조건이 유지되어야 HOLD(모의매수)로 전환합니다. WAVE 매수·매도 자금은 MASTER 단일계좌에서 처리되고, 후보·사전분석·WATCH 이력은 WAVE 전용 상태로 유지됩니다.</div>
   </div>
 
   <div class="section">
-    <h2>현재 보유종목</h2>
+    <h2>WAVE 보유종목 · MASTER 계좌</h2>
     <div id="holdingsBox" class="list"><div class="empty">보유종목 확인 중...</div></div>
   </div>
 
@@ -123,7 +126,7 @@
   </div>
 
   <div class="section">
-    <h2>최근 WAVE 거래</h2>
+    <h2>최근 WAVE 거래 · MASTER 계좌</h2>
     <div id="tradesBox" class="list"><div class="empty">거래내역 확인 중...</div></div>
   </div>
 
@@ -401,11 +404,12 @@ function renderDropped(watchlist = []) {
     </div>`).join("") : '<div class="empty">최근 제외된 WAVE 후보가 없습니다.</div>';
 }
 
-function render(summary = {}, state = {}) {
-  setMoney("equity", summary.equity);
+function render(summary = {}, state = {}, master = {}) {
+  // MASTER 자산/현금은 공통 포트폴리오 API가 최종 기준이다.
+  setMoney("equity", master.totalAsset ?? summary.equity);
   setMoney("realizedProfit", summary.realizedProfit, true);
   setMoney("unrealizedProfit", summary.unrealizedProfit, true);
-  setMoney("totalCash", summary.totalCash);
+  setMoney("totalCash", master.totalCash ?? summary.totalCash);
   setText("candidateCount", `${n(summary.candidateCount)}개`);
   setText("watchCount", `${n(summary.watchCount)}개`);
   setText("readyCount", `${n(summary.readyCount)}개`);
@@ -427,14 +431,21 @@ async function loadWave() {
   if (btn) { btn.disabled = true; btn.textContent = "갱신 중..."; }
   if (errorBox) { errorBox.style.display = "none"; errorBox.textContent = ""; }
   try {
-    const [summaryRes, stateRes] = await Promise.all([
-      fetch(`${API_BASE}/api/wave-summary?t=${Date.now()}`, { cache:"no-store" }),
-      fetch(`${API_BASE}/api/wave-state?t=${Date.now()}`, { cache:"no-store" })
+    const stamp = Date.now();
+    const [summaryRes, stateRes, masterRes] = await Promise.all([
+      fetch(`${API_BASE}/api/wave-summary?t=${stamp}`, { cache:"no-store" }),
+      fetch(`${API_BASE}/api/wave-state?t=${stamp}`, { cache:"no-store" }),
+      fetch(`${API_BASE}/api/portfolio-summary?t=${stamp}`, { cache:"no-store" })
     ]);
-    const [summary, state] = await Promise.all([summaryRes.json(), stateRes.json()]);
-    if (!summaryRes.ok || summary.ok === false) throw new Error(summary.message || `요약 API ${summaryRes.status}`);
-    if (!stateRes.ok || state.ok === false) throw new Error(state.message || `상태 API ${stateRes.status}`);
-    render(summary, state);
+    const [summary, state, master] = await Promise.all([
+      summaryRes.json(),
+      stateRes.json(),
+      masterRes.json()
+    ]);
+    if (!summaryRes.ok || summary.ok === false) throw new Error(summary.message || `WAVE 요약 API ${summaryRes.status}`);
+    if (!stateRes.ok || state.ok === false) throw new Error(state.message || `WAVE 상태 API ${stateRes.status}`);
+    if (!masterRes.ok || master.ok === false) throw new Error(master.message || `MASTER API ${masterRes.status}`);
+    render(summary, state, master);
   } catch (err) {
     console.error("WAVE 화면 조회 오류", err);
     if (errorBox) {

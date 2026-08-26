@@ -7,6 +7,9 @@ const fs = require("fs");
 const path = require("path");
 const { exec } = require("child_process");
 
+// SY Quant MASTER 단일계좌 공통 자금관리
+const portfolioManager = require("./portfolio-manager");
+
 const app = express();
 const PORT = 3000;
 
@@ -645,12 +648,14 @@ function savePaperState(state, options = {}) {
   return state;
 }
 
-const REPORT_STRATEGY_GROUPS = new Set(["OPEN", "CORE", "VOLUME"]);
+const REPORT_STRATEGY_GROUPS = new Set(["OPEN", "CORE", "VOLUME", "WAVE", "FAST"]);
 
 const REPORT_BUY_TYPES = new Set([
   "OPEN_BUY",
   "CORE_BUY",
-  "VOLUME_BUY"
+  "VOLUME_BUY",
+  "WAVE_BUY",
+  "FAST_BUY"
 ]);
 
 /*
@@ -677,7 +682,25 @@ const REPORT_SELL_TYPES = new Set([
   "VOLUME_FIRST_TAKE_PROFIT",
   "VOLUME_BREAK_EVEN_SELL",
   "VOLUME_TRAILING_STOP",
-  "VOLUME_END_SELL"
+  "VOLUME_END_SELL",
+
+  "WAVE_STOP_LOSS",
+  "WAVE_STRUCTURE_STOP",
+  "WAVE_PROTECT_SELL",
+  "WAVE_TRAILING_SELL",
+  "WAVE_STRONG_TRAILING_SELL",
+  "WAVE_WEAK_TREND_SELL",
+  "WAVE_TIME_TREND_SELL",
+  "WAVE_MAX_TIME_SELL",
+
+  "FAST_STOP_LOSS",
+  "FAST_PROTECT_SELL",
+  "FAST_TRAILING_SELL",
+  "FAST_STRONG_TRAILING_SELL",
+  "FAST_STAGNATION_SELL",
+  "FAST_WEAK_TIME_SELL",
+  "FAST_FORCE_SELL",
+  "FAST_TIME_SELL"
 ]);
 
 function reportNormalizeCode(code) {
@@ -1270,9 +1293,6 @@ const TRADING_KIWOOM_PRICE_TIMEOUT_MS = 5 * 1000;
 const SELL_KIWOOM_PRICE_TIMEOUT_MS = 5 * 1000;
 const KIWOOM_PRICE_REQUEST_TIMEOUT_MS = 8 * 1000;
 const HOT_STALE_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
-// HOT 거래량 점수는 275% 이상에서 이미 만점이다. 순위 API 필드오염으로
-// 수백만% 값이 내려와도 후속 HOT/WAVE 지속강도를 왜곡하지 않도록 넉넉한 상한을 둔다.
-const HOT_TRADE_VOLUME_RATIO_SANITY_MAX = 5000;
 let hotApiCache = {
   cachedAt: 0,
   data: null
@@ -1309,42 +1329,6 @@ function hotToNumber(value) {
       .trim()
   );
   return Number.isFinite(number) ? number : 0;
-}
-
-function sanitizeHotTradeVolumeRatio(value) {
-  const number = hotToNumber(value);
-  if (!Number.isFinite(number) || number <= 0) return 0;
-  return Math.min(HOT_TRADE_VOLUME_RATIO_SANITY_MAX, number);
-}
-
-function getRankVolumeRatioInfo(row = {}, surgeRate = 0) {
-  const nowVolume = Math.abs(hotToNumber(
-    row.now_trde_qty ?? row.trde_qty ?? row.volume ?? row.exp_cntr_qty ?? 0
-  ));
-  const prevVolume = Math.abs(hotToNumber(
-    row.prev_trde_qty ?? row.pred_trde_qty ?? row.pre_trde_qty ?? row.before_trde_qty ?? 0
-  ));
-  const rawRatio = surgeRate ? Math.max(0, 100 + surgeRate) : 0;
-  const derivedRatio = prevVolume > 0 && nowVolume >= 0
-    ? (nowVolume / prevVolume) * 100
-    : 0;
-
-  const rawLooksLikeVolume =
-    rawRatio > 10000 &&
-    nowVolume > 0 &&
-    Math.abs(rawRatio - nowVolume) / nowVolume <= 0.01;
-  const rawImplausible = rawRatio > HOT_TRADE_VOLUME_RATIO_SANITY_MAX;
-  const useDerived = derivedRatio > 0 && (rawLooksLikeVolume || rawImplausible);
-  const selected = useDerived ? derivedRatio : rawRatio;
-
-  return {
-    tradeVolumeRatio: sanitizeHotTradeVolumeRatio(selected),
-    tradeVolumeRatioRaw: rawRatio,
-    tradeVolumeRatioDerived: derivedRatio,
-    tradeVolumeRatioSource: useDerived ? "RANK_VOLUME_DERIVED" : "RANK_SURGE_RATE",
-    tradeVolumeRatioSanitized:
-      rawImplausible || rawLooksLikeVolume || selected > HOT_TRADE_VOLUME_RATIO_SANITY_MAX
-  };
 }
 
 function findFirstArrayByKeys(data, keys = []) {
@@ -1413,7 +1397,6 @@ function normalizeHotRankRow(row = {}, source) {
     row.now_trde_qty || row.trde_qty || row.volume || row.exp_cntr_qty || 0
   ));
   const surgeRate = hotToNumber(row.sdnin_rt ?? row.surgeRate ?? 0);
-  const volumeRatioInfo = getRankVolumeRatioInfo(row, surgeRate);
 
   return {
     code,
@@ -1424,7 +1407,7 @@ function normalizeHotRankRow(row = {}, source) {
     changeRate,
     volume: currentVolume,
     tradeAmount: Math.abs(hotToNumber(row.trde_amt || row.tradeAmount || 0)),
-    ...volumeRatioInfo,
+    tradeVolumeRatio: surgeRate ? Math.max(0, 100 + surgeRate) : 0,
     sources: [source],
     rawRank: row
   };
@@ -1452,16 +1435,10 @@ function mergeHotRankRows(groups = []) {
         changeRate: item.changeRate || existing.changeRate,
         volume: Math.max(existing.volume || 0, item.volume || 0),
         tradeAmount: Math.max(existing.tradeAmount || 0, item.tradeAmount || 0),
-        tradeVolumeRatio: sanitizeHotTradeVolumeRatio(Math.max(
+        tradeVolumeRatio: Math.max(
           existing.tradeVolumeRatio || 0,
           item.tradeVolumeRatio || 0
-        )),
-        tradeVolumeRatioRaw: Math.max(
-          Number(existing.tradeVolumeRatioRaw || 0),
-          Number(item.tradeVolumeRatioRaw || 0)
         ),
-        tradeVolumeRatioSanitized:
-          existing.tradeVolumeRatioSanitized === true || item.tradeVolumeRatioSanitized === true,
         sources: Array.from(new Set([...(existing.sources || []), source])),
         rawRank: {
           ...(existing.rawRank || {}),
@@ -1544,7 +1521,7 @@ async function enrichHotCandidate(item) {
     const trdePreRaw = raw.trde_pre ?? priceData.trde_pre ?? null;
     const previousDayVolumeRatio =
       trdePreRaw !== null && trdePreRaw !== ""
-        ? sanitizeHotTradeVolumeRatio(100 + hotToNumber(trdePreRaw))
+        ? Math.max(0, 100 + hotToNumber(trdePreRaw))
         : 0;
 
     return {
@@ -1557,11 +1534,10 @@ async function enrichHotCandidate(item) {
       open: Math.abs(hotToNumber(priceData.open || raw.open_pric || 0)),
       high: Math.abs(hotToNumber(priceData.high || raw.high_pric || 0)),
       low: Math.abs(hotToNumber(priceData.low || raw.low_pric || 0)),
-      tradeVolumeRatio: sanitizeHotTradeVolumeRatio(Math.max(
+      tradeVolumeRatio: Math.max(
         Number(item.tradeVolumeRatio || 0),
         previousDayVolumeRatio
-      )),
-      previousDayVolumeRatio,
+      ),
       trde_pre: trdePreRaw,
       raw: {
         ...raw,
@@ -1927,6 +1903,139 @@ app.get("/api/status", (req, res) => {
   });
 });
 
+
+// ============================================================
+// SY Quant MASTER 단일계좌 요약
+// ============================================================
+app.get("/api/portfolio-summary", (req, res) => {
+  try {
+    const state = loadPaperState();
+    portfolioManager.ensureMasterState(state);
+
+    // 기존 상태파일에 portfolioControl/masterAccount가 없으면
+    // 최초 조회 시 안전하게 기본값을 한 번 저장한다.
+    savePaperState(state);
+
+    res.json({
+      ok: true,
+      ...portfolioManager.getPortfolioSummary(state)
+    });
+  } catch (err) {
+    console.error("[/api/portfolio-summary 오류]", err);
+    res.status(500).json({
+      ok: false,
+      message: err.message
+    });
+  }
+});
+
+
+// ============================================================
+// SY Quant MASTER 전략 신규매수 제어
+// - portfolioControl.status=PAUSED는 신규매수만 막는다.
+// - 기존 보유종목의 손절/트레일링/시간청산 등 매도 위험관리는 계속 동작한다.
+// ============================================================
+app.post("/api/portfolio-strategy-status", express.json(), (req, res) => {
+  try {
+    const strategy = portfolioManager.normalizeStrategy(req.body?.strategy);
+    const status = String(req.body?.status || "").trim().toUpperCase();
+
+    if (!strategy) {
+      return res.status(400).json({
+        ok: false,
+        message: "strategy는 OPEN / CORE / VOLUME / WAVE / FAST 중 하나여야 합니다."
+      });
+    }
+
+    if (!["ACTIVE", "PAUSED"].includes(status)) {
+      return res.status(400).json({
+        ok: false,
+        message: "status는 ACTIVE / PAUSED만 허용합니다."
+      });
+    }
+
+    const result = portfolioManager.withMasterTransaction(state => {
+      const changed = portfolioManager.setStrategyControl(
+        state,
+        strategy,
+        { status }
+      );
+
+      if (!changed.ok) return changed;
+
+      return {
+        ok: true,
+        message:
+          status === "PAUSED"
+            ? `${strategy} 신규매수 PAUSED / 기존 보유 매도관리는 계속`
+            : `${strategy} 신규매수 ACTIVE`,
+        strategy,
+        config: changed.config,
+        summary: portfolioManager.getPortfolioSummary(state)
+      };
+    });
+
+    if (!result?.ok) {
+      return res.status(400).json({
+        ok: false,
+        message: result?.reason || "전략 상태 변경 실패"
+      });
+    }
+
+    return res.json(result);
+  } catch (error) {
+    console.error("[/api/portfolio-strategy-status 오류]", error);
+    return res.status(500).json({
+      ok: false,
+      message: error.message
+    });
+  }
+});
+
+app.post("/api/portfolio-all-strategies-status", express.json(), (req, res) => {
+  try {
+    const status = String(req.body?.status || "").trim().toUpperCase();
+
+    if (!["ACTIVE", "PAUSED"].includes(status)) {
+      return res.status(400).json({
+        ok: false,
+        message: "status는 ACTIVE / PAUSED만 허용합니다."
+      });
+    }
+
+    const result = portfolioManager.withMasterTransaction(state => {
+      const changed = portfolioManager.setAllStrategyStatus(state, status);
+      if (!changed.ok) return changed;
+
+      return {
+        ok: true,
+        message:
+          status === "PAUSED"
+            ? "5개 전략 신규매수 전체 PAUSED / 기존 보유 매도관리는 계속"
+            : "5개 전략 신규매수 전체 ACTIVE",
+        status,
+        strategies: changed.strategies,
+        summary: portfolioManager.getPortfolioSummary(state)
+      };
+    });
+
+    if (!result?.ok) {
+      return res.status(400).json({
+        ok: false,
+        message: result?.reason || "전체 전략 상태 변경 실패"
+      });
+    }
+
+    return res.json(result);
+  } catch (error) {
+    console.error("[/api/portfolio-all-strategies-status 오류]", error);
+    return res.status(500).json({
+      ok: false,
+      message: error.message
+    });
+  }
+});
+
 app.get("/api/token/refresh", async (req, res) => {
   try {
     const token = await refreshKiwoomToken();
@@ -1991,6 +2100,7 @@ app.get("/api/search", (req, res) => {
 });
 
 app.post("/api/core-paper-buy", express.json(), (req, res) => {
+  portfolioManager.acquireMasterLock();
   try {
     const {
       code,
@@ -2014,6 +2124,8 @@ app.post("/api/core-paper-buy", express.json(), (req, res) => {
     }
 
     const state = loadPaperState();
+    // OPEN·CORE·VOLUME은 MASTER 1억원 계좌 규칙을 공통 적용한다.
+    portfolioManager.ensureMasterState(state);
 
     if (!Array.isArray(state.holdings)) state.holdings = [];
     if (!Array.isArray(state.tradeLogs)) state.tradeLogs = [];
@@ -2076,10 +2188,37 @@ app.post("/api/core-paper-buy", express.json(), (req, res) => {
       });
     }
 
+    // MASTER 최종 주문 승인:
+    // 전략 ON/OFF, 동일종목, 전체 노출 90%, 최소현금 10%,
+    // 향후 전략별 allocationRate까지 이 한 곳에서 검사한다.
+    const masterBuyCheck = portfolioManager.canBuy(state, {
+      strategy: normalizedStrategy,
+      code: normalizedCode,
+      price: Number(price),
+      requestedAmount: buyAmount
+    });
+
+    if (!masterBuyCheck.ok) {
+      console.log(
+        `[MASTER 매수차단] ${normalizedStrategy} / ` +
+        `${name || normalizedCode}(${normalizedCode}) / ` +
+        `${masterBuyCheck.reason}`
+      );
+
+      return res.status(409).json({
+        ok: false,
+        masterBlocked: true,
+        message: masterBuyCheck.reason,
+        portfolio: masterBuyCheck.availability || null
+      });
+    }
+
     state.holdings.push({
       code: normalizedCode || code,
       name: name || normalizedCode || code,
       strategyGroup: normalizedStrategy,
+      strategy: normalizedStrategy,
+      ownerStrategy: normalizedStrategy,
       buyPrice: Number(price),
       currentPrice: Number(price),
       highestPrice: Number(price),
@@ -2101,6 +2240,8 @@ app.post("/api/core-paper-buy", express.json(), (req, res) => {
     state.tradeLogs.push({
       type: `${normalizedStrategy}_BUY`,
       strategyGroup: normalizedStrategy,
+      strategy: normalizedStrategy,
+      ownerStrategy: normalizedStrategy,
       code: normalizedCode || code,
       name: name || normalizedCode || code,
       price: Number(price),
@@ -2165,6 +2306,8 @@ app.post("/api/core-paper-buy", express.json(), (req, res) => {
       ok: false,
       message: err.message
     });
+  } finally {
+    portfolioManager.releaseMasterLock();
   }
 });
 
@@ -3514,9 +3657,8 @@ app.get("/api/server-auto-status", (req, res) => {
 
 /*
  * 메인 대시보드 전용 통합성과
- * - OPEN/CORE/VOLUME은 paper-state-core의 1억원 계좌를 공유하므로
- *   각 전략에는 독립 자산이 아닌 손익 기여액/기여율을 표시한다.
- * - WAVE와 FAST는 별도 모의계좌이므로 계좌자산과 계좌수익률을 표시한다.
+ * - OPEN / CORE / VOLUME / WAVE / FAST 모두 MASTER 1억원 단일계좌를 공유한다.
+ * - 전략별 카드는 독립계좌가 아니라 MASTER 손익 기여액/기여율을 표시한다.
  * - 일별 흐름은 전략별 실현손익만 사용해 보유평가손익의 중복 반영을 막는다.
  */
 function dashboardNumber(value, fallback = 0) {
@@ -3610,7 +3752,7 @@ function dashboardNormalizeHolding(holding = {}, strategyGroup = "CORE", account
 
   return {
     accountType,
-    accountLabel: accountType === "MAIN" ? "메인 공유계좌" : `${strategy} 독립계좌`,
+    accountLabel: "MASTER 단일계좌",
     strategyGroup: strategy,
     code: reportNormalizeCode(holding.code),
     name: holding.name || holding.code || "-",
@@ -3644,7 +3786,7 @@ function dashboardNormalizeHolding(holding = {}, strategyGroup = "CORE", account
       holding.candidateWatchScore
     ),
     status,
-    manualSellAllowed: accountType === "MAIN",
+    manualSellAllowed: ["MAIN", "MASTER", "MASTER_SHARED"].includes(accountType),
     reason: holding.reason || holding.buyReason || null
   };
 }
@@ -3653,7 +3795,7 @@ function dashboardNormalizeSell(log = {}, strategyGroup = "CORE", accountType = 
   const strategy = String(strategyGroup || reportStrategy(log) || "CORE").toUpperCase();
   return {
     accountType,
-    accountLabel: accountType === "MAIN" ? "메인 공유계좌" : `${strategy} 독립계좌`,
+    accountLabel: "MASTER 단일계좌",
     strategyGroup: strategy,
     type: String(log.type || "SELL"),
     code: reportNormalizeCode(log.code),
@@ -3876,19 +4018,8 @@ app.get("/api/strategy-dashboard-summary", (req, res) => {
       });
     }
 
-    const waveLogs = Array.isArray(waveState.tradeLogs) ? waveState.tradeLogs : [];
-    const waveHoldings = Array.isArray(waveState.holdings) ? waveState.holdings : [];
-    const waveBuyLogs = waveLogs.filter(log => String(log.type || "") === "WAVE_BUY");
-    const waveSellLogs = waveLogs.filter(log =>
-      String(log.type || "").startsWith("WAVE_") &&
-      String(log.type || "") !== "WAVE_BUY" &&
-      Number.isFinite(Number(log.profit))
-    );
-    const waveInitialCapital = dashboardNumber(waveState.initialCapital, 100000000);
-    const waveHolding = dashboardHoldingSnapshot(waveHoldings);
-    const waveTotalAsset = dashboardNumber(waveState.totalCash) + waveHolding.evalAmount;
-    const waveStatus = waveHoldings.length > 0
-      ? `${waveHoldings.length}종목 HOLD`
+    const waveStatus = dashboardNumber(waveSummary.holdingCount) > 0
+      ? `${dashboardNumber(waveSummary.holdingCount)}종목 HOLD`
       : dashboardNumber(waveSummary.triggerCount) > 0
         ? `${dashboardNumber(waveSummary.triggerCount)}종목 TRIGGER`
         : dashboardNumber(waveSummary.readyCount) > 0
@@ -3897,82 +4028,101 @@ app.get("/api/strategy-dashboard-summary", (req, res) => {
             ? `${dashboardNumber(waveSummary.watchCount)}종목 WATCH`
             : "후보 대기";
 
-    const waveMetric = dashboardMetric({
-      id: "WAVE",
-      label: "WAVE",
-      icon: "🌊",
-      accountType: "INDEPENDENT",
-      accountLabel: "WAVE 독립계좌",
-      initialCapital: waveInitialCapital,
-      totalAsset: waveTotalAsset,
-      contributionBase: waveInitialCapital,
-      holdings: waveHoldings,
-      buyLogs: waveBuyLogs,
-      sellLogs: waveSellLogs,
-      closedRows: waveSellLogs,
-      recentDateKeys,
-      status: waveStatus,
-      statusDetail: `WATCH ${dashboardNumber(waveSummary.watchCount)} · READY ${dashboardNumber(waveSummary.readyCount)} · TRIGGER ${dashboardNumber(waveSummary.triggerCount)}`,
-      detailHref: "wave.html",
-      candidateCount: dashboardNumber(waveSummary.candidateCount)
-    });
-
-    const fastLogs = Array.isArray(fastState.tradeLogs) ? fastState.tradeLogs : [];
-    const fastHoldings = Array.isArray(fastState.holdings) ? fastState.holdings : [];
-    const fastBuyLogs = fastLogs.filter(log => String(log.type || "") === "FAST_BUY");
-    const fastSellLogs = fastLogs.filter(log =>
-      String(log.type || "").startsWith("FAST_") &&
-      String(log.type || "") !== "FAST_BUY" &&
-      Number.isFinite(Number(log.profit))
-    );
-    const fastInitialCapital = dashboardNumber(fastState.initialCapital, 50000000);
-    const fastHolding = dashboardHoldingSnapshot(fastHoldings);
-    const fastTotalAsset = dashboardNumber(fastState.totalCash) + fastHolding.evalAmount;
-    const fastStatus = fastHoldings.length > 0
-      ? `${fastHoldings.length}종목 보유 중`
+    const fastStatus = dashboardNumber(fastSummary.holdingCount) > 0
+      ? `${dashboardNumber(fastSummary.holdingCount)}종목 HOLD`
       : dashboardNumber(fastSummary.readyCount) > 0
         ? `${dashboardNumber(fastSummary.readyCount)}종목 READY`
         : fastSummary.lastRunReason || "후보 대기";
 
-    const fastMetric = dashboardMetric({
-      id: "FAST",
-      label: "FAST",
-      icon: "⚡",
-      accountType: "INDEPENDENT",
-      accountLabel: "FAST 독립계좌",
-      initialCapital: fastInitialCapital,
-      totalAsset: fastTotalAsset,
-      contributionBase: fastInitialCapital,
-      holdings: fastHoldings,
-      buyLogs: fastBuyLogs,
-      sellLogs: fastSellLogs,
-      closedRows: fastSellLogs,
-      recentDateKeys,
-      status: fastStatus,
-      statusDetail: `READY ${dashboardNumber(fastSummary.readyCount)} · 후보 ${dashboardNumber(fastSummary.candidateCount)}`,
-      detailHref: "fast.html",
-      candidateCount: dashboardNumber(fastSummary.candidateCount)
-    });
+    function makeMasterSharedStrategyMetric(
+      group,
+      label,
+      icon,
+      detailHref,
+      status,
+      statusDetail,
+      candidateCount = 0
+    ) {
+      const normalizedGroup = String(group || "").toUpperCase();
+
+      const strategyHoldings = mainHoldings.filter(
+        holding => reportStrategy(holding) === normalizedGroup
+      );
+
+      const strategyBuyLogs = mainLogs.filter(
+        log =>
+          REPORT_BUY_TYPES.has(String(log.type || "").toUpperCase()) &&
+          reportStrategy(log) === normalizedGroup
+      );
+
+      const strategySellLogs = mainSellLogs.filter(
+        log => reportStrategy(log) === normalizedGroup
+      );
+
+      return dashboardMetric({
+        id: normalizedGroup,
+        label,
+        icon,
+        accountType: "MASTER_SHARED",
+        accountLabel: "MASTER 단일계좌",
+        initialCapital: mainInitialCapital,
+        totalAsset: mainTotalAsset,
+        contributionBase: mainInitialCapital,
+        holdings: strategyHoldings,
+        buyLogs: strategyBuyLogs,
+        sellLogs: strategySellLogs,
+        closedRows: strategySellLogs,
+        recentDateKeys,
+        status,
+        statusDetail,
+        detailHref,
+        candidateCount
+      });
+    }
 
     const strategies = [
       makeMainStrategyMetric("OPEN", "OPEN", "🚀", "open-learning.html"),
       makeMainStrategyMetric("CORE", "CORE", "🛡️", null),
       makeMainStrategyMetric("VOLUME", "VOLUME", "📊", null),
-      waveMetric,
-      fastMetric
-    ];
 
-    const unifiedHoldings = [
-      ...mainHoldings.map(holding =>
-        dashboardNormalizeHolding(holding, reportStrategy(holding), "MAIN")
+      makeMasterSharedStrategyMetric(
+        "WAVE",
+        "WAVE",
+        "🌊",
+        "wave.html",
+        waveStatus,
+        `WATCH ${dashboardNumber(waveSummary.watchCount)} · ` +
+          `READY ${dashboardNumber(waveSummary.readyCount)} · ` +
+          `TRIGGER ${dashboardNumber(waveSummary.triggerCount)}`,
+        dashboardNumber(waveSummary.candidateCount)
       ),
-      ...waveHoldings.map(holding =>
-        dashboardNormalizeHolding(holding, "WAVE", "WAVE")
-      ),
-      ...fastHoldings.map(holding =>
-        dashboardNormalizeHolding(holding, "FAST", "FAST")
+
+      makeMasterSharedStrategyMetric(
+        "FAST",
+        "FAST",
+        "⚡",
+        "fast.html",
+        fastStatus,
+        `READY ${dashboardNumber(fastSummary.readyCount)} · ` +
+          `후보 ${dashboardNumber(fastSummary.candidateCount)}`,
+        dashboardNumber(fastSummary.candidateCount)
       )
-    ].sort((a, b) => {
+    ].map(strategy => ({
+      ...strategy,
+      accountType: "MASTER_SHARED",
+      accountLabel: "MASTER 단일계좌",
+      rateLabel: "MASTER 기여율"
+    }));
+
+    const unifiedHoldings = mainHoldings
+      .map(holding =>
+        dashboardNormalizeHolding(
+          holding,
+          reportStrategy(holding),
+          "MASTER"
+        )
+      )
+      .sort((a, b) => {
       const strategyOrder = { OPEN: 1, CORE: 2, VOLUME: 3, WAVE: 4, FAST: 5 };
       return (
         dashboardNumber(strategyOrder[a.strategyGroup], 9) -
@@ -3980,20 +4130,16 @@ app.get("/api/strategy-dashboard-summary", (req, res) => {
       ) || dashboardNumber(b.profitRate) - dashboardNumber(a.profitRate);
     });
 
-    const unifiedSells = [
-      ...mainSellLogs.map((log, index) => ({
-        ...dashboardNormalizeSell(log, reportStrategy(log), "MAIN"),
-        sourceOrder: index
-      })),
-      ...waveSellLogs.map((log, index) => ({
-        ...dashboardNormalizeSell(log, "WAVE", "WAVE"),
-        sourceOrder: index
-      })),
-      ...fastSellLogs.map((log, index) => ({
-        ...dashboardNormalizeSell(log, "FAST", "FAST"),
+    const unifiedSells = mainSellLogs
+      .map((log, index) => ({
+        ...dashboardNormalizeSell(
+          log,
+          reportStrategy(log),
+          "MASTER"
+        ),
         sourceOrder: index
       }))
-    ].sort((a, b) => {
+      .sort((a, b) => {
       const timestampDiff = dashboardNumber(b.timestampMs) - dashboardNumber(a.timestampMs);
       if (timestampDiff) return timestampDiff;
       const dateDiff = String(b.date || "").localeCompare(String(a.date || ""));
@@ -4118,38 +4264,45 @@ app.get("/api/strategy-dashboard-summary", (req, res) => {
       fastCandidateOverview
     ];
 
-    const mainStrategyMetrics = strategies.filter(strategy =>
-      ["OPEN", "CORE", "VOLUME"].includes(strategy.id)
-    );
-    const mainStrategyNetProfit = mainStrategyMetrics.reduce(
+    const masterStrategyNetProfit = strategies.reduce(
       (sum, strategy) => sum + dashboardNumber(strategy.netProfit),
       0
     );
-    const mainAccountNetProfit = mainTotalAsset - mainInitialCapital;
-    const mainReconciliationDifference =
-      mainAccountNetProfit - mainStrategyNetProfit;
-    const mainReconciliation = {
-      accountNetProfit: mainAccountNetProfit,
-      strategyNetProfit: mainStrategyNetProfit,
-      difference: mainReconciliationDifference,
-      matched: Math.abs(mainReconciliationDifference) < 1,
+
+    const masterAccountNetProfit =
+      mainTotalAsset - mainInitialCapital;
+
+    const masterReconciliationDifference =
+      masterAccountNetProfit - masterStrategyNetProfit;
+
+    const masterReconciliation = {
+      accountNetProfit: masterAccountNetProfit,
+      strategyNetProfit: masterStrategyNetProfit,
+      difference: masterReconciliationDifference,
+      matched: Math.abs(masterReconciliationDifference) < 1,
       recognizedBuyCount: mainPositionSummary.buyRecords.length,
       recognizedSellFillCount: mainSellLogs.length,
-      recognizedClosedPositionCount: mainPositionSummary.closedPositions.length
+      recognizedClosedPositionCount:
+        mainPositionSummary.closedPositions.length
     };
 
-    if (!mainReconciliation.matched) {
+    // 기존 프론트/외부 호출 호환용 키도 유지한다.
+    const mainReconciliation = masterReconciliation;
+
+    if (!masterReconciliation.matched) {
       console.warn(
-        `[전략성과 정합성 경고] 메인계좌 ${Math.round(mainAccountNetProfit).toLocaleString()}원 / ` +
-        `OPEN·CORE·VOLUME 합계 ${Math.round(mainStrategyNetProfit).toLocaleString()}원 / ` +
-        `차이 ${Math.round(mainReconciliationDifference).toLocaleString()}원`
+        `[MASTER 전략성과 정합성 경고] 계좌 ` +
+        `${Math.round(masterAccountNetProfit).toLocaleString()}원 / ` +
+        `5전략 합계 ${Math.round(masterStrategyNetProfit).toLocaleString()}원 / ` +
+        `차이 ${Math.round(masterReconciliationDifference).toLocaleString()}원`
       );
     }
 
-    const combinedInitialCapital =
-      mainInitialCapital + waveInitialCapital + fastInitialCapital;
-    const combinedCurrentAsset = mainTotalAsset + waveTotalAsset + fastTotalAsset;
-    const combinedProfit = combinedCurrentAsset - combinedInitialCapital;
+    const combinedInitialCapital = mainInitialCapital;
+    const combinedCurrentAsset = mainTotalAsset;
+    const combinedProfit =
+      combinedCurrentAsset - combinedInitialCapital;
+
     const combinedTodayRealizedProfit = strategies.reduce(
       (sum, strategy) => sum + dashboardNumber(strategy.todayRealizedProfit),
       0
@@ -4158,8 +4311,9 @@ app.get("/api/strategy-dashboard-summary", (req, res) => {
     res.json({
       ok: true,
       asOf: new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }),
-      calculationNote: "OPEN·CORE·VOLUME은 매수·매도 연결기록 기준 메인계좌 손익기여, WAVE·FAST는 독립계좌 수익률",
+      calculationNote: "OPEN·CORE·VOLUME·WAVE·FAST · MASTER 단일계좌 1억원",
       mainReconciliation,
+      masterReconciliation,
       overall: {
         initialCapital: combinedInitialCapital,
         currentAsset: combinedCurrentAsset,
@@ -4168,32 +4322,15 @@ app.get("/api/strategy-dashboard-summary", (req, res) => {
           ? (combinedProfit / combinedInitialCapital) * 100
           : 0,
         todayRealizedProfit: combinedTodayRealizedProfit,
-        holdingCount: strategies.reduce(
-          (sum, strategy) => sum + dashboardNumber(strategy.holdingCount),
-          0
-        )
+        holdingCount: mainHoldings.length
       },
       accounts: [
         {
-          id: "MAIN",
-          label: "OPEN·CORE·VOLUME",
+          id: "MASTER",
+          label: "5전략 MASTER",
           initialCapital: mainInitialCapital,
           currentAsset: mainTotalAsset,
           netProfit: mainTotalAsset - mainInitialCapital
-        },
-        {
-          id: "WAVE",
-          label: "WAVE",
-          initialCapital: waveInitialCapital,
-          currentAsset: waveTotalAsset,
-          netProfit: waveTotalAsset - waveInitialCapital
-        },
-        {
-          id: "FAST",
-          label: "FAST",
-          initialCapital: fastInitialCapital,
-          currentAsset: fastTotalAsset,
-          netProfit: fastTotalAsset - fastInitialCapital
         }
       ],
       strategies,

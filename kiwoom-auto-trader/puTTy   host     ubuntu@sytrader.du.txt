@@ -11,7 +11,216 @@ pm2 restart kiwwm-server --update-env
 pm2 restart sy-quant-core --update-env
 
 ---------------------------------------------------------------------------------------------------------------------------------
+맨위에 날짜만 바꾸면 파일 생김
+저한테 분석시킬 때도 예전처럼 전략별로 나눠서 주면 됩니다. 다만 이제부터는 마지막 syquant-master-날짜-analysis.txt도 항상 같이 주는 게 중요
+
+DATE=2026-08-27
+DAY=${DATE//-/}
+
+echo "분석일: $DATE"
+
+# ============================================================
+# 1. CORE / VOLUME
+# ============================================================
+{
+  echo "===== CORE / VOLUME : SY-QUANT OUT ====="
+  grep "${DATE}T" /home/ubuntu/.pm2/logs/sy-quant-core-out.log \
+    | grep -Eiv 'OPEN|HOT|FAST|WAVE'
+
+  echo ""
+  echo "===== CORE / VOLUME : SY-QUANT ERROR ====="
+  grep "${DATE}T" /home/ubuntu/.pm2/logs/sy-quant-core-error.log \
+    | grep -Eiv 'OPEN|HOT|FAST|WAVE'
+
+  echo ""
+  echo "===== CORE / VOLUME : KIWWM SERVER OUT ====="
+  grep "${DATE}T" /home/ubuntu/.pm2/logs/kiwwm-server-out.log \
+    | grep -Ei 'CORE|VOLUME|MASTER|PORTFOLIO|매수|매도|보유|차단|후보'
+
+  echo ""
+  echo "===== CORE / VOLUME : KIWWM SERVER ERROR ====="
+  grep "${DATE}T" /home/ubuntu/.pm2/logs/kiwwm-server-error.log \
+    | grep -Ei 'CORE|VOLUME|MASTER|PORTFOLIO|error|fail|timeout|시간초과|오류|실패'
+
+} > ~/syquant-core-volume-${DAY}-analysis.txt
+
+
+# ============================================================
+# 2. OPEN
+# HOT은 별도 전략이 아니라 OPEN 후보탐색 보조자료로 같이 봄
+# ============================================================
+{
+  echo "===== OPEN / HOT : SY-QUANT OUT ====="
+  grep "${DATE}T" /home/ubuntu/.pm2/logs/sy-quant-core-out.log \
+    | grep -Ei 'OPEN|HOT'
+
+  echo ""
+  echo "===== OPEN / HOT : SY-QUANT ERROR ====="
+  grep "${DATE}T" /home/ubuntu/.pm2/logs/sy-quant-core-error.log \
+    | grep -Ei 'OPEN|HOT|error|fail|timeout|시간초과|오류|실패'
+
+  echo ""
+  echo "===== OPEN / HOT : KIWWM SERVER OUT ====="
+  grep "${DATE}T" /home/ubuntu/.pm2/logs/kiwwm-server-out.log \
+    | grep -Ei 'OPEN|HOT|MASTER|PORTFOLIO|매수|매도|차단|후보'
+
+  echo ""
+  echo "===== OPEN / HOT : KIWWM SERVER ERROR ====="
+  grep "${DATE}T" /home/ubuntu/.pm2/logs/kiwwm-server-error.log \
+    | grep -Ei 'OPEN|HOT|MASTER|PORTFOLIO|error|fail|timeout|시간초과|API|오류|실패'
+
+} > ~/syquant-open-${DAY}-analysis.txt
+
+
+# ============================================================
+# 3. WAVE
+# 후보상태는 WAVE 파일 / 실제 돈은 MASTER에서 확인
+# ============================================================
+{
+  echo "===== WAVE / KIWWM SERVER OUT ====="
+  grep "${DATE}T" /home/ubuntu/.pm2/logs/kiwwm-server-out.log \
+    | grep -Ei 'WAVE|READY|TRIGGER|HOLD|PROTECT|REBOUND|COOLDOWN|전일급등|MASTER|PORTFOLIO'
+
+  echo ""
+  echo "===== WAVE / KIWWM SERVER ERROR ====="
+  grep "${DATE}T" /home/ubuntu/.pm2/logs/kiwwm-server-error.log \
+    | grep -Ei 'WAVE|wave-strategy|MASTER|PORTFOLIO|error|fail|timeout|오류|실패'
+
+  echo ""
+  echo "===== WAVE LOCAL STATE ====="
+  if [ -f /home/ubuntu/kiwoom-server/paper-state-wave.json ]; then
+    cat /home/ubuntu/kiwoom-server/paper-state-wave.json
+  else
+    echo "paper-state-wave.json 없음"
+  fi
+
+  echo ""
+  echo "===== MASTER WAVE SUMMARY ====="
+  curl -fsS http://127.0.0.1:3000/api/portfolio-summary | python3 -c '
+import sys,json
+d=json.load(sys.stdin)
+w=(d.get("strategies") or {}).get("WAVE") or {}
+print(json.dumps(w, ensure_ascii=False, indent=2))
+' 2>/dev/null || echo "MASTER WAVE 요약 조회 실패"
+
+} > ~/syquant-wave-${DAY}-analysis.txt
+
+
+# ============================================================
+# 4. FAST
+# 후보상태는 FAST 파일 / 실제 돈은 MASTER에서 확인
+# ============================================================
+{
+  echo "===== FAST / SY-QUANT CORE OUT ====="
+  grep "${DATE}T" /home/ubuntu/.pm2/logs/sy-quant-core-out.log \
+    | grep -Ei 'FAST|매수|매도|후보|점수|트리거|관찰|진입|청산|손절|익절|보유'
+
+  echo ""
+  echo "===== FAST / SY-QUANT CORE ERROR ====="
+  grep "${DATE}T" /home/ubuntu/.pm2/logs/sy-quant-core-error.log \
+    | grep -Ei 'FAST|error|fail|timeout|시간초과|API|오류|실패'
+
+  echo ""
+  echo "===== FAST / KIWWM SERVER OUT ====="
+  grep "${DATE}T" /home/ubuntu/.pm2/logs/kiwwm-server-out.log \
+    | grep -Ei 'FAST|MASTER|PORTFOLIO|매수|매도|후보|점수|트리거|관찰|진입|청산|주문'
+
+  echo ""
+  echo "===== FAST / KIWWM SERVER ERROR ====="
+  grep "${DATE}T" /home/ubuntu/.pm2/logs/kiwwm-server-error.log \
+    | grep -Ei 'FAST|MASTER|PORTFOLIO|error|fail|timeout|시간초과|API|오류|실패'
+
+  echo ""
+  echo "===== FAST LOCAL STATE ====="
+  if [ -f /home/ubuntu/kiwoom-server/paper-state-fast.json ]; then
+    cat /home/ubuntu/kiwoom-server/paper-state-fast.json
+  else
+    echo "paper-state-fast.json 없음"
+  fi
+
+  echo ""
+  echo "===== MASTER FAST SUMMARY ====="
+  curl -fsS http://127.0.0.1:3000/api/portfolio-summary | python3 -c '
+import sys,json
+d=json.load(sys.stdin)
+f=(d.get("strategies") or {}).get("FAST") or {}
+print(json.dumps(f, ensure_ascii=False, indent=2))
+' 2>/dev/null || echo "MASTER FAST 요약 조회 실패"
+
+} > ~/syquant-fast-${DAY}-analysis.txt
+
+
+# ============================================================
+# 5. MASTER 전체 계좌
+# 앞으로 5전략 분석할 때 공통으로 꼭 같이 확인
+# ============================================================
+{
+  echo "===== MASTER PORTFOLIO SUMMARY ====="
+  curl -fsS http://127.0.0.1:3000/api/portfolio-summary \
+    | python3 -m json.tool
+
+  echo ""
+  echo "===== MASTER FINANCIAL STATE ====="
+  python3 - <<'PY'
+import json
+
+p="/home/ubuntu/kiwoom-server/paper-state-core.json"
+
+with open(p, encoding="utf-8") as f:
+    d=json.load(f)
+
+print("초기자산:", f'{int(d.get("initialCapital",0)):,}원')
+print("현금:", f'{int(d.get("totalCash",0)):,}원')
+
+holdings=d.get("holdings") or []
+logs=d.get("tradeLogs") or []
+
+print("보유종목:", len(holdings))
+print("거래로그:", len(logs))
+
+print("\n----- 현재 보유 -----")
+for x in holdings:
+    print(
+        x.get("strategyGroup") or x.get("strategy"),
+        x.get("name"),
+        x.get("code"),
+        "수량", x.get("qty"),
+        "매수가", x.get("buyPrice")
+    )
+
+print("\n----- 최근 거래 30건 -----")
+for x in logs[-30:]:
+    print(
+        x.get("time") or x.get("date"),
+        x.get("strategyGroup") or x.get("strategy"),
+        x.get("type"),
+        x.get("name"),
+        x.get("code"),
+        "손익", x.get("profit")
+    )
+PY
+
+} > ~/syquant-master-${DAY}-analysis.txt
+
+
+echo ""
+echo "===== 생성 완료 ====="
+ls -lh \
+  ~/syquant-core-volume-${DAY}-analysis.txt \
+  ~/syquant-open-${DAY}-analysis.txt \
+  ~/syquant-wave-${DAY}-analysis.txt \
+  ~/syquant-fast-${DAY}-analysis.txt \
+  ~/syquant-master-${DAY}-analysis.txt
+
+
+------------------------------------------------------------------------------------------------------------------
+
+
 puTTy 접속방법   ;  host   :  ubuntu@sytrader.duckdns.org  , 키는 바탕화면 oracle.ppk
+------------------------------------------------------------------------------------------------------------------
+
+open 미매수 원인 파악
+https://sytrader.duckdns.org/api/open-learning-summary
                          
 ------------------------------------------------------------------------------------------------------------------
 win-scp 접속방법 :  host   :  ubuntu@sytrader.duckdns.org  , 키는 고급 → 인증 → 점세개
