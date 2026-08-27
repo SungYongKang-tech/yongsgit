@@ -9,8 +9,8 @@ const STATE_FILE = path.join(__dirname, "paper-state-wave.json");
 const HOT_HISTORY_FILE = path.join(__dirname, "hot-candidates-history.json");
 const OPEN_MARKET_FILE = path.join(__dirname, "open-market.json");
 
-const STRATEGY_VERSION = "1.5.6-MASTER";
-const ANALYSIS_RULE_VERSION = "20260826-live-rotation-money-volume-sanity-v8";
+const STRATEGY_VERSION = "1.5.7-MASTER";
+const ANALYSIS_RULE_VERSION = "20260827-real-pullback-entry-gate-v9";
 const WATCH_CAP_DROP_REASON = "활성후보 상한 / 우선순위 밖";
 
 const SETTINGS = {
@@ -71,6 +71,9 @@ const SETTINGS = {
   totalBuyMinScore: 65,
   minWatchTradingDaysBeforeBuy: 1,
   pullbackMinScoreForReady: 7,
+  // 눌림 점수만 높고 현재가가 전고점에 거의 붙어 있는 종목의 추격매수를 막는다.
+  // 현재가는 관찰구간 고점 대비 최소 1.5% 아래에 있어야 READY로 승격한다.
+  readyMinPullbackDepthRate: 1.5,
   reboundMinScoreForBuy: 6,
 
   // V1.5.1 진입 안전장치
@@ -305,6 +308,12 @@ function loadState() {
   try {
     const state = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
     if (!Array.isArray(state.watchlist)) state.watchlist = [];
+
+    // 구버전 상태파일에 남아 있는 비정상 HOT 거래량비율도 로드 즉시 정리한다.
+    // 점수 로직은 200% 이상에서 이미 상한이지만, 상태/진단값 자체도 정상 범위로 맞춘다.
+    for (const candidate of state.watchlist) {
+      candidate.hotVolumeRatio = sanitizeWaveHotVolumeRatio(candidate.hotVolumeRatio);
+    }
 
     // 예전 WAVE 독립계좌 값은 무시하고 MASTER 값을 사용한다.
     applyMasterAccountToWaveState(state);
@@ -1355,16 +1364,27 @@ async function analyzeCandidate(candidate, priceData, dailyData, flowData, newsI
   const readyBlockedBySurge =
     rebound.changeRate >= SETTINGS.readyMaxCurrentDayChangeRate;
 
+  // pullback.score는 거래량감소·지지점수까지 합산하므로 실제 가격 눌림이 거의 없어도
+  // READY 기준을 넘을 수 있다. 현재가가 관찰구간 고점에 너무 가까우면 2차 파동 진입이
+  // 아니라 전고점 추격이 되므로, 가격 자체의 최소 눌림 깊이를 별도로 확인한다.
+  const currentPullbackDepthRate = Math.max(0, -toNumber(pullback.pullbackRate));
+  const readyBlockedByShallowPullback =
+    currentPullbackDepthRate < SETTINGS.readyMinPullbackDepthRate;
+
   const readyEligible =
     why.score >= SETTINGS.whyMinScore &&
     foundationScore >= SETTINGS.foundationMinScore &&
     pullback.score >= SETTINGS.pullbackMinScoreForReady &&
-    !readyBlockedBySurge;
+    !readyBlockedBySurge &&
+    !readyBlockedByShallowPullback;
 
   const readyBlockReason = readyBlockedBySurge
     ? `당일 급등 ${rebound.changeRate >= 0 ? "+" : ""}${rebound.changeRate.toFixed(2)}% / ` +
       `READY 기준 +${SETTINGS.readyMaxCurrentDayChangeRate.toFixed(0)}% 이상·눌림 대기`
-    : null;
+    : readyBlockedByShallowPullback
+      ? `전고점 대비 실제 눌림 ${currentPullbackDepthRate.toFixed(2)}% / ` +
+        `최소 ${SETTINGS.readyMinPullbackDepthRate.toFixed(2)}% 필요`
+      : null;
 
   // V1.5.1: 전일 급등 쿨다운.
   // 전일 +10% 이상이면 다음 거래일 장 초반 즉시 재진입하지 않고,
@@ -1434,6 +1454,8 @@ async function analyzeCandidate(candidate, priceData, dailyData, flowData, newsI
     triggerEligible,
     triggerMaintainEligible,
     readyBlockedBySurge,
+    readyBlockedByShallowPullback,
+    currentPullbackDepthRate,
     readyBlockReason,
     previousDayChangeRate,
     previousDaySurge,

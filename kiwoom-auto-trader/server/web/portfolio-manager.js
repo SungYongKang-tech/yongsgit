@@ -23,7 +23,7 @@ const MASTER_LOCK_DIR =
   path.join(__dirname, ".syquant-master-portfolio.lock");
 
 const MASTER_INITIAL_CAPITAL = 100000000;
-const PORTFOLIO_SCHEMA_VERSION = 1;
+const PORTFOLIO_SCHEMA_VERSION = 2;
 
 const STRATEGIES = ["OPEN", "CORE", "VOLUME", "WAVE", "FAST"];
 
@@ -31,9 +31,10 @@ const DEFAULT_PORTFOLIO_CONTROL = Object.freeze({
   schemaVersion: PORTFOLIO_SCHEMA_VERSION,
   allocationMode: "MANUAL",
 
-  // 전체 계좌는 최대 90%까지만 주식에 노출하고 최소 10%는 현금으로 남긴다.
-  totalExposureLimitRate: 0.90,
-  reserveCashRate: 0.10,
+  // 고정 예약현금은 두지 않는다. 전략별 매수조건과 실제 남은 현금 범위 안에서
+  // MASTER 전체자산의 최대 100%까지 주식에 노출할 수 있다.
+  totalExposureLimitRate: 1.00,
+  reserveCashRate: 0.00,
 
   // 동일 종목은 먼저 산 전략만 보유한다.
   duplicateStockPolicy: "BLOCK",
@@ -144,10 +145,33 @@ function mergeDefaults(target, defaults) {
 }
 
 function ensurePortfolioControl(state) {
+  const previousControl =
+    state.portfolioControl && typeof state.portfolioControl === "object"
+      ? state.portfolioControl
+      : {};
+  const previousSchemaVersion = Math.max(0, toNumber(previousControl.schemaVersion));
+
   state.portfolioControl = mergeDefaults(
-    state.portfolioControl,
+    previousControl,
     DEFAULT_PORTFOLIO_CONTROL
   );
+
+  // V2: 예전 기본값(노출 90% + 예약현금 10%)은 실제 후반전략 전용자금이 아니라
+  // 모든 전략이 끝까지 사용할 수 없는 고정 현금이었다. 별도 후반후보 우선매수 로직이
+  // 없으므로, 구버전 기본값을 그대로 쓰던 계좌만 100%/0%로 자동 전환한다.
+  // 사용자가 이미 95%/5%처럼 직접 조정한 값은 보존한다.
+  const legacyExposureRate = toNumber(state.portfolioControl.totalExposureLimitRate);
+  const legacyReserveRate = toNumber(state.portfolioControl.reserveCashRate);
+  const usingLegacyDefaultRates =
+    Math.abs(legacyExposureRate - 0.90) < 0.000001 &&
+    Math.abs(legacyReserveRate - 0.10) < 0.000001;
+
+  if (previousSchemaVersion < 2 && usingLegacyDefaultRates) {
+    state.portfolioControl.totalExposureLimitRate = 1.00;
+    state.portfolioControl.reserveCashRate = 0.00;
+    state.portfolioControl.reservePolicyMigratedAt = nowText();
+    state.portfolioControl.reservePolicyMigration = "V1_90_10_TO_V2_100_0";
+  }
 
   state.portfolioControl.schemaVersion = PORTFOLIO_SCHEMA_VERSION;
   state.portfolioControl.totalExposureLimitRate = clamp(
@@ -743,6 +767,212 @@ function requestSell(state, options = {}) {
   };
 }
 
+
+function getStrategyOfTradeLog(log = {}) {
+  const direct = normalizeStrategy(
+    log.strategyGroup ||
+    log.strategy ||
+    log.ownerStrategy
+  );
+  if (direct) return direct;
+
+  const type = String(log.type || "").trim().toUpperCase();
+  return STRATEGIES.find(
+    strategy =>
+      type === strategy ||
+      type.startsWith(`${strategy}_`)
+  ) || "";
+}
+
+function getStrategyTradeLogs(state, strategy) {
+  ensureMasterState(state);
+
+  const normalized = normalizeStrategy(strategy);
+  if (!normalized) return [];
+
+  return state.tradeLogs
+    .filter(log => getStrategyOfTradeLog(log) === normalized)
+    .map(log => clone(log));
+}
+
+function getStrategyAccountSnapshot(state, strategy) {
+  ensureMasterState(state);
+
+  const normalized = normalizeStrategy(strategy);
+  if (!normalized) {
+    throw new Error("지원하지 않는 전략");
+  }
+
+  const holdings = state.holdings
+    .filter(holding => getStrategyOfHolding(holding) === normalized)
+    .map(holding => clone(holding));
+
+  const tradeLogs = getStrategyTradeLogs(state, normalized);
+  const totalAsset = getEquity(state);
+  const strategyExposure = holdings.reduce(
+    (sum, holding) => sum + getHoldingMarketValue(holding),
+    0
+  );
+
+  const strategyCost = holdings.reduce(
+    (sum, holding) => sum + getHoldingCost(holding),
+    0
+  );
+
+  const strategyUnrealizedProfit = holdings.reduce(
+    (sum, holding) => {
+      const marketValue = getHoldingMarketValue(holding);
+      const cost = getHoldingCost(holding);
+      return sum + (marketValue - cost);
+    },
+    0
+  );
+
+  const strategyRealizedProfit = tradeLogs.reduce(
+    (sum, log) => {
+      const type = String(log.type || "").toUpperCase();
+      return type.includes("SELL")
+        ? sum + toNumber(log.profit)
+        : sum;
+    },
+    0
+  );
+
+  return {
+    accountMode: "MASTER_SHARED",
+    accountName: "SY Quant MASTER",
+    strategy: normalized,
+
+    // MASTER 전체 계좌 값
+    initialCapital: toNumber(
+      state.initialCapital,
+      MASTER_INITIAL_CAPITAL
+    ),
+    totalCash: toNumber(state.totalCash),
+    totalAsset,
+    masterTotalAsset: totalAsset,
+
+    // 해당 전략만의 원장 뷰
+    holdings,
+    tradeLogs,
+    holdingCount: holdings.length,
+    strategyExposure,
+    strategyCost,
+    strategyUnrealizedProfit,
+    strategyRealizedProfit
+  };
+}
+
+const HOLDING_LEDGER_PROTECTED_KEYS = new Set([
+  "positionId",
+  "strategy",
+  "strategyGroup",
+  "ownerStrategy",
+  "code",
+  "buyPrice",
+  "qty",
+  "buyAmount",
+  "amount",
+  "buyDate",
+  "buyAt",
+  "buyAtMs"
+]);
+
+function findStrategyHoldingForMarks(state, strategy, incoming = {}) {
+  const normalized = normalizeStrategy(strategy);
+  if (!normalized) return null;
+
+  const positionId = String(incoming.positionId || "").trim();
+  if (positionId) {
+    const byPosition = state.holdings.find(
+      holding =>
+        getStrategyOfHolding(holding) === normalized &&
+        String(holding.positionId || "") === positionId
+    );
+    if (byPosition) return byPosition;
+  }
+
+  const code = normalizeCode(incoming.code);
+  if (!code) return null;
+
+  return state.holdings.find(
+    holding =>
+      getStrategyOfHolding(holding) === normalized &&
+      normalizeCode(holding.code) === code
+  ) || null;
+}
+
+function updateStrategyHoldingMarks(strategy, holdings = [], options = {}) {
+  const normalized = normalizeStrategy(strategy);
+  if (!normalized) {
+    return {
+      ok: false,
+      reason: "지원하지 않는 전략",
+      updated: 0,
+      missing: 0
+    };
+  }
+
+  const incomingRows = Array.isArray(holdings)
+    ? holdings
+    : [];
+
+  if (!incomingRows.length) {
+    return {
+      ok: true,
+      strategy: normalized,
+      updated: 0,
+      missing: 0
+    };
+  }
+
+  return withMasterTransaction(
+    state => {
+      let updated = 0;
+      let missing = 0;
+
+      for (const incoming of incomingRows) {
+        if (!incoming || typeof incoming !== "object") continue;
+
+        const masterHolding =
+          findStrategyHoldingForMarks(
+            state,
+            normalized,
+            incoming
+          );
+
+        if (!masterHolding) {
+          missing++;
+          continue;
+        }
+
+        for (const [key, value] of Object.entries(incoming)) {
+          if (HOLDING_LEDGER_PROTECTED_KEYS.has(key)) continue;
+          if (value === undefined) continue;
+
+          masterHolding[key] = clone(value);
+        }
+
+        // 전략/포지션 소유권은 MASTER 값을 강제로 유지한다.
+        masterHolding.strategy = normalized;
+        masterHolding.strategyGroup = normalized;
+        masterHolding.ownerStrategy = normalized;
+
+        updated++;
+      }
+
+      return {
+        ok: true,
+        strategy: normalized,
+        updated,
+        missing,
+        state
+      };
+    },
+    options.lockOptions || {}
+  );
+}
+
 function getPortfolioSummary(state) {
   ensureMasterState(state);
 
@@ -1032,6 +1262,9 @@ module.exports = {
   getStrategyHoldingCount,
   getAvailableCash,
   getPortfolioSummary,
+  getStrategyAccountSnapshot,
+  getStrategyTradeLogs,
+  updateStrategyHoldingMarks,
 
   getStrategyConfig,
   canStrategyTrade,
@@ -1042,6 +1275,8 @@ module.exports = {
   requestBuy,
   requestSell,
 
+  acquireMasterLock,
+  releaseMasterLock,
   loadMasterState,
   saveMasterState,
   withMasterTransaction,

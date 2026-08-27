@@ -1,6 +1,10 @@
 const fs = require("fs");
 const path = require("path");
 
+// MASTER 원장과 CORE/VOLUME 병합저장이 같은 잠금을 공유해
+// OPEN/WAVE/FAST의 자금 변경과 paper-state-core.json 저장 충돌을 방지한다.
+const portfolioManager = require("./portfolio-manager");
+
 const STATE_FILE = path.join(__dirname, "paper-state-core.json");
 const AUTO_TRADER_LOCK_FILE = path.join(__dirname, ".auto-trader-core.lock");
 const MANUAL_SELL_REQUEST_DIR = path.join(__dirname, "manual-sell-requests");
@@ -1212,6 +1216,8 @@ leaderWatchMinBuyStrengthScore: 75,
 
 // 시장온도는 임의의 한 배치가 아니라 최근 순환검색 누적표본으로 계산한다.
 marketTemperatureMinSampleCount: 120,
+// 120개 완성 전에도 40개 이상 확보되면 장전점수 상한의 보수적 시장판단으로 선별매수 허용
+marketTemperatureEarlyTradeMinSampleCount: 40,
 marketTemperatureSegmentMinSampleCount: 30,
 marketTemperatureSampleMaxCount: 1000,
 // 실제 BUY 순환이 20분 이상 지연될 수 있으므로 15분 만료로 표본이 리셋되지 않게 한다.
@@ -1667,42 +1673,51 @@ function loadState() {
 }
 
 function saveState(state) {
-  const meta = state?.[STATE_META] || null;
-  const base = meta?.snapshot || null;
-  let stateToSave = state;
+  // 모든 CORE/VOLUME 상태 저장도 MASTER 공용 잠금을 사용한다.
+  // server.js의 주문 API는 withMasterTransaction()으로만 원장을 변경하므로
+  // 같은 잠금을 중첩 획득하지 않고 전략 간 덮어쓰기를 방지한다.
+  portfolioManager.acquireMasterLock({ timeoutMs: 3000, staleMs: 15000 });
 
-  if (
-    base &&
-    fs.existsSync(STATE_FILE)
-  ) {
-    const latest = readJsonFileSafe(STATE_FILE, null);
+  try {
+    const meta = state?.[STATE_META] || null;
+    const base = meta?.snapshot || null;
+    let stateToSave = state;
 
     if (
-      latest &&
-      !stateValuesEqual(base, latest)
+      base &&
+      fs.existsSync(STATE_FILE)
     ) {
-      stateToSave = mergeConcurrentState(
-        base,
-        state,
-        latest
-      );
+      const latest = readJsonFileSafe(STATE_FILE, null);
 
-      console.log(
-        `[STATE 병합저장] 디스크 최신 변경 보존 / ` +
-        `보유 ${Number(latest.holdings?.length || 0)}→` +
-        `${Number(stateToSave.holdings?.length || 0)}개 / ` +
-        `거래로그 ${Number(latest.tradeLogs?.length || 0)}→` +
-        `${Number(stateToSave.tradeLogs?.length || 0)}건 / ` +
-        `writer ${process.pid}`
-      );
+      if (
+        latest &&
+        !stateValuesEqual(base, latest)
+      ) {
+        stateToSave = mergeConcurrentState(
+          base,
+          state,
+          latest
+        );
+
+        console.log(
+          `[STATE 병합저장] 디스크 최신 변경 보존 / ` +
+          `보유 ${Number(latest.holdings?.length || 0)}→` +
+          `${Number(stateToSave.holdings?.length || 0)}개 / ` +
+          `거래로그 ${Number(latest.tradeLogs?.length || 0)}→` +
+          `${Number(stateToSave.tradeLogs?.length || 0)}건 / ` +
+          `writer ${process.pid}`
+        );
+      }
     }
+
+    replaceStateContents(state, stateToSave);
+    writeJsonFileAtomic(STATE_FILE, state);
+    attachStateMeta(state);
+
+    return state;
+  } finally {
+    portfolioManager.releaseMasterLock();
   }
-
-  replaceStateContents(state, stateToSave);
-  writeJsonFileAtomic(STATE_FILE, state);
-  attachStateMeta(state);
-
-  return state;
 }
 
 async function fetchJson(url) {
@@ -1897,7 +1912,8 @@ function isExcludedStock(item = {}) {
   const name = String(item.name || item.stockName || item.korName || "").trim();
 
   if (
-    /KODEX|TIGER|ACE|SOL|HANARO|KOSEF|KBSTAR|ARIRANG|ETF|ETN|레버리지|인버스|스팩|SPAC/i.test(name)
+    /KODEX|TIGER|ACE|SOL|HANARO|KOSEF|KBSTAR|ARIRANG|ETF|ETN|레버리지|인버스|스팩|SPAC/i.test(name) ||
+    /^(?:RISE|PLUS|TIMEFOLIO|KINDEX|KOACT)(?:\s|$)/i.test(name)
   ) {
     return true;
   }
@@ -2627,6 +2643,14 @@ function calculateStableMarketTemperature(
       fallbackScore
     );
     const guardedLevel = classifyMarketTemperatureScore(guardedScore);
+    const earlyTradeMinCount = Math.max(
+      10,
+      Math.min(
+        minCount,
+        Number(settings.marketTemperatureEarlyTradeMinSampleCount || 40)
+      )
+    );
+    const earlyTradingReady = sampleRows.length >= earlyTradeMinCount;
 
     return {
       ...partial,
@@ -2634,15 +2658,20 @@ function calculateStableMarketTemperature(
       score: Number(guardedScore.toFixed(1)),
       total: sampleRows.length,
       sampleCount: sampleRows.length,
-      sampleMode: premarket ? "PREMARKET_FALLBACK" : "ACCUMULATING",
-      readyForTrading: false,
+      sampleMode: earlyTradingReady
+        ? "EARLY_ACCUMULATING"
+        : (premarket ? "PREMARKET_FALLBACK" : "ACCUMULATING"),
+      readyForTrading: earlyTradingReady,
       buyBlockedUntilReady:
+        !earlyTradingReady &&
         settings.marketTemperatureAccumulatingBuyBlocked === true,
       byMarket,
       reason:
         `시장 누적표본 준비 ${sampleRows.length}/${minCount}개 / ` +
         `${premarket ? `장전 ${premarket.type} ${fallbackScore.toFixed(1)}점` : `보수기준 ${fallbackScore.toFixed(1)}점`} / ` +
-        `신규매수 대기`
+        (earlyTradingReady
+          ? `초기표본 ${earlyTradeMinCount}개 확보 · 보수 선별매수 허용`
+          : `초기표본 ${earlyTradeMinCount}개까지 신규매수 대기`)
     };
   }
 

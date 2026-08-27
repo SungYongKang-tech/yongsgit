@@ -35,16 +35,98 @@ function formatWon(value) {
         OPEN: "장초 단기 급등 포착",
         CORE: "강한 주도주 추세",
         VOLUME: "거래량 급증 종목",
-        WAVE: "눌림 후 반등 추적",
+        WAVE: "고점대비 1.5%+ 눌림 후 반등",
         FAST: "초기 급등 빠른 진입"
       }[key] || "전략 성과";
+    }
+
+    function formatStrategyInvestmentAmount(value) {
+      const amount = Math.max(0, Number(value || 0));
+      // 휴대폰 카드 한 줄 표시용: 985만원 → 9.8백만원처럼 0.1백만원 단위로 간단히 표시한다.
+      const millionWon = Math.floor((amount / 1000000) * 10) / 10;
+      return `${millionWon.toFixed(1)}백만`;
+    }
+
+    function renderMasterActiveStrategiesFromHoldings(holdings = []) {
+      const title = document.getElementById("masterActiveStrategies");
+      const detail = document.getElementById("masterActiveStrategyDetail");
+      if (!detail) return;
+
+      const rows = (Array.isArray(holdings) ? holdings : [])
+        .filter(item => Number(item?.qty || 0) > 0);
+
+      if (!rows.length) {
+        if (title) title.textContent = "";
+        detail.textContent = "현재 투자중인 전략이 없습니다.";
+        return;
+      }
+
+      const order = ["OPEN", "CORE", "VOLUME", "WAVE", "FAST"];
+      const grouped = new Map();
+
+      for (const item of rows) {
+        const strategy = normalizeStrategyGroup(item.strategyGroup || item.strategy || item.ownerStrategy);
+        if (strategy === "UNKNOWN") continue;
+
+        const qty = Math.max(0, Number(item.qty || 0));
+        const buyPrice = Math.max(0, Number(item.buyPrice || 0));
+        const buyAmount = Math.max(
+          0,
+          Number(item.buyAmount || item.amount || 0) || (buyPrice * qty)
+        );
+
+        const current = grouped.get(strategy) || { count: 0, buyAmount: 0 };
+        current.count += 1;
+        current.buyAmount += buyAmount;
+        grouped.set(strategy, current);
+      }
+
+      const active = order
+        .filter(strategy => grouped.has(strategy))
+        .map(strategy => ({ strategy, ...grouped.get(strategy) }));
+
+      if (title) title.textContent = "";
+
+      detail.innerHTML = active.map(item => {
+        const perStock = item.count > 0 ? item.buyAmount / item.count : 0;
+        return `<span class="strategy-line">${escapeHtml(item.strategy)}(${item.count}) 약 ${formatStrategyInvestmentAmount(perStock)}</span>`;
+      }).join("");
+    }
+
+    function renderMasterActiveStrategiesFromPortfolioSummary(data = {}) {
+      const title = document.getElementById("masterActiveStrategies");
+      const detail = document.getElementById("masterActiveStrategyDetail");
+      if (!detail) return;
+
+      const strategies = data.strategies && typeof data.strategies === "object"
+        ? data.strategies
+        : {};
+      const order = ["OPEN", "CORE", "VOLUME", "WAVE", "FAST"];
+      const active = order
+        .map(strategy => ({
+          strategy,
+          holdingCount: Number(strategies[strategy]?.holdingCount || 0)
+        }))
+        .filter(item => item.holdingCount > 0);
+
+      if (!active.length) {
+        if (title) title.textContent = "";
+        detail.textContent = "현재 투자중인 전략이 없습니다.";
+        return;
+      }
+
+      if (title) title.textContent = "";
+      detail.innerHTML = active
+        .map(item => `<span class="strategy-line">${escapeHtml(item.strategy)}(${item.holdingCount}) 금액 확인 중</span>`)
+        .join("");
     }
 
     function renderMasterPortfolioSummary(data = {}) {
       setValue("masterCash", formatPlainWon(data.totalCash));
       setValue("masterExposure", formatPlainWon(data.totalExposure));
       setValue("masterAvailableCash", formatPlainWon(data.availableCash));
-      setValue("masterReserveCash", formatPlainWon(data.reserveCash));
+
+      renderMasterActiveStrategiesFromPortfolioSummary(data);
     }
 
     async function loadMasterPortfolioSummary() {
@@ -57,39 +139,58 @@ function formatWon(value) {
         renderMasterPortfolioSummary(data);
       } catch (error) {
         console.error("MASTER 자금현황 조회 오류", error);
-        ["masterCash","masterExposure","masterAvailableCash","masterReserveCash"].forEach(id => {
+        ["masterCash","masterExposure","masterAvailableCash"].forEach(id => {
           const el = document.getElementById(id);
           if (el) el.textContent = "확인 필요";
         });
+        const detail = document.getElementById("masterActiveStrategyDetail");
+        if (detail) detail.textContent = "보유전략 자료 확인 필요";
       }
     }
 
     function buildStrategySparkline(rows = [], netProfit = 0) {
-      const values = Array.isArray(rows)
-        ? rows.map(row => Number(row.profit || 0))
+      const currentNetProfit = Number(netProfit || 0);
+      const sourceValues = Array.isArray(rows)
+        ? rows.map(row => Number(row?.profit ?? row?.netProfit ?? 0))
         : [];
-      while (values.length < 7) values.unshift(0);
-      const displayValues = values.slice(-7);
+
+      // API 구버전과도 호환한다. 그래프 데이터가 없으면 0 → 현재손익으로 표시한다.
+      if (!sourceValues.length) {
+        sourceValues.push(0, currentNetProfit);
+      }
+
+      while (sourceValues.length < 7) sourceValues.unshift(0);
+      const displayValues = sourceValues.slice(-7);
+
+      // 카드 숫자와 그래프 끝점이 언제나 동일해야 한다.
+      displayValues[displayValues.length - 1] = currentNetProfit;
+
       const width = 210;
       const height = 42;
       const padding = 4;
       const centerY = height / 2;
       const maxAbs = Math.max(1, ...displayValues.map(value => Math.abs(value)));
-      const points = displayValues.map((value, index) => {
+      const pointRows = displayValues.map((value, index) => {
         const x = padding + (index * (width - padding * 2)) / Math.max(1, displayValues.length - 1);
         const y = centerY - (value / maxAbs) * (centerY - padding);
-        return `${x.toFixed(1)},${y.toFixed(1)}`;
-      }).join(" ");
-      const color = Number(netProfit || 0) > 0
+        return { x, y, value };
+      });
+      const points = pointRows
+        .map(point => `${point.x.toFixed(1)},${point.y.toFixed(1)}`)
+        .join(" ");
+      const lastPoint = pointRows[pointRows.length - 1];
+      const color = currentNetProfit > 0
         ? "#4ade80"
-        : Number(netProfit || 0) < 0
+        : currentNetProfit < 0
           ? "#f87171"
           : "#94a3b8";
 
       return `
-        <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="최근 7일 실현손익 흐름">
+        <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="최근 7일 누적손익 흐름">
+          <title>누적 실현손익 흐름 · 마지막 점은 현재 보유손익을 포함한 누적손익</title>
           <line x1="${padding}" y1="${centerY}" x2="${width - padding}" y2="${centerY}" class="strategy-spark-base"></line>
           <polyline points="${points}" class="strategy-spark-line" style="stroke:${color}"></polyline>
+          <circle cx="${lastPoint.x.toFixed(1)}" cy="${lastPoint.y.toFixed(1)}" r="3.2" style="fill:${color}"></circle>
         </svg>`;
     }
 
@@ -185,7 +286,6 @@ function formatWon(value) {
 
     let latestStrategyDashboardData = null;
     const unifiedDashboardFilters = {
-      holdings: "ALL",
       candidates: "ALL",
       sells: "ALL"
     };
@@ -205,20 +305,18 @@ function formatWon(value) {
       const group = String(item.strategyGroup || item.id || "").toUpperCase();
 
       if (filter === "ALL") return true;
-      if (filter === "CORE_VOLUME") return group === "CORE" || group === "VOLUME";
       return group === filter;
     }
 
     function renderUnifiedHoldings(details = {}) {
       const box = document.getElementById("unifiedHoldingBox");
       if (!box) return;
-      const rows = (Array.isArray(details.holdings) ? details.holdings : [])
-        .filter(item => matchesUnifiedFilter(item, "holdings"));
+      // 전체 보유는 전략별로 나누거나 정렬하지 않고 MASTER 원본 순서 그대로 표시한다.
+      // 각 카드에 전략명이 이미 표시되므로 별도 전략 필터는 두지 않는다.
+      const rows = Array.isArray(details.holdings) ? details.holdings : [];
       if (!rows.length) {
         box.className = "empty";
-        box.innerHTML = unifiedDashboardFilters.holdings === "ALL"
-          ? "현재 전체 전략 보유종목이 없습니다."
-          : `${escapeHtml(unifiedDashboardFilters.holdings)} 보유종목이 없습니다.`;
+        box.innerHTML = "현재 전체 전략 보유종목이 없습니다.";
         return;
       }
 
@@ -265,9 +363,7 @@ function formatWon(value) {
         .filter(item => matchesUnifiedFilter(item, "candidates"));
       if (!rows.length) {
         box.className = "empty";
-        box.innerHTML = unifiedDashboardFilters.candidates === "CORE_VOLUME"
-          ? "현재 CORE·VOLUME 후보자료가 없습니다."
-          : "선택한 전략의 후보자료가 없습니다.";
+        box.innerHTML = "선택한 전략의 후보자료가 없습니다.";
         return;
       }
       box.className = "unified-detail-grid";
@@ -371,11 +467,12 @@ function formatWon(value) {
       const strategies = Array.isArray(data.strategies) ? data.strategies : [];
       const accounts = Array.isArray(data.accounts) ? data.accounts : [];
 
+      // MASTER 성과 숫자는 /api/performance-summary가 최종 기준이다.
+      // 이 API 값은 먼저 도착했을 때 화면이 비지 않도록 누적값만 임시 표시한다.
       setValue("combinedCurrentAsset", formatPlainWon(overall.currentAsset));
       setValue("combinedNetProfit", formatWon(overall.netProfit), "money");
       setValue("combinedProfitRate", formatRate(overall.profitRate), "rate");
       setValue("combinedTodayRealized", formatWon(overall.todayRealizedProfit), "money");
-      setValue("combinedHoldingCount", `${Number(overall.holdingCount || 0)}종목`);
 
       const note = document.getElementById("strategyCalculationNote");
       if (note) note.textContent = data.calculationNote || "전략별 통합성과";
@@ -419,7 +516,7 @@ function formatWon(value) {
                 <div class="strategy-mini-item"><div class="strategy-mini-label">승 / 패</div><div class="strategy-mini-value">${Number(strategy.wins || 0)}승 / ${Number(strategy.losses || 0)}패</div></div>
                 <div class="strategy-mini-item"><div class="strategy-mini-label">승률 / 평균청산</div><div class="strategy-mini-value">${Number(strategy.winRate || 0).toFixed(0)}% / ${formatRate(strategy.avgProfitRate)}</div></div>
               </div>
-              <div class="strategy-sparkline">${buildStrategySparkline(strategy.recent7Days, strategy.netProfit)}</div>
+              <div class="strategy-sparkline">${buildStrategySparkline(strategy.profitTrend || strategy.recent7Days, strategy.netProfit)}</div>
               <div class="strategy-card-detail" title="${escapeHtml(strategy.statusDetail || "")}">${escapeHtml(strategy.statusDetail || "성과자료 정상")}${strategy.detailHref ? " · 상세보기" : ""}</div>
             </${tag}>`;
         }).join("") || '<div class="dashboard-data-error">전략성과 데이터가 없습니다.</div>';
@@ -427,6 +524,7 @@ function formatWon(value) {
 
       renderStrategyFlowTable(strategies, data.recentDateKeys || []);
       renderUnifiedDashboardDetails(data);
+      renderMasterActiveStrategiesFromHoldings(data.details?.holdings || []);
     }
 
     async function loadStrategyDashboardSummary() {
@@ -1411,31 +1509,8 @@ async function refreshMissedWinners() {
 }
 
 
-    function openCoreVolumeView() {
-      showTab("candidates");
-
-      unifiedDashboardFilters.candidates = "CORE_VOLUME";
-
-      const group = document.querySelector('[data-filter-group="candidates"]');
-      if (group) {
-        group.querySelectorAll(".unified-filter-btn").forEach(button => {
-          const value = button.getAttribute("data-filter-value");
-          button.classList.toggle("active", value === "CORE_VOLUME");
-        });
-      }
-
-      renderUnifiedDashboardDetails(latestStrategyDashboardData || {});
-
-      requestAnimationFrame(() => {
-        document.getElementById("candidatesTab")?.scrollIntoView({
-          behavior: "smooth",
-          block: "start"
-        });
-      });
-    }
-
     function showTab(name) {
-      const tabMap = { holdings:"holdingsTab", candidates:"candidatesTab", stats:"statsTab", sells:"sellsTab" };
+      const tabMap = { holdings:"holdingsTab", candidates:"candidatesTab", sells:"sellsTab" };
       document.querySelectorAll(".tab-btn").forEach(btn => {
         btn.classList.toggle("active", btn.getAttribute("onclick")?.includes(`'${name}'`));
       });
@@ -2678,6 +2753,23 @@ async function loadOpenLiveStatus() {
         setValue("totalAssetProfitRate", formatRate(s.totalAssetProfitRate), "rate");
         setValue("holdingCount", `${s.holdingCount || 0}개`);
         setValue("holdingProfit", formatWon(s.holdingProfit), "money");
+
+        // MASTER 전체 성과 6칸은 모두 performance-summary 기준으로 통일한다.
+        // currentAsset - dailyStartAsset = todayProfit 이므로 '오늘 총손익'은
+        // 전일 보유손익을 다시 더하지 않는 실제 당일 자산 증감이다.
+        setValue("combinedCurrentAsset", formatPlainWon(s.currentAsset));
+        setValue("combinedNetProfit", formatWon(s.totalAssetProfit), "money");
+        setValue("combinedHoldingProfit", formatWon(s.holdingProfit), "money");
+        setValue("combinedProfitRate", formatRate(s.totalAssetProfitRate), "rate");
+        setValue("combinedTodayProfit", formatWon(s.todayProfit), "money");
+        setValue("combinedTodayRealized", formatWon(s.todayRealizedProfit), "money");
+        const todayHoldingChange = Number.isFinite(Number(s.todayUnrealizedChange))
+          ? Number(s.todayUnrealizedChange)
+          : Number.isFinite(Number(s.todayHoldingProfitChange))
+            ? Number(s.todayHoldingProfitChange)
+            : Number(s.todayProfit || 0) - Number(s.todayRealizedProfit || 0);
+        setValue("combinedTodayHoldingChange", formatWon(todayHoldingChange), "money");
+        setValue("combinedTodayProfitRate", formatRate(s.todayProfitRate), "rate");
 
 const mt =
   data.marketTemperature ||

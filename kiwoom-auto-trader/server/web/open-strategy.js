@@ -2633,6 +2633,8 @@ async function postJson(url, body, timeoutMs = 0) {
       apiError.httpStatus = Number(res.status || 0);
       apiError.responseData = data;
       apiError.requestUrl = url;
+      apiError.code = data.code || data.errorCode || null;
+      apiError.retryable = data.retryable === true;
       throw apiError;
     }
     return data;
@@ -2672,15 +2674,29 @@ function makeOpenRequestErrorDetail(err, extra = {}) {
 }
 
 function isRetryableOpenOrderError(err) {
-  if (Number(err?.httpStatus || 0) > 0) return false;
-
   const cause = err?.cause || {};
+  const responseData = err?.responseData || {};
   const text = [
     err?.message,
     err?.code,
+    responseData?.message,
+    responseData?.code,
     cause?.message,
     cause?.code
   ].filter(Boolean).join(" ");
+
+  // MASTER 원장 잠금 충돌은 주문조건 거절이 아니라 일시적 동시성 충돌이다.
+  // 서버가 503/500을 반환하더라도 동일 executionId로 1회 재시도할 수 있게 한다.
+  if (
+    err?.retryable === true ||
+    responseData?.retryable === true ||
+    /MASTER_LOCK_TIMEOUT|MASTER 계좌 잠금 시간초과/i.test(text)
+  ) {
+    return true;
+  }
+
+  // 4xx/5xx 업무 응답은 위의 명시적 재시도 오류가 아니면 재주문하지 않는다.
+  if (Number(err?.httpStatus || 0) > 0) return false;
 
   return /fetch failed|timeout|시간초과|시간 초과|ECONNRESET|ECONNREFUSED|EPIPE|UND_ERR|socket/i.test(text);
 }
@@ -4886,6 +4902,9 @@ async function paperOpenBuy(state, item, price, reason, judged = {}) {
     );
 
     const orderUrl = `${API_BASE}/api/core-paper-buy`;
+    const buyRequestedAtMs = Date.now();
+    const positionId = `${todayKey()}_${code}_${buyRequestedAtMs}`;
+    const executionId = `OPEN_BUY_${positionId}`;
     const orderBody = {
       code,
       name,
@@ -4894,7 +4913,10 @@ async function paperOpenBuy(state, item, price, reason, judged = {}) {
       strategyGroup: "OPEN",
       reason,
       openDiagnostic: buyDiagnostic,
-      openMaxHoldingCount: Number(settings.openMaxHoldingCount || 5)
+      openMaxHoldingCount: Number(settings.openMaxHoldingCount || 5),
+      buyRequestedAtMs,
+      positionId,
+      executionId
     };
 
     let result = null;
@@ -4950,7 +4972,8 @@ async function paperOpenBuy(state, item, price, reason, judged = {}) {
         if (attempt >= 2 || !isRetryableOpenOrderError(err)) break;
 
         console.log(
-          `[OPEN 주문재시도] ${name}(${code}) / 0.8초 후 1회 재시도`
+          `[OPEN 주문재시도] ${name}(${code}) / ` +
+          `${err?.code || err?.responseData?.code || "통신충돌"} / 0.8초 후 1회 재시도`
         );
         await sleep(800);
       }

@@ -350,6 +350,7 @@ function getCurrentTradingSettings() {
     "leaderWatchMaxAgeMs",
     "buyQuoteMaxAgeMs",
     "marketTemperatureMinSampleCount",
+    "marketTemperatureEarlyTradeMinSampleCount",
     "marketTemperatureSegmentMinSampleCount",
     "marketTemperatureSampleMaxAgeMs",
     "marketTemperatureLastReadyMaxAgeMs",
@@ -2100,7 +2101,6 @@ app.get("/api/search", (req, res) => {
 });
 
 app.post("/api/core-paper-buy", express.json(), (req, res) => {
-  portfolioManager.acquireMasterLock();
   try {
     const {
       code,
@@ -2123,31 +2123,12 @@ app.post("/api/core-paper-buy", express.json(), (req, res) => {
       });
     }
 
-    const state = loadPaperState();
-    // OPEN·CORE·VOLUME은 MASTER 1억원 계좌 규칙을 공통 적용한다.
-    portfolioManager.ensureMasterState(state);
-
-    if (!Array.isArray(state.holdings)) state.holdings = [];
-    if (!Array.isArray(state.tradeLogs)) state.tradeLogs = [];
-
     const normalizedCode = normalizeOpenStockCode(code);
     const normalizedStrategy = String(strategyGroup || "CORE").toUpperCase();
-    const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
     const safeDiagnostic =
       openDiagnostic && typeof openDiagnostic === "object"
         ? openDiagnostic
         : {};
-    const requestedAtMs = Number(buyRequestedAtMs || Date.now());
-    const resolvedPositionId = String(
-      positionId || `${today}_${normalizedCode}_${requestedAtMs}`
-    );
-    const resolvedExecutionId = String(
-      executionId || `BUY_${resolvedPositionId}`
-    );
-    const buyTimeText = new Date(requestedAtMs).toLocaleString(
-      "ko-KR",
-      { timeZone: "Asia/Seoul" }
-    );
 
     if (!normalizedCode) {
       return res.status(400).json({
@@ -2156,158 +2137,262 @@ app.post("/api/core-paper-buy", express.json(), (req, res) => {
       });
     }
 
-    if (state.holdings.some(holding => normalizeOpenStockCode(holding.code) === normalizedCode)) {
-      return res.status(409).json({
-        ok: false,
-        message: `동일 종목 이미 보유중 ${name || normalizedCode}(${normalizedCode})`
+    // 매수 원장 변경은 portfolio-manager의 단일 MASTER 트랜잭션에서만 수행한다.
+    // 예전처럼 API 바깥에서 acquireMasterLock() 후 sharedSavePaperState()를 호출하면
+    // 다른 전략의 짧은 원장 갱신과 충돌해 OPEN 실매수 요청이 잠금 시간초과로 실패할 수 있다.
+    const masterBuyStartedAtMs = Date.now();
+    const result = portfolioManager.withMasterTransaction(state => {
+      portfolioManager.ensureMasterState(state);
+
+      if (!Array.isArray(state.holdings)) state.holdings = [];
+      if (!Array.isArray(state.tradeLogs)) state.tradeLogs = [];
+
+      const today = new Date().toLocaleDateString("sv-SE", {
+        timeZone: "Asia/Seoul"
       });
-    }
-
-    if (
-      normalizedStrategy === "OPEN" &&
-      state.tradeLogs.some(log =>
-        String(log.date || "").slice(0, 10) === today &&
-        log.type === "OPEN_BUY" &&
-        normalizeOpenStockCode(log.code) === normalizedCode
-      )
-    ) {
-      return res.status(409).json({
-        ok: false,
-        message: `오늘 이미 OPEN 매수한 종목 ${name || normalizedCode}(${normalizedCode})`
-      });
-    }
-
-    const buyAmount = Number(price) * Number(qty);
-    const availableCash = Number(state.totalCash || 0);
-    if (buyAmount <= 0 || buyAmount > availableCash) {
-      return res.status(400).json({
-        ok: false,
-        message:
-          `매수금액 또는 현금 부족 / 주문 ${buyAmount.toLocaleString()}원 / ` +
-          `현금 ${availableCash.toLocaleString()}원`
-      });
-    }
-
-    // MASTER 최종 주문 승인:
-    // 전략 ON/OFF, 동일종목, 전체 노출 90%, 최소현금 10%,
-    // 향후 전략별 allocationRate까지 이 한 곳에서 검사한다.
-    const masterBuyCheck = portfolioManager.canBuy(state, {
-      strategy: normalizedStrategy,
-      code: normalizedCode,
-      price: Number(price),
-      requestedAmount: buyAmount
-    });
-
-    if (!masterBuyCheck.ok) {
-      console.log(
-        `[MASTER 매수차단] ${normalizedStrategy} / ` +
-        `${name || normalizedCode}(${normalizedCode}) / ` +
-        `${masterBuyCheck.reason}`
+      const requestedAtMs = Number(buyRequestedAtMs || Date.now());
+      const resolvedPositionId = String(
+        positionId || `${today}_${normalizedCode}_${requestedAtMs}`
+      );
+      const resolvedExecutionId = String(
+        executionId || `BUY_${resolvedPositionId}`
+      );
+      const buyTimeText = new Date(requestedAtMs).toLocaleString(
+        "ko-KR",
+        { timeZone: "Asia/Seoul" }
       );
 
-      return res.status(409).json({
+      // OPEN 내부 HTTP 재시도는 같은 executionId/positionId를 사용한다.
+      // 첫 요청이 저장까지 끝났지만 응답만 유실된 경우 두 번째 요청을
+      // 중복매수 오류로 처리하지 않고 기존 체결을 성공으로 복구한다.
+      if (executionId) {
+        const existingExecutionLog = state.tradeLogs.find(log =>
+          String(log.executionId || "") === resolvedExecutionId &&
+          normalizeOpenStockCode(log.code) === normalizedCode
+        );
+        if (existingExecutionLog) {
+          return {
+            ok: true,
+            duplicateRecovered: true,
+            message: "이미 처리된 동일 매수요청 복구",
+            holdingCount: state.holdings.length,
+            totalCash: Number(state.totalCash || 0),
+            openBuyCount: Number(state.openBuyCount || 0),
+            openCompleted: state.openCompleted === true,
+            positionId: resolvedPositionId,
+            executionId: resolvedExecutionId
+          };
+        }
+      }
+
+      if (
+        state.holdings.some(
+          holding => normalizeOpenStockCode(holding.code) === normalizedCode
+        )
+      ) {
+        return {
+          ok: false,
+          status: 409,
+          message: `동일 종목 이미 보유중 ${name || normalizedCode}(${normalizedCode})`
+        };
+      }
+
+      if (
+        normalizedStrategy === "OPEN" &&
+        state.tradeLogs.some(log =>
+          String(log.date || "").slice(0, 10) === today &&
+          log.type === "OPEN_BUY" &&
+          normalizeOpenStockCode(log.code) === normalizedCode
+        )
+      ) {
+        return {
+          ok: false,
+          status: 409,
+          message: `오늘 이미 OPEN 매수한 종목 ${name || normalizedCode}(${normalizedCode})`
+        };
+      }
+
+      const buyAmount = Number(price) * Number(qty);
+      const availableCash = Number(state.totalCash || 0);
+
+      if (buyAmount <= 0 || buyAmount > availableCash) {
+        return {
+          ok: false,
+          status: 400,
+          message:
+            `매수금액 또는 현금 부족 / 주문 ${buyAmount.toLocaleString()}원 / ` +
+            `현금 ${availableCash.toLocaleString()}원`
+        };
+      }
+
+      const masterBuyCheck = portfolioManager.canBuy(state, {
+        strategy: normalizedStrategy,
+        code: normalizedCode,
+        price: Number(price),
+        requestedAmount: buyAmount
+      });
+
+      if (!masterBuyCheck.ok) {
+        console.log(
+          `[MASTER 매수차단] ${normalizedStrategy} / ` +
+          `${name || normalizedCode}(${normalizedCode}) / ` +
+          `${masterBuyCheck.reason}`
+        );
+
+        return {
+          ok: false,
+          status: 409,
+          masterBlocked: true,
+          message: masterBuyCheck.reason,
+          portfolio: masterBuyCheck.availability || null
+        };
+      }
+
+      state.holdings.push({
+        code: normalizedCode,
+        name: name || normalizedCode,
+        strategyGroup: normalizedStrategy,
+        strategy: normalizedStrategy,
+        ownerStrategy: normalizedStrategy,
+        buyPrice: Number(price),
+        currentPrice: Number(price),
+        highestPrice: Number(price),
+        lowestPrice: Number(price),
+        qty: Number(qty),
+        buyAmount,
+        positionId: resolvedPositionId,
+        buyTime: requestedAtMs,
+        buyTimeText,
+        buyTimeMs: requestedAtMs,
+        buyAt: new Date(requestedAtMs).toISOString(),
+        date: today,
+        ...safeDiagnostic,
+        ...(normalizedStrategy === "OPEN"
+          ? { openBuyDiagnostic: safeDiagnostic }
+          : {})
+      });
+
+      state.totalCash = Number(state.totalCash || 0) - buyAmount;
+
+      state.tradeLogs.push({
+        type: `${normalizedStrategy}_BUY`,
+        strategyGroup: normalizedStrategy,
+        strategy: normalizedStrategy,
+        ownerStrategy: normalizedStrategy,
+        code: normalizedCode,
+        name: name || normalizedCode,
+        price: Number(price),
+        buyPrice: Number(price),
+        qty: Number(qty),
+        buyAmount,
+        positionId: resolvedPositionId,
+        executionId: resolvedExecutionId,
+        timestampMs: requestedAtMs,
+        reason,
+        date: today,
+        time: buyTimeText,
+        ...safeDiagnostic,
+        ...(normalizedStrategy === "OPEN"
+          ? { openBuyDiagnostic: safeDiagnostic }
+          : {})
+      });
+
+      if (normalizedStrategy === "OPEN") {
+        const openBuyCount = state.tradeLogs.filter(log =>
+          String(log.date || "").slice(0, 10) === today &&
+          log.type === "OPEN_BUY"
+        ).length;
+        const maxHoldingCount = Math.max(1, Number(openMaxHoldingCount || 1));
+
+        state.openSkipped = false;
+        state.openSkipReason = null;
+        state.openBuyAt = buyTimeText;
+        state.openBuyCode = normalizedCode;
+        state.openBuyName = name || normalizedCode;
+        if (!Array.isArray(state.openBuyCodes)) state.openBuyCodes = [];
+        if (!Array.isArray(state.openBuyNames)) state.openBuyNames = [];
+        if (!state.openBuyCodes.includes(normalizedCode)) {
+          state.openBuyCodes.push(normalizedCode);
+        }
+        if (!state.openBuyNames.includes(state.openBuyName)) {
+          state.openBuyNames.push(state.openBuyName);
+        }
+        state.openBuyCount = openBuyCount;
+        state.openCompleted = openBuyCount >= maxHoldingCount;
+        state.openCompletedAt = state.openCompleted ? state.openBuyAt : null;
+
+        if (state.openDailyStats?.date === today) {
+          if (
+            !state.openDailyStats.boughtCodes ||
+            typeof state.openDailyStats.boughtCodes !== "object"
+          ) {
+            state.openDailyStats.boughtCodes = {};
+          }
+          state.openDailyStats.boughtCodes[normalizedCode] = state.openBuyName;
+        }
+      }
+
+      return {
+        ok: true,
+        message: "paper buy 완료",
+        holdingCount: state.holdings.length,
+        totalCash: state.totalCash,
+        openBuyCount: Number(state.openBuyCount || 0),
+        openCompleted: state.openCompleted === true,
+        positionId: resolvedPositionId,
+        executionId: resolvedExecutionId
+      };
+    }, {
+      // 100ms급 짧은 충돌로 실매수 요청을 버리지 않도록 충분한 획득시간을 둔다.
+      // 트랜잭션 자체는 동기 파일갱신만 수행하므로 실제 잠금 점유시간은 매우 짧다.
+      timeoutMs: 3000,
+      staleMs: 15000
+    });
+
+    const masterBuyElapsedMs = Date.now() - masterBuyStartedAtMs;
+    if (masterBuyElapsedMs >= 250) {
+      console.warn(
+        `[MASTER 매수트랜잭션 지연] ${normalizedStrategy} / ` +
+        `${name || normalizedCode}(${normalizedCode}) / ${masterBuyElapsedMs}ms`
+      );
+    }
+
+    if (!result?.ok) {
+      return res.status(Number(result?.status || 409)).json({
         ok: false,
-        masterBlocked: true,
-        message: masterBuyCheck.reason,
-        portfolio: masterBuyCheck.availability || null
+        masterBlocked: result?.masterBlocked === true,
+        message: result?.message || result?.reason || "매수 처리 실패",
+        portfolio: result?.portfolio || null
       });
     }
 
-    state.holdings.push({
-      code: normalizedCode || code,
-      name: name || normalizedCode || code,
-      strategyGroup: normalizedStrategy,
-      strategy: normalizedStrategy,
-      ownerStrategy: normalizedStrategy,
-      buyPrice: Number(price),
-      currentPrice: Number(price),
-      highestPrice: Number(price),
-      lowestPrice: Number(price),
-      qty: Number(qty),
-      buyAmount,
-      positionId: resolvedPositionId,
-      buyTime: requestedAtMs,
-      buyTimeText,
-      buyTimeMs: requestedAtMs,
-      buyAt: new Date(requestedAtMs).toISOString(),
-      date: today,
-      ...safeDiagnostic,
-      ...(normalizedStrategy === "OPEN" ? { openBuyDiagnostic: safeDiagnostic } : {})
-    });
-
-    state.totalCash = Number(state.totalCash || 0) - buyAmount;
-
-    state.tradeLogs.push({
-      type: `${normalizedStrategy}_BUY`,
-      strategyGroup: normalizedStrategy,
-      strategy: normalizedStrategy,
-      ownerStrategy: normalizedStrategy,
-      code: normalizedCode || code,
-      name: name || normalizedCode || code,
-      price: Number(price),
-      buyPrice: Number(price),
-      qty: Number(qty),
-      buyAmount,
-      positionId: resolvedPositionId,
-      executionId: resolvedExecutionId,
-      timestampMs: requestedAtMs,
-      reason,
-      date: today,
-      time: buyTimeText,
-      ...safeDiagnostic,
-      ...(normalizedStrategy === "OPEN" ? { openBuyDiagnostic: safeDiagnostic } : {})
-    });
-
-    if (normalizedStrategy === "OPEN") {
-      const openBuyCount = state.tradeLogs.filter(log =>
-        String(log.date || "").slice(0, 10) === today && log.type === "OPEN_BUY"
-      ).length;
-      const maxHoldingCount = Math.max(1, Number(openMaxHoldingCount || 1));
-      state.openSkipped = false;
-      state.openSkipReason = null;
-      state.openBuyAt = new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
-      state.openBuyCode = normalizedCode || code;
-      state.openBuyName = name || normalizedCode || code;
-      if (!Array.isArray(state.openBuyCodes)) state.openBuyCodes = [];
-      if (!Array.isArray(state.openBuyNames)) state.openBuyNames = [];
-      if (!state.openBuyCodes.includes(normalizedCode)) state.openBuyCodes.push(normalizedCode);
-      if (!state.openBuyNames.includes(state.openBuyName)) state.openBuyNames.push(state.openBuyName);
-      state.openBuyCount = openBuyCount;
-      state.openCompleted = openBuyCount >= maxHoldingCount;
-      state.openCompletedAt = state.openCompleted ? state.openBuyAt : null;
-
-      if (state.openDailyStats?.date === today) {
-        if (!state.openDailyStats.boughtCodes || typeof state.openDailyStats.boughtCodes !== "object") {
-          state.openDailyStats.boughtCodes = {};
-        }
-        state.openDailyStats.boughtCodes[normalizedCode] = state.openBuyName;
-      }
-    }
-
-    savePaperState(state);
-
-    res.json({
-      ok: true,
-      message: "paper buy 완료",
-      holdingCount: state.holdings.length,
-      totalCash: state.totalCash,
-      openBuyCount: Number(state.openBuyCount || 0),
-      openCompleted: state.openCompleted === true
-    });
-
+    return res.json(result);
   } catch (err) {
+    const message = err?.message || "알 수 없는 오류";
+    const masterLockTimeout = /MASTER 계좌 잠금 시간초과/i.test(message);
+
     console.error("[/api/core-paper-buy 오류]", {
-      message: err?.message || "알 수 없는 오류",
+      message,
       code: err?.code || err?.cause?.code || null,
       cause: err?.cause?.message || null,
+      masterLockTimeout,
       stack: err?.stack || null
     });
-    res.status(500).json({
+
+    if (masterLockTimeout) {
+      return res.status(503).json({
+        ok: false,
+        retryable: true,
+        code: "MASTER_LOCK_TIMEOUT",
+        message
+      });
+    }
+
+    return res.status(500).json({
       ok: false,
-      message: err.message
+      retryable: false,
+      message
     });
-  } finally {
-    portfolioManager.releaseMasterLock();
   }
 });
 
@@ -2775,6 +2860,9 @@ const tradingPriceInflightByCode = new Map();
 // 저우선순위 MARKET/HOT 요청이 과도하게 밀릴 때는 큐에 계속 쌓지 않고
 // 즉시 실패시켜 기존 캐시대체 로직이 처리하도록 한다.
 const KIWOOM_LOW_PRIORITY_QUEUE_SOFT_LIMIT = 40;
+// OPEN 일반 전종목 검색은 실매수 재확인보다 우선순위가 낮다.
+// 큐가 이미 밀렸으면 새 ka10001 요청을 추가하지 않고 다음 스캔으로 넘긴다.
+const KIWOOM_OPEN_DISCOVER_QUEUE_SOFT_LIMIT = 6;
 
 /*
  * 기존 waitKiwoomPriceLimit은 동시에 들어온 여러 요청이 같은 시간만
@@ -2934,7 +3022,8 @@ function getKiwoomPricePriority(sourceValue) {
   const source = String(sourceValue || "core").toLowerCase();
   if (["sell", "manual-sell", "risk", "fast-sell"].includes(source)) return 100;
   if (source === "open") return 90;
-  if (source === "open-discover") return 50;
+  // 일반검색이 OPEN/FAST/WAVE/CORE/VOLUME의 실시간 재확인을 앞지르지 않게 한다.
+  if (source === "open-discover") return 10;
   if (source === "fast") return 85;
   if (source === "wave") return 80;
   if (source === "core" || source === "volume") return 60;
@@ -2946,10 +3035,11 @@ function getKiwoomPricePriority(sourceValue) {
 function getKiwoomPriceQueueMaxWaitMs(sourceValue) {
   const source = String(sourceValue || "core").toLowerCase();
   if (["sell", "manual-sell", "risk", "fast-sell"].includes(source)) return 4500;
-  if (source === "open") return 2500;
-  if (source === "open-discover") return 2000;
-  if (source === "fast") return 3500;
-  if (["wave", "core", "volume"].includes(source)) return 4000;
+  if (source === "open") return 4500;
+  // 일반검색은 기다리며 큐를 점유하지 말고 빠르게 양보한다.
+  if (source === "open-discover") return 750;
+  if (source === "fast") return 4500;
+  if (["wave", "core", "volume"].includes(source)) return 5000;
   if (["market", "hot"].includes(source)) return 3000;
   return 5000;
 }
@@ -3010,6 +3100,16 @@ if (cached && Date.now() - cached.cachedAt <= freshCacheMaxAgeMs) {
 
     const url = `${process.env.KIWOOM_BASE_URL}/api/dostk/stkinfo`;
     const queueDepthBeforeRequest = getKiwoomPriceQueueDepth();
+
+    if (
+      requestSource === "open-discover" &&
+      queueDepthBeforeRequest >= KIWOOM_OPEN_DISCOVER_QUEUE_SOFT_LIMIT
+    ) {
+      throw makePriceQueueError(
+        `OPEN 일반검색 현재가 큐 양보 ${queueDepthBeforeRequest}건`,
+        "PRICE_QUEUE_DISCOVER_YIELD"
+      );
+    }
 
     if (
       requestPriority <= 20 &&
@@ -3714,6 +3814,53 @@ function dashboardRealizedHistory(sellLogs = [], dateKeys = []) {
   }));
 }
 
+/*
+ * 전략 카드 미니그래프용 누적손익 흐름.
+ *
+ * - 과거 날짜: 해당 날짜까지 확정된 누적 실현손익
+ * - 최신 날짜: 누적 실현손익 + 현재 보유 평가손익
+ *
+ * 과거 시점의 미실현 평가손익 스냅샷은 원장에 저장돼 있지 않으므로
+ * 존재하지 않는 값을 추정하지 않는다. 대신 최신 끝점은 반드시
+ * 카드의 현재 netProfit과 일치하도록 한다.
+ */
+function dashboardProfitTrend(
+  sellLogs = [],
+  dateKeys = [],
+  currentUnrealizedProfit = 0,
+  currentNetProfit = null
+) {
+  const rows = Array.isArray(sellLogs) ? sellLogs : [];
+  const dates = Array.isArray(dateKeys) ? dateKeys : [];
+  const unrealized = dashboardNumber(currentUnrealizedProfit);
+
+  return dates.map((date, index) => {
+    const cumulativeRealizedProfit = rows
+      .filter(log => {
+        const logDate = dashboardLogDate(log);
+        return logDate && logDate <= date;
+      })
+      .reduce((sum, log) => sum + dashboardNumber(log.profit), 0);
+
+    const isLatest = index === dates.length - 1;
+    const profit = isLatest
+      ? (
+          currentNetProfit === null
+            ? cumulativeRealizedProfit + unrealized
+            : dashboardNumber(currentNetProfit)
+        )
+      : cumulativeRealizedProfit;
+
+    return {
+      date,
+      profit,
+      cumulativeRealizedProfit,
+      unrealizedProfit: isLatest ? unrealized : 0,
+      includesCurrentUnrealized: isLatest
+    };
+  });
+}
+
 function dashboardAverageProfitRate(rows = []) {
   if (!rows.length) return 0;
   return rows.reduce(
@@ -3931,7 +4078,15 @@ function dashboardMetric({
     statusDetail,
     candidateCount: dashboardNumber(candidateCount),
     detailHref,
-    recent7Days: dashboardRealizedHistory(sellLogs, recentDateKeys)
+    // 하단 표는 기존 의미 그대로 '일별 실현손익'을 유지한다.
+    recent7Days: dashboardRealizedHistory(sellLogs, recentDateKeys),
+    // 카드 그래프는 별도 누적손익 흐름을 사용한다.
+    profitTrend: dashboardProfitTrend(
+      sellLogs,
+      recentDateKeys,
+      holding.unrealizedProfit,
+      netProfit
+    )
   };
 }
 
