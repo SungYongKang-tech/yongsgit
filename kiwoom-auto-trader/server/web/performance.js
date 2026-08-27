@@ -69,15 +69,15 @@ function formatWon(value) {
         if (strategy === "UNKNOWN") continue;
 
         const qty = Math.max(0, Number(item.qty || 0));
-        const buyPrice = Math.max(0, Number(item.buyPrice || 0));
-        const buyAmount = Math.max(
+        const currentPrice = Math.max(0, Number(item.currentPrice || item.lastPrice || item.buyPrice || 0));
+        const currentAmount = Math.max(
           0,
-          Number(item.buyAmount || item.amount || 0) || (buyPrice * qty)
+          Number(item.evalAmount || item.marketValue || 0) || (currentPrice * qty)
         );
 
-        const current = grouped.get(strategy) || { count: 0, buyAmount: 0 };
+        const current = grouped.get(strategy) || { count: 0, currentAmount: 0 };
         current.count += 1;
-        current.buyAmount += buyAmount;
+        current.currentAmount += currentAmount;
         grouped.set(strategy, current);
       }
 
@@ -88,7 +88,7 @@ function formatWon(value) {
       if (title) title.textContent = "";
 
       detail.innerHTML = active.map(item => {
-        const perStock = item.count > 0 ? item.buyAmount / item.count : 0;
+        const perStock = item.count > 0 ? item.currentAmount / item.count : 0;
         return `<span class="strategy-line">${escapeHtml(item.strategy)}(${item.count}) 약 ${formatStrategyInvestmentAmount(perStock)}</span>`;
       }).join("");
     }
@@ -105,7 +105,8 @@ function formatWon(value) {
       const active = order
         .map(strategy => ({
           strategy,
-          holdingCount: Number(strategies[strategy]?.holdingCount || 0)
+          holdingCount: Number(strategies[strategy]?.holdingCount || 0),
+          exposure: Number(strategies[strategy]?.exposure || 0)
         }))
         .filter(item => item.holdingCount > 0);
 
@@ -117,15 +118,15 @@ function formatWon(value) {
 
       if (title) title.textContent = "";
       detail.innerHTML = active
-        .map(item => `<span class="strategy-line">${escapeHtml(item.strategy)}(${item.holdingCount}) 금액 확인 중</span>`)
+        .map(item => {
+          const perStock = item.holdingCount > 0 ? item.exposure / item.holdingCount : 0;
+          return `<span class="strategy-line">${escapeHtml(item.strategy)}(${item.holdingCount}) 약 ${formatStrategyInvestmentAmount(perStock)}</span>`;
+        })
         .join("");
     }
 
     function renderMasterPortfolioSummary(data = {}) {
-      setValue("masterCash", formatPlainWon(data.totalCash));
       setValue("masterExposure", formatPlainWon(data.totalExposure));
-      setValue("masterAvailableCash", formatPlainWon(data.availableCash));
-
       renderMasterActiveStrategiesFromPortfolioSummary(data);
     }
 
@@ -139,7 +140,7 @@ function formatWon(value) {
         renderMasterPortfolioSummary(data);
       } catch (error) {
         console.error("MASTER 자금현황 조회 오류", error);
-        ["masterCash","masterExposure","masterAvailableCash"].forEach(id => {
+        ["masterExposure"].forEach(id => {
           const el = document.getElementById(id);
           if (el) el.textContent = "확인 필요";
         });
