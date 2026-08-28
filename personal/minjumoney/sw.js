@@ -1,62 +1,67 @@
-const CACHE_NAME = "minju-money-v1";
-const APP_SHELL = [
-  "./",
-  "./index.html",
-  "./manifest.json",
-  "./minjumoney.png",
-  "./minjumoney-192.png",
-  "./minjumoney-512.png"
-];
+/* 아빠와 민주 PWA + Firebase Cloud Messaging 통합 Service Worker */
+importScripts("https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js");
+importScripts("https://www.gstatic.com/firebasejs/9.22.2/firebase-messaging-compat.js");
 
-self.addEventListener("install", event => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL))
-  );
+firebase.initializeApp({
+  apiKey: "AIzaSyBQ2DvuwcyIctktubn7LlfJRP0hHfXfnCU",
+  authDomain: "personal-51db3.firebaseapp.com",
+  databaseURL: "https://personal-51db3-default-rtdb.firebaseio.com",
+  projectId: "personal-51db3",
+  storageBucket: "personal-51db3.firebasestorage.app",
+  messagingSenderId: "146076749227",
+  appId: "1:146076749227:web:a89002fef193ba224816ee"
+});
+
+const messaging = firebase.messaging();
+
+self.addEventListener("install", () => {
   self.skipWaiting();
 });
 
 self.addEventListener("activate", event => {
-  event.waitUntil(
-    caches.keys().then(keys => Promise.all(
-      keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))
-    ))
-  );
-  self.clients.claim();
+  event.waitUntil(self.clients.claim());
 });
 
-self.addEventListener("fetch", event => {
-  if (event.request.method !== "GET") return;
+messaging.onBackgroundMessage(payload => {
+  const data = payload?.data || {};
 
-  const url = new URL(event.request.url);
+  const title = data.title || "민주가 새 글을 남겼어요";
+  const options = {
+    body: data.body || "게시판을 확인해 주세요.",
+    tag: "dad-minju-board-push",
+    renotify: true,
+    data: {
+      url: new URL("board", self.registration.scope).href
+    }
+  };
 
-  // Firebase 및 외부 CDN은 항상 네트워크 사용
-  if (url.origin !== self.location.origin) return;
+  return self.registration.showNotification(title, options);
+});
 
-  // 화면 이동은 최신 HTML 우선, 실패 시 캐시
-  if (event.request.mode === "navigate") {
-    event.respondWith(
-      fetch(event.request)
-        .then(response => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put("./index.html", copy));
-          return response;
-        })
-        .catch(() => caches.match("./index.html"))
-    );
-    return;
-  }
+self.addEventListener("notificationclick", event => {
+  event.notification.close();
 
-  // 로컬 정적 파일은 캐시 우선
-  event.respondWith(
-    caches.match(event.request).then(cached => {
-      if (cached) return cached;
-      return fetch(event.request).then(response => {
-        if (response && response.ok) {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
-        }
-        return response;
-      });
-    })
-  );
+  const targetUrl =
+    event.notification?.data?.url ||
+    new URL("board", self.registration.scope).href;
+
+  event.waitUntil((async()=>{
+    const windows = await clients.matchAll({
+      type: "window",
+      includeUncontrolled: true
+    });
+
+    for(const client of windows){
+      if("focus" in client){
+        try{
+          await client.navigate(targetUrl);
+        }catch(e){}
+        return client.focus();
+      }
+    }
+
+    if(clients.openWindow){
+      return clients.openWindow(targetUrl);
+    }
+  })());
 });

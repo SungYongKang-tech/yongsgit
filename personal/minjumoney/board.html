@@ -7,10 +7,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
 <meta name="apple-mobile-web-app-title" content="아빠와 민주"/>
-<title>민주 게시판</title>
+<title>아빠와 민주 게시판</title>
 
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-messaging-compat.js"></script>
 
 <style>
 *{box-sizing:border-box}
@@ -358,7 +359,7 @@ body{
       </div>
       <div style="display:flex;align-items:center;gap:5px;">
         <span id="unreadBadge" class="unread">0</span>
-        <button id="notifyBtn" class="notify-btn" type="button">🔔 알림</button>
+        <button id="notifyBtn" class="notify-btn" type="button">🔔 아빠폰 알림 등록</button>
       </div>
     </div>
 
@@ -386,8 +387,8 @@ body{
   </section>
 
   <div class="footnote">
-    이 화면을 열어둔 동안 상대가 새 글을 쓰면 실시간으로 바로 표시됩니다.
-    알림을 허용하면 화면을 보고 있지 않을 때도 브라우저가 살아 있는 동안 알림을 받을 수 있습니다.
+    아빠 안드로이드폰에서만 <b>🔔 아빠폰 알림 등록</b>을 한 번 눌러 주세요.
+    이후 이 휴대폰은 자동으로 아빠 기기로 기억되며, 민주가 새 글을 쓰면 아빠폰으로 푸시 알림이 옵니다.
   </div>
 </div>
 
@@ -404,6 +405,24 @@ firebase.initializeApp({
 
 const db = firebase.database();
 const messagesRef = db.ref("민주용돈/게시판/messages");
+const dadPushRef = db.ref("민주용돈/게시판/push/dad");
+
+/*
+  Firebase Console > 프로젝트 설정 > Cloud Messaging > Web Push certificates
+  에서 생성한 "공개키"를 아래에 넣으세요.
+*/
+const VAPID_PUBLIC_KEY = "BHEw2viTSrGTdL8NOspFJt_-jylwy4fkWwK_KAShsM1PTkq_YDnyC0X41v0lhNdv2-d6BYGRDJcdZUDnytqAruE";
+
+let messaging = null;
+try {
+  messaging = firebase.messaging();
+} catch (e) {
+  console.warn("Firebase Messaging 초기화 실패", e);
+}
+
+const DAD_DEVICE_KEY = "dad-minju-dad-push-device";
+const isDadDevice = () =>
+  localStorage.getItem(DAD_DEVICE_KEY) === "true";
 
 const $ = id => document.getElementById(id);
 
@@ -443,21 +462,53 @@ $("requestKind").addEventListener("click",()=>setKind("request"));
 $("talkKind").addEventListener("click",()=>setKind("talk"));
 
 async function sendMessage(){
-const text = $("messageInput").value.trim();
+  const text = $("messageInput").value.trim();
 
   if(!text){
     $("messageInput").focus();
     return;
   }
 
-  await messagesRef.push({
-    kind: currentKind,
-    text,
-    createdAt: firebase.database.ServerValue.TIMESTAMP
-  });
+  try{
+    const messageRef = messagesRef.push();
 
-  $("messageInput").value = "";
-  $("messageInput").focus();
+    await messageRef.set({
+      kind: currentKind,
+      text,
+      fromDad: isDadDevice(),
+      createdAt: firebase.database.ServerValue.TIMESTAMP
+    });
+
+    // 민주가 쓴 글일 때만 Netlify Function이 아빠폰으로 Push 전송
+    if(!isDadDevice()){
+      fetch("/.netlify/functions/send-dad-board-push", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          messageId: messageRef.key
+        })
+      })
+      .then(async res => {
+        const result = await res.json().catch(() => null);
+        if(!res.ok){
+          console.warn("아빠폰 Push 전송 실패:", res.status, result);
+        }else{
+          console.log("아빠폰 Push 전송 결과:", result);
+        }
+      })
+      .catch(err => {
+        console.warn("아빠폰 Push 함수 호출 실패:", err);
+      });
+    }
+
+    $("messageInput").value = "";
+    $("messageInput").focus();
+  }catch(err){
+    console.error(err);
+    alert("글을 저장하지 못했습니다.\n" + (err?.message || err));
+  }
 }
 
 $("sendBtn").addEventListener("click",sendMessage);
@@ -570,47 +621,8 @@ function updateUnread(rows){
 }
 
 function maybeNotify(rows){
-  if(firstSnapshot){
-    firstSnapshot = false;
-
-    rows.forEach(({row})=>{
-      lastKnownTime =
-        Math.max(lastKnownTime,Number(row.createdAt || 0));
-    });
-
-    return;
-  }
-
-  const newOtherRows =
-    rows.filter(({row})=>{
-      const ts = Number(row.createdAt || 0);
-      return ts > lastKnownTime;
-    });
-
-rows.forEach(({row})=>{
-    lastKnownTime =
-      Math.max(lastKnownTime,Number(row.createdAt || 0));
-  });
-
-  if(!newOtherRows.length) return;
-
-  const newest =
-    newOtherRows[newOtherRows.length - 1].row;
-
-  if(
-    "Notification" in window &&
-    Notification.permission === "granted"
-  ){
-    try{
-      new Notification(
-        `새 글이 등록됐어요`,
-        {
-          body: String(newest.text || "").slice(0,100),
-          tag: "dad-minju-board"
-        }
-      );
-    }catch(e){}
-  }
+  // 실제 시스템 알림은 Firebase Cloud Messaging이 담당합니다.
+  // 이 함수는 기존 실시간 렌더 흐름을 유지하기 위한 자리입니다.
 }
 
 messagesRef.on(
@@ -642,30 +654,112 @@ messagesRef.on(
   }
 );
 
-$("notifyBtn").addEventListener("click", async ()=>{
+async function registerDadPush(showAlert = true){
+  if(!messaging){
+    if(showAlert) alert("이 브라우저에서 Firebase 알림을 시작할 수 없습니다.");
+    return false;
+  }
+
+  if(!("serviceWorker" in navigator)){
+    if(showAlert) alert("이 브라우저는 Service Worker를 지원하지 않습니다.");
+    return false;
+  }
+
   if(!("Notification" in window)){
-    alert("이 브라우저는 알림 기능을 지원하지 않습니다.");
-    return;
+    if(showAlert) alert("이 브라우저는 알림 기능을 지원하지 않습니다.");
+    return false;
   }
 
-  const result =
-    await Notification.requestPermission();
-
-  if(result === "granted"){
-    $("notifyBtn").textContent = "🔔 알림 허용됨";
-  }else if(result === "denied"){
-    $("notifyBtn").textContent = "🔕 알림 차단됨";
-  }else{
-    $("notifyBtn").textContent = "🔔 알림 켜기";
+  if(VAPID_PUBLIC_KEY.startsWith("여기에_")){
+    if(showAlert){
+      alert(
+        "Firebase Web Push 공개키(VAPID)를 먼저 board.html에 넣어야 합니다.\n" +
+        "Firebase 콘솔 → 프로젝트 설정 → Cloud Messaging → Web Push certificates에서 생성할 수 있습니다."
+      );
+    }
+    return false;
   }
+
+  try{
+    const permission =
+      Notification.permission === "granted"
+        ? "granted"
+        : await Notification.requestPermission();
+
+    if(permission !== "granted"){
+      $("notifyBtn").textContent = "🔕 알림 허용 필요";
+      if(showAlert) alert("알림 권한을 허용해 주세요.");
+      return false;
+    }
+
+    const swReg = await navigator.serviceWorker.register(
+      "./sw.js"
+    );
+
+    const token = await messaging.getToken({
+      vapidKey: VAPID_PUBLIC_KEY,
+      serviceWorkerRegistration: swReg
+    });
+
+    if(!token){
+      throw new Error("FCM 토큰을 발급받지 못했습니다.");
+    }
+
+    await dadPushRef.set({
+      token,
+      updatedAt: firebase.database.ServerValue.TIMESTAMP,
+      userAgent: navigator.userAgent
+    });
+
+    localStorage.setItem(DAD_DEVICE_KEY,"true");
+    $("notifyBtn").textContent = "✅ 아빠폰 알림 등록됨";
+
+    if(showAlert){
+      alert("이 휴대폰으로 민주의 새 글 알림을 받도록 등록했습니다.");
+    }
+
+    return true;
+  }catch(err){
+    console.error(err);
+    $("notifyBtn").textContent = "⚠️ 알림 등록 실패";
+    if(showAlert) alert("알림 등록에 실패했습니다.\n" + err.message);
+    return false;
+  }
+}
+
+$("notifyBtn").addEventListener("click", async ()=>{
+  if(
+    isDadDevice() &&
+    !confirm("이 휴대폰의 아빠 알림 등록을 새로 갱신할까요?")
+  ) return;
+
+  await registerDadPush(true);
 });
 
-if("Notification" in window){
-  if(Notification.permission === "granted"){
-    $("notifyBtn").textContent = "🔔 알림 허용됨";
-  }else if(Notification.permission === "denied"){
-    $("notifyBtn").textContent = "🔕 알림 차단됨";
-  }
+/* 등록된 아빠폰은 board.html을 열 때 FCM 토큰을 자동 갱신 */
+if(isDadDevice()){
+  $("notifyBtn").textContent = "✅ 아빠폰 알림 등록됨";
+  registerDadPush(false);
+}
+
+/* 게시판이 화면에 떠 있는 상태에서 FCM이 오면 필요한 경우만 표시 */
+if(messaging){
+  messaging.onMessage(payload=>{
+    if(!isDadDevice()) return;
+    if(!document.hidden) return;
+    if(Notification.permission !== "granted") return;
+
+    const data = payload?.data || {};
+    try{
+      new Notification(
+        data.title || "민주가 새 글을 남겼어요",
+        {
+          body: data.body || "게시판을 확인해 주세요.",
+          tag: "dad-minju-board-push"
+        }
+      );
+    }catch(e){}
+  });
 }
 
 document.addEventListener("visibilitychange",()=>{
