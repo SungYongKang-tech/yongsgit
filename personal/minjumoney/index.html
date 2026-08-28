@@ -56,24 +56,51 @@
       margin: 0;
     }
 
-    .schedule-link {
+    .schedule-link,
+    .board-link {
       display: inline-flex;
       align-items: center;
       justify-content: center;
+      gap: 4px;
       min-height: 34px;
       padding: 6px 11px;
       border-radius: 999px;
-      background: #eef2ff;
-      color: #4338ca;
-      border: 1px solid #c7d2fe;
       font-size: 13px;
       font-weight: 800;
       text-decoration: none;
       white-space: nowrap;
     }
 
-    .schedule-link:active {
+    .schedule-link {
+      background: #eef2ff;
+      color: #4338ca;
+      border: 1px solid #c7d2fe;
+    }
+
+    .board-link {
+      background: #fff7ed;
+      color: #c2410c;
+      border: 1px solid #fed7aa;
+    }
+
+    .schedule-link:active,
+    .board-link:active {
       transform: translateY(1px);
+    }
+
+    .board-badge {
+      display: none;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      background: #ef4444;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 900;
+      line-height: 18px;
     }
 
     .install-row {
@@ -302,7 +329,8 @@
         margin: 0;
       }
 
-      .schedule-link {
+      .schedule-link,
+      .board-link {
         min-height: 31px;
         padding: 5px 9px;
         font-size: 12px;
@@ -420,6 +448,10 @@
     <div class="page-title-row">
       <h1>아빠와 민주</h1>
       <a class="schedule-link" href="./schedul.html">스케쥴</a>
+      <a class="board-link" href="./board.html">
+        게시판
+        <span id="boardBadge" class="board-badge">0</span>
+      </a>
     </div>
 
     <div class="install-row">
@@ -1089,6 +1121,46 @@
       );
 
     }
+
+    /*
+      게시판 읽지 않은 글 표시
+      - 각 휴대폰에서 마지막으로 게시판을 읽은 시각을 localStorage에 저장
+      - 새 글이 있으면 상단 게시판 버튼에 숫자 표시
+    */
+    const boardUnreadRef =
+      db.ref("민주용돈/게시판/messages");
+
+    boardUnreadRef.on(
+      "value",
+      snap => {
+        const rows = snap.val() || {};
+        const lastRead =
+          Number(
+            localStorage.getItem("dad-minju-board-last-read") || 0
+          );
+
+        let unread = 0;
+
+        Object.values(rows).forEach(row => {
+          const createdAt =
+            Number(row?.createdAt || 0);
+
+          if(createdAt > lastRead)
+            unread++;
+        });
+
+        const badge =
+          document.getElementById("boardBadge");
+
+        if(!badge) return;
+
+        badge.textContent =
+          unread > 99 ? "99+" : String(unread);
+
+        badge.style.display =
+          unread > 0 ? "inline-flex" : "none";
+      }
+    );
 
   </script>
 
