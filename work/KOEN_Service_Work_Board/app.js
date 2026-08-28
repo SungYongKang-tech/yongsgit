@@ -575,6 +575,8 @@ function startMidnightWatcher(){
     if (nowToday !== ISO_TODAY){
       ISO_TODAY = nowToday;
       ISO_YDAY  = isoYesterday();
+      if (historyInput) historyInput.value = nowToday;
+      updateDateNavState();
       await rebindAll(currentTab);
     } else {
       $("clockLabel").textContent = new Date().toLocaleString("ko-KR");
@@ -583,35 +585,73 @@ function startMidnightWatcher(){
 }
 
 /* ==========================
-   과거 조회 모드
+   날짜 조회 / ◀ ▶ 하루 이동
+   - 오늘보다 미래 날짜는 조회하지 않음
+   - 날짜를 바꿔도 현재 탭(currentTab)은 그대로 유지
 ========================== */
 let isHistoryMode = false;
 
-function setHistoryMode(isoSelected){
-  isHistoryMode = true;
+const historyInput = document.getElementById("historyDate");
+const prevDateBtn = document.getElementById("prevDateBtn");
+const nextDateBtn = document.getElementById("nextDateBtn");
 
-  ISO_TODAY = isoSelected;
-
-  // ✅ "YYYY-MM-DD"를 안전하게 로컬 날짜로 처리
-  const d = dateFromIsoLocal(isoSelected);
-  d.setDate(d.getDate()-1);
-  ISO_YDAY = isoFromDate(d);
-
-  refreshDateUI();
+function updateDateNavState(){
+  if (!historyInput) return;
+  const realToday = isoToday();
+  historyInput.max = realToday;
+  nextDateBtn && (nextDateBtn.disabled = (historyInput.value || ISO_TODAY) >= realToday);
 }
 
-const historyInput = document.getElementById("historyDate");
+function setHistoryMode(isoSelected){
+  // 오늘을 선택하면 다시 자동 날짜 전환 모드로 복귀
+  isHistoryMode = isoSelected !== isoToday();
+
+  ISO_TODAY = isoSelected;
+  ISO_YDAY = isoMinusDays(isoSelected, 1);
+
+  refreshDateUI();
+  updateDateNavState();
+}
+
+async function moveHistoryDate(days){
+  if (!historyInput) return;
+
+  const baseIso = historyInput.value || ISO_TODAY || isoToday();
+  const d = dateFromIsoLocal(baseIso);
+  d.setDate(d.getDate() + days);
+
+  let nextIso = isoFromDate(d);
+  const realToday = isoToday();
+  if (nextIso > realToday) nextIso = realToday;
+
+  historyInput.value = nextIso;
+  setHistoryMode(nextIso);
+
+  // ✅ 현재 IBS/기계/전기 탭을 유지한 채 해당 날짜 자료만 다시 바인딩
+  await rebindAll(currentTab);
+}
+
 if (historyInput){
   historyInput.value = isoToday();
+  updateDateNavState();
 
   historyInput.addEventListener("change", async ()=>{
-    const iso = historyInput.value;
+    let iso = historyInput.value;
     if (!iso) return;
+
+    const realToday = isoToday();
+    if (iso > realToday){
+      iso = realToday;
+      historyInput.value = iso;
+    }
 
     setHistoryMode(iso);
     await rebindAll(currentTab);
   });
 }
+
+prevDateBtn?.addEventListener("click", ()=> moveHistoryDate(-1));
+nextDateBtn?.addEventListener("click", ()=> moveHistoryDate(+1));
 
 /* ==========================
    스와이프 탭 전환
@@ -794,7 +834,9 @@ document.querySelectorAll("textarea[id]").forEach(t => enhanceTextareaToRich(t.i
 attachTopToolbar();
 
 rebindAll(currentTab);
-attachSwipeToContent();
+
+// ✅ 좌우 스와이프로 IBS ↔ 기계 ↔ 전기 탭이 바뀌지 않도록 비활성화
+// 탭 이동은 상단 탭 버튼을 직접 눌렀을 때만 수행됩니다.
 
 tabs.forEach(btn=>{
   btn.addEventListener("click", async ()=>{
