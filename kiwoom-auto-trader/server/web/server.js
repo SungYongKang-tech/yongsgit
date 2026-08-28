@@ -2827,12 +2827,26 @@ async function refreshServerHoldingPrices() {
     try {
       const priceData = await fetchCurrentPriceFromKiwoom(holding.code);
 
-      holding.currentPrice = Number(priceData.currentPrice || holding.currentPrice || holding.buyPrice || 0);
-      holding.name = holding.name || priceData.name;
-      holding.highestPrice = Math.max(
-        Number(holding.highestPrice || 0),
-        Number(holding.currentPrice || 0)
+      const refreshedPrice = Number(
+        priceData.currentPrice || holding.currentPrice || holding.buyPrice || 0
       );
+      const previousHigh = Number(holding.highestPrice || holding.buyPrice || 0);
+      const previousLow = Number(holding.lowestPrice || holding.buyPrice || 0);
+
+      holding.currentPrice = refreshedPrice;
+      holding.name = holding.name || priceData.name;
+      holding.lastPriceQuoteAtMs = Date.now();
+
+      if (refreshedPrice > previousHigh) {
+        holding.highestPrice = refreshedPrice;
+        holding.highestPriceAt = Date.now();
+      } else {
+        holding.highestPrice = Math.max(previousHigh, refreshedPrice);
+      }
+
+      holding.lowestPrice = previousLow > 0
+        ? Math.min(previousLow, refreshedPrice)
+        : refreshedPrice;
 
 await new Promise((resolve) => setTimeout(resolve, 1200));
 

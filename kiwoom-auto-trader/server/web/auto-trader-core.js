@@ -1287,7 +1287,7 @@ hotDiscoverScoreRelax: 1,
 
 // 주의 강화값
 cautionCoreVolumeAdd: 5,
-cautionVolumeVolumeAdd: 20,
+cautionVolumeVolumeAdd: 10,
 cautionDiscoverScoreAdd: 1,
 
 // CORE 거래량 기준 허용오차. 시장조정 기준보다 최대 3%p 부족해도 통과

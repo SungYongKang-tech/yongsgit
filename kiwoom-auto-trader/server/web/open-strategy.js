@@ -165,10 +165,12 @@ openScoreTrendMaxBonus: 20,
 
 // 강화확인 가격 움직임 평가
 openConfirmMinPriceRiseRate: -0.30,
-openConfirmMaxPriceRiseRate: 5.0,
-openConfirmPriceBonusLow: 3,
-openConfirmPriceBonusMedium: 7,
-openConfirmPriceBonusHigh: 10,
+openConfirmMaxPriceRiseRate: 0.80,
+openConfirmPriceBonusLow: 2,
+openConfirmPriceBonusMedium: 4,
+openConfirmPriceBonusHigh: 6,
+// 강화확인에서 실제 약화가 확인된 종목은 바로 재진입하지 않고 새 흐름을 기다린다.
+openConfirmFailureCooldownMs: 3 * 60 * 1000,
 
 // 바로 직전 확인 대비 가격 약화 차단
 openRecentPriceWeakBlockRate: -0.50,
@@ -359,18 +361,101 @@ function loadState() {
   return state;
 }
 
+function getOpenHoldingMergeKey(holding = {}) {
+  const code = normalizeOpenStockCode(holding.code);
+  const token = String(
+    holding.positionId || holding.buyTimeMs || holding.buyTime ||
+    holding.buyAt || holding.buyTimeText || "legacy"
+  );
+  return `${code}|${token}`;
+}
+
+function mergeOpenHoldingTracking(latestHoldings = [], localHoldings = []) {
+  const localByKey = new Map(
+    (Array.isArray(localHoldings) ? localHoldings : []).map(holding => [
+      getOpenHoldingMergeKey(holding),
+      holding
+    ])
+  );
+
+  return (Array.isArray(latestHoldings) ? latestHoldings : []).map(latestHolding => {
+    if (String(latestHolding.strategyGroup || "").toUpperCase() !== "OPEN") {
+      return latestHolding;
+    }
+
+    const local = localByKey.get(getOpenHoldingMergeKey(latestHolding));
+    if (!local) return latestHolding;
+
+    const latestHigh = Number(
+      latestHolding.highestPrice || latestHolding.currentPrice || latestHolding.buyPrice || 0
+    );
+    const localHigh = Number(
+      local.highestPrice || local.currentPrice || local.buyPrice || 0
+    );
+    const trackedHighest = Math.max(latestHigh, localHigh);
+
+    const latestLowest = Number(latestHolding.lowestPrice || latestHolding.buyPrice || 0);
+    const localLowest = Number(local.lowestPrice || local.buyPrice || 0);
+    const trackedLowest = latestLowest > 0 && localLowest > 0
+      ? Math.min(latestLowest, localLowest)
+      : Math.max(latestLowest, localLowest);
+
+    const latestQuoteAtMs = Math.max(
+      Number(latestHolding.lastPriceQuoteAtMs || 0),
+      Number(latestHolding.openLastPriceAtMs || 0)
+    );
+    const localQuoteAtMs = Number(local.openLastPriceAtMs || 0);
+    const useLocalCurrent = localQuoteAtMs > 0 && localQuoteAtMs >= latestQuoteAtMs;
+    const mergedCurrentPrice = useLocalCurrent
+      ? Number(local.currentPrice || latestHolding.currentPrice || latestHolding.buyPrice || 0)
+      : Number(latestHolding.currentPrice || local.currentPrice || latestHolding.buyPrice || 0);
+
+    const highestPriceAt = localHigh > latestHigh
+      ? Number(local.highestPriceAt || localQuoteAtMs || 0)
+      : localHigh < latestHigh
+        ? Number(latestHolding.highestPriceAt || latestQuoteAtMs || 0)
+        : Math.max(
+            Number(local.highestPriceAt || 0),
+            Number(latestHolding.highestPriceAt || 0)
+          );
+
+    return {
+      ...latestHolding,
+      currentPrice: mergedCurrentPrice,
+      highestPrice: trackedHighest,
+      lowestPrice: trackedLowest,
+      highestPriceAt: highestPriceAt || null,
+      openLastPriceAtMs: Math.max(
+        localQuoteAtMs,
+        Number(latestHolding.openLastPriceAtMs || 0)
+      ) || null
+    };
+  });
+}
+
 function saveState(state) {
-  /* server.js의 주문 API가 관리하는 원장을 오래된 OPEN 스캔이 덮지 않게 한다. */
+  /*
+   * 주문 API가 관리하는 현금/체결 원장은 최신 파일을 우선한다.
+   * 다만 OPEN 매도감시가 만든 현재가·최고가·최저가·최고가시각은
+   * 같은 살아있는 포지션에 한해 최신 원장 위에 병합해 트레일링 상태를 보존한다.
+   * 최신 원장에서 이미 사라진 보유종목은 절대 되살리지 않는다.
+   */
   const latest = fs.existsSync(STATE_FILE)
     ? readJsonFileSafe(STATE_FILE, {})
     : {};
   const merged = { ...state };
+
+  if (Array.isArray(latest.holdings)) {
+    merged.holdings = mergeOpenHoldingTracking(latest.holdings, state.holdings);
+  }
+
   for (const key of [
-    "holdings", "tradeLogs", "virtualResults", "totalCash",
+    "tradeLogs", "virtualResults", "totalCash",
     "completedFullSellCodes", "completedOpenSellCodes"
   ]) {
     if (Object.prototype.hasOwnProperty.call(latest, key)) merged[key] = latest[key];
   }
+
   writeJsonFileAtomic(STATE_FILE, merged);
   replaceOpenStateSnapshot(state, merged);
 }
@@ -2450,6 +2535,7 @@ function initOpenDayIfNeeded(state) {
   state.openCompletedAt = settings.openEnabled ? null : nowText();
   state.openSkipReason = settings.openEnabled ? null : "OPEN 설정 OFF";
   state.openCandidateHistory = {};
+  state.openConfirmFailureCooldowns = {};
   state.openPotentialCandidates = {};
   state.openPotentialPromotedCount = 0;
   state.openPotentialExpiredCount = 0;
@@ -3839,10 +3925,10 @@ const recentPriceDiffRate =
  * 첫 발견 이후 가격 상승률 보너스
  *
  * -0.30%까지는 진입 후보를 유지하되 가격보너스는 없음
- * 0.10~0.30%: 3점
- * 0.30~0.60%: 7점
- * 0.60~1.00%: 10점
- * 1.00% 초과: 추격매수 차단
+ * 0.10~0.30%: 2점
+ * 0.30~0.60%: 4점
+ * 0.60~0.80%: 6점
+ * 0.80% 초과: 장초 급등 추격매수 차단
  */
 let confirmPriceBonus = 0;
 
@@ -4013,6 +4099,50 @@ if (!momentum.pass) {
 };
 }
 
+function isOpenConfirmFailureReason(reason = "") {
+  return /점수 약화|거래량 약화|확인 중 가격 하락|매수 직전 가격 약화|확인 중 가격 급등|상승 지속성 부족/.test(
+    String(reason || "")
+  );
+}
+
+function setOpenConfirmFailureCooldown(state, item = {}, reason = "") {
+  if (!isOpenConfirmFailureReason(reason)) return;
+  if (!state.openConfirmFailureCooldowns || typeof state.openConfirmFailureCooldowns !== "object") {
+    state.openConfirmFailureCooldowns = {};
+  }
+  const code = normalizeOpenStockCode(item.code);
+  if (!code) return;
+  const now = Date.now();
+  const cooldownMs = Number(settings.openConfirmFailureCooldownMs || 0);
+  state.openConfirmFailureCooldowns[code] = {
+    code,
+    name: item.name || item.stockName || item.korName || code,
+    reason: String(reason || "강화확인 실패"),
+    failedAt: nowText(),
+    failedAtMs: now,
+    expiresAtMs: now + cooldownMs
+  };
+  // 쿨다운 종료 뒤에는 이전 실패 흐름을 이어받지 않고 새 20초 확인부터 시작한다.
+  if (state.openCandidateHistory && typeof state.openCandidateHistory === "object") {
+    delete state.openCandidateHistory[code];
+  }
+}
+
+function getOpenConfirmFailureCooldown(state, codeValue) {
+  if (!state.openConfirmFailureCooldowns || typeof state.openConfirmFailureCooldowns !== "object") {
+    state.openConfirmFailureCooldowns = {};
+  }
+  const code = normalizeOpenStockCode(codeValue);
+  const saved = state.openConfirmFailureCooldowns[code];
+  if (!saved) return null;
+  const remainingMs = Number(saved.expiresAtMs || 0) - Date.now();
+  if (remainingMs <= 0) {
+    delete state.openConfirmFailureCooldowns[code];
+    return null;
+  }
+  return { ...saved, remainingMs };
+}
+
 function judgeOpenBuy(state, item, price, options = {}) {
   const ignoreMarketBlocks = options.ignoreMarketBlocks === true;
   const changeRate = Number(
@@ -4095,6 +4225,16 @@ function judgeOpenBuy(state, item, price, options = {}) {
     return {
       pass: false,
       reason: "오늘 이미 매수한 종목"
+    };
+  }
+
+  const confirmFailureCooldown = getOpenConfirmFailureCooldown(state, item.code);
+  if (confirmFailureCooldown) {
+    return {
+      pass: false,
+      reason:
+        `강화확인 실패 쿨다운 ${Math.ceil(confirmFailureCooldown.remainingMs / 1000)}초 / ` +
+        `${confirmFailureCooldown.reason}`
     };
   }
 
@@ -4493,6 +4633,7 @@ function judgeOpenBuy(state, item, price, options = {}) {
    * 기존 강화 판정부터 먼저 처리해야 한다.
    */
   if (!strengthen.pass) {
+    setOpenConfirmFailureCooldown(state, item, strengthen.reason);
     return {
       pass: false,
       reason: strengthen.reason,
@@ -5302,7 +5443,8 @@ function getOpenRejectCategory(reason = "") {
   const text = String(reason || "");
 
   if (text.includes("첫 발견") || text.includes("확인 대기")) return "20초 강화확인 대기";
-  if (text.includes("점수 약화") || text.includes("거래량 약화") || text.includes("가격 하락")) return "강화확인 실패";
+  if (text.includes("강화확인 실패 쿨다운")) return "강화확인 실패 쿨다운";
+  if (text.includes("점수 약화") || text.includes("거래량 약화") || text.includes("가격 하락") || text.includes("가격 약화") || text.includes("가격 급등")) return "강화확인 실패";
   if (
     /시장절대차단|시장급락 차단|섹터약세 차단|약세장 강한섹터 아님|주의장 섹터부족|시장자료 없음 차단/.test(text)
   ) return "시장·섹터";
@@ -5754,7 +5896,7 @@ async function runOpenBuyOnce() {
         item.source === "PRIORITY" ||
         item.potentialCandidate === true
       ) &&
-      !/OPEN OFF|오늘 OPEN 종료|오늘 OPEN 이미 매수|이미 보유|오늘 이미 매수|시장자료 없음 차단|시장절대차단|시장급락 차단/.test(potentialReason);
+      !/OPEN OFF|오늘 OPEN 종료|오늘 OPEN 이미 매수|이미 보유|오늘 이미 매수|강화확인 실패 쿨다운|시장자료 없음 차단|시장절대차단|시장급락 차단/.test(potentialReason);
 
     if (canTrackPotential) {
       registerOpenPotentialCandidate(state, item, price, judged);
@@ -6046,14 +6188,22 @@ async function checkOpenSellOnce() {
   );
   for (const holding of openHoldings) {
     let price = 0;
-    try { price = await fetchPrice(holding.code, "sell"); }
-    catch (err) {
-      console.log(`[OPEN 가격조회 실패] ${holding.name} / ${err.message}`);
-      price = Number(holding.currentPrice || holding.buyPrice || 0);
+    try {
+      price = await fetchPrice(holding.code, "sell");
+    } catch (err) {
+      console.log(
+        `[OPEN 가격조회 실패] ${holding.name} / ${err.message} / ` +
+        `이번 회차 매도판정 보류`
+      );
+      continue;
     }
-    if (!price) continue;
+    if (!price) {
+      console.log(`[OPEN 가격조회 실패] ${holding.name} / 유효가격 없음 / 이번 회차 매도판정 보류`);
+      continue;
+    }
 
     holding.currentPrice = price;
+    holding.openLastPriceAtMs = Date.now();
     updateOpenLearningHolding(holding, price);
     const signal = getOpenSellSignal(holding, price);
     if (!signal) {

@@ -9,8 +9,8 @@ const STATE_FILE = path.join(__dirname, "paper-state-wave.json");
 const HOT_HISTORY_FILE = path.join(__dirname, "hot-candidates-history.json");
 const OPEN_MARKET_FILE = path.join(__dirname, "open-market.json");
 
-const STRATEGY_VERSION = "1.5.7-MASTER";
-const ANALYSIS_RULE_VERSION = "20260827-real-pullback-entry-gate-v9";
+const STRATEGY_VERSION = "1.5.8-MASTER";
+const ANALYSIS_RULE_VERSION = "20260828-strict-trigger-reconfirm-v10";
 const WATCH_CAP_DROP_REASON = "활성후보 상한 / 우선순위 밖";
 
 const SETTINGS = {
@@ -352,13 +352,13 @@ function loadState() {
       state.preEvaluation.ruleRefreshPending = true;
       state.preEvaluation.ruleRefreshReason = `분석규칙 변경 → ${ANALYSIS_RULE_VERSION}`;
 
-      // 구버전은 장후/장전 평가도 실제 TRIGGER 시간으로 저장했다.
-      // 비LIVE 평가에서 만들어진 TRIGGER는 READY 사전신호로 되돌려
-      // 다음 거래일 장중 2회 확인(최소 4분)을 다시 거치게 한다.
+      // 진입규칙이 바뀌었으면 기존 TRIGGER 확인시간을 새 규칙으로 이어받지 않는다.
+      // 장전/장후뿐 아니라 LIVE TRIGGER도 READY로 되돌려, 배포 이후 장중에서
+      // 1차 TRIGGER → 다음 평가 재확인(최소 4분)을 새 규칙으로 다시 거치게 한다.
       for (const candidate of state.watchlist) {
-        if (candidate.status !== "TRIGGER" || candidate.lastEvaluationMode === "LIVE") continue;
+        if (candidate.status !== "TRIGGER") continue;
         candidate.preSignalStatus = "TRIGGER";
-        candidate.preSignalMode = candidate.lastEvaluationMode || "PREP_MIGRATION";
+        candidate.preSignalMode = candidate.lastEvaluationMode || "RULE_MIGRATION";
         candidate.preSignalAt = candidate.lastEvaluatedAt || nowText();
         candidate.preSignalAtMs = toNumber(candidate.lastEvaluatedAtMs || Date.now());
         candidate.preSignalPrice = toNumber(candidate.lastPrice || candidate.triggerPrice);
@@ -1417,12 +1417,15 @@ async function analyzeCandidate(candidate, priceData, dailyData, flowData, newsI
     pullback.pullbackRate >= -9.5 &&
     !previousDaySurgeCooldownBlocked;
 
-  // 이미 만들어진 TRIGGER는 매 평가마다 다시 상승할 필요는 없다.
-  // 점수·눌림·당일 위치·저점 회복 구조가 살아 있으면 TRIGGER 가격 허용범위 안에서 유지한다.
+  // V10: TRIGGER 재확인도 최초 진입과 같은 수준의 실제 반등을 다시 요구한다.
+  // 단순히 구조만 버틴 채 횡보하는 종목(오늘 다스코·마키나락스 사례)이
+  // 4~5분 경과만으로 매수되는 것을 막는다.
   const triggerMaintainEligible =
     readyEligible &&
     totalScore >= SETTINGS.totalBuyMinScore &&
+    rebound.score >= SETTINGS.reboundMinScoreForBuy &&
     rebound.reboundStructureIntact === true &&
+    rebound.trueRebound === true &&
     rebound.changeRate <= SETTINGS.currentDayMaxChangeRateForBuy &&
     pullback.pullbackRate >= -9.5 &&
     !previousDaySurgeCooldownBlocked;
@@ -1507,9 +1510,25 @@ function getTriggerReadiness({
       `TRIGGER가 대비 ${toNumber(triggerPriceHoldRate).toFixed(2)}% / ` +
       `허용 ${SETTINGS.triggerConfirmMaxDipRate.toFixed(2)}%`;
   } else if (previousStatus === "TRIGGER" && analysis.triggerMaintainEligible !== true) {
-    blockReason =
-      `반등구조 유지 실패 / 시가대비 ${toNumber(analysis.rebound?.openRate).toFixed(2)}% / ` +
-      `당일위치 ${toNumber(analysis.rebound?.dayPosition).toFixed(0)}%`;
+    const reboundScore = toNumber(analysis.rebound?.score);
+    const trueRebound = analysis.rebound?.trueRebound === true;
+
+    if (!trueRebound) {
+      blockReason =
+        `재확인 반등 미충족 / REBOUND ${reboundScore}/${SETTINGS.reboundMinScoreForBuy} / ` +
+        `시가대비 ${toNumber(analysis.rebound?.openRate).toFixed(2)}% / ` +
+        `직전평가대비 ${toNumber(analysis.rebound?.sinceLastEvalRate).toFixed(2)}% / ` +
+        `당일위치 ${toNumber(analysis.rebound?.dayPosition).toFixed(0)}%`;
+    } else if (reboundScore < SETTINGS.reboundMinScoreForBuy) {
+      blockReason =
+        `재확인 REBOUND 부족 ${reboundScore}/${SETTINGS.reboundMinScoreForBuy} / ` +
+        `직전평가대비 ${toNumber(analysis.rebound?.sinceLastEvalRate).toFixed(2)}%`;
+    } else {
+      blockReason =
+        `TRIGGER 재확인 최종조건 이탈 / 총 ${toNumber(analysis.totalScore)} / ` +
+        `당일 ${toNumber(analysis.rebound?.changeRate).toFixed(2)}% / ` +
+        `눌림 ${toNumber(analysis.pullback?.pullbackRate).toFixed(2)}%`;
+    }
   }
 
   return {
@@ -2283,6 +2302,13 @@ async function evaluateWatchCandidates(state, options = {}) {
         triggerAgeMs >= SETTINGS.triggerConfirmMinMs;
 
       const scoreBuyEligible = analysis.buyEligible === true;
+      // 방어적 최종 게이트: TRIGGER 유지판정이 잘못 완화되더라도 실제 매수 직전에는
+      // 반드시 현재 평가 자체가 다시 1차 TRIGGER 조건(trueRebound + REBOUND 최소점수)을 만족해야 한다.
+      const confirmationSignalReady =
+        analysis.triggerEligible === true &&
+        analysis.rebound?.trueRebound === true &&
+        toNumber(analysis.rebound?.score) >= SETTINGS.reboundMinScoreForBuy;
+
       analysis.triggerConfirmed = triggerConfirmed;
       analysis.triggerAgeMs = triggerAgeMs;
       analysis.triggerPrice = previousTriggerPrice;
@@ -2291,13 +2317,16 @@ async function evaluateWatchCandidates(state, options = {}) {
       analysis.triggerMaintainReady = triggerDecision.triggerMaintainReady;
       analysis.triggerMaintainBlockReason = triggerDecision.blockReason;
       analysis.observationReady = triggerDecision.observationReady;
+      analysis.confirmationSignalReady = confirmationSignalReady;
       analysis.preSignalBuyEligible = mode !== "LIVE" && scoreBuyEligible;
       analysis.buyEligible =
         mode === "LIVE" &&
         triggerDecision.observationReady &&
-        triggerConfirmed;
+        triggerConfirmed &&
+        confirmationSignalReady;
       analysis.buyReason = analysis.buyEligible
         ? `WAVE TRIGGER 재확인 완료 / 유지 ${Math.round(triggerAgeMs / 60000)}분 / ` +
+          `REBOUND ${analysis.rebound.score} / 직전평가대비 ${analysis.rebound.sinceLastEvalRate.toFixed(2)}% / ` +
           `TRIGGER가 대비 ${triggerPriceHoldRate.toFixed(2)}% / 총 ${analysis.totalScore}`
         : analysis.buyReason;
 
