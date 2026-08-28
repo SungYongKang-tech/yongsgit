@@ -207,24 +207,6 @@ body{
 .msg.mine .bubble{
   box-shadow:0 3px 10px rgba(0,0,0,.05);
 }
-.kind{
-  display:inline-flex;
-  align-items:center;
-  min-height:22px;
-  padding:2px 6px;
-  border-radius:999px;
-  font-size:10px;
-  font-weight:900;
-  margin-bottom:3px;
-}
-.kind.request{
-  background:#fff7ed;
-  color:#c2410c;
-}
-.kind.talk{
-  background:#ecfdf5;
-  color:#047857;
-}
 .del{
   margin-top:3px;
   border:0;
@@ -238,32 +220,6 @@ body{
   border-top:1px solid #e5e7eb;
   padding:8px;
   background:#fafafa;
-}
-.kind-row{
-  display:flex;
-  gap:5px;
-  margin-bottom:6px;
-}
-.kind-btn{
-  flex:1;
-  min-height:36px;
-  border-radius:10px;
-  border:1px solid #e5e7eb;
-  background:#fff;
-  color:#4b5563;
-  font-size:12px;
-  font-weight:900;
-  cursor:pointer;
-}
-.kind-btn.active.request{
-  background:#fff7ed;
-  color:#c2410c;
-  border-color:#fed7aa;
-}
-.kind-btn.active.talk{
-  background:#ecfdf5;
-  color:#047857;
-  border-color:#a7f3d0;
 }
 .send-row{
   display:grid;
@@ -368,12 +324,7 @@ body{
     </div>
 
     <div class="composer">
-      <div class="kind-row">
-        <button id="requestKind" class="kind-btn request active" type="button">🛠 수정요청</button>
-        <button id="talkKind" class="kind-btn talk" type="button">💭 하고싶은말</button>
-      </div>
-
-      <div class="send-row">
+<div class="send-row">
         <input
           id="messageInput"
           type="text"
@@ -426,7 +377,6 @@ const isDadDevice = () =>
 
 const $ = id => document.getElementById(id);
 
-let currentKind = "request";
 let firstSnapshot = true;
 let lastKnownTime = 0;
 
@@ -452,14 +402,6 @@ function formatTime(ts){
   return `${yy}.${mm}.${dd} ${hh}:${mi}`;
 }
 
-function setKind(kind){
-  currentKind = kind;
-  $("requestKind").classList.toggle("active",kind === "request");
-  $("talkKind").classList.toggle("active",kind === "talk");
-}
-
-$("requestKind").addEventListener("click",()=>setKind("request"));
-$("talkKind").addEventListener("click",()=>setKind("talk"));
 
 async function sendMessage(){
   const text = $("messageInput").value.trim();
@@ -473,7 +415,6 @@ async function sendMessage(){
     const messageRef = messagesRef.push();
 
     await messageRef.set({
-      kind: currentKind,
       text,
       fromDad: isDadDevice(),
       createdAt: firebase.database.ServerValue.TIMESTAMP
@@ -539,17 +480,10 @@ function renderMessages(rows){
     const msg = document.createElement("div");
     msg.className = "msg";
 
-    const kindText =
-      row.kind === "request" ? "수정요청" : "하고싶은말";
-
-    const kindClass =
-      row.kind === "request" ? "request" : "talk";
-
     msg.innerHTML = `
       <div class="meta">
         <span>${formatTime(row.createdAt)}</span>
       </div>
-      <div class="kind ${kindClass}">${kindText}</div>
       <div class="bubble">${esc(row.text)}</div>
     `;
 
@@ -637,9 +571,9 @@ messagesRef.on(
       .map(([key,row])=>({key,row:row || {}}))
       .sort(
         (a,b)=>
-          Number(a.row.createdAt || 0)
-          -
           Number(b.row.createdAt || 0)
+          -
+          Number(a.row.createdAt || 0)
       );
 
     latestRows = rows;

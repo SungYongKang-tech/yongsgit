@@ -107,14 +107,13 @@ exports.handler = async (event) => {
       });
     }
 
-    const kind = message.kind === "request" ? "수정요청" : "하고싶은말";
     const text = String(message.text || "").trim().slice(0, 180);
 
     const messageResult = await firebase.messaging().send({
       token,
       data: {
-        title: `민주 · ${kind}`,
-        body: text || "새 글이 등록됐어요.",
+        title: "민주가 새 글을 남겼어요",
+        body: text || "게시판을 확인해 주세요.",
         url: BOARD_URL
       },
       webpush: {
