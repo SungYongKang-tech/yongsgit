@@ -309,6 +309,30 @@ body{
   .bubble{max-width:91%;font-size:14px}
   .messages{padding-left:5px;padding-right:5px}
 }
+
+/* 둘만 사용하는 게시판: 작성자 구분 없이 한 줄 기록 */
+.msg,
+.msg.mine,
+.msg.other{
+  align-items:stretch;
+}
+.msg .meta{
+  justify-content:flex-start;
+}
+.msg .author{
+  display:none;
+}
+.msg .bubble{
+  max-width:100%;
+  width:100%;
+  background:#fff !important;
+  border:1px solid #e5e7eb !important;
+  border-radius:11px;
+}
+.msg .del{
+  align-self:flex-end;
+}
+
 </style>
 </head>
 
@@ -316,7 +340,7 @@ body{
 <div class="topbar">
   <div class="wrap">
     <div class="head">
-      <div class="title">💬 수정요청 · 하고싶은말</div>
+      <div class="title">💬 우리 둘 게시판</div>
       <div class="navs">
         <a class="nav" href="./schedul.html">스케쥴</a>
         <a class="nav" href="./index.html">홈</a>
@@ -326,21 +350,16 @@ body{
 </div>
 
 <div class="wrap">
-  <section class="who-card">
-    <div class="who-row">
-      <button id="dadBtn" class="who-btn dad" type="button">👨 아빠</button>
-      <button id="minjuBtn" class="who-btn minju" type="button">👧 민주</button>
-    </div>
-    <div class="status-row">
-      <div id="status" class="status">Firebase 연결 중...</div>
-      <button id="notifyBtn" class="notify-btn" type="button">🔔 알림 켜기</button>
-    </div>
-  </section>
-
   <section class="board">
     <div class="board-head">
-      <b>우리 둘 대화</b>
-      <span id="unreadBadge" class="unread">0</span>
+      <div>
+        <b>우리 둘 대화</b>
+        <div id="status" class="status" style="margin-top:3px;">Firebase 연결 중...</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:5px;">
+        <span id="unreadBadge" class="unread">0</span>
+        <button id="notifyBtn" class="notify-btn" type="button">🔔 알림</button>
+      </div>
     </div>
 
     <div id="messages" class="messages">
@@ -388,9 +407,6 @@ const messagesRef = db.ref("민주용돈/게시판/messages");
 
 const $ = id => document.getElementById(id);
 
-let me =
-  localStorage.getItem("dad-minju-board-user") || "";
-
 let currentKind = "request";
 let firstSnapshot = true;
 let lastKnownTime = 0;
@@ -417,20 +433,6 @@ function formatTime(ts){
   return `${yy}.${mm}.${dd} ${hh}:${mi}`;
 }
 
-function setMe(next){
-  me = next;
-  localStorage.setItem("dad-minju-board-user",me);
-
-  $("dadBtn").classList.toggle("active",me === "dad");
-  $("minjuBtn").classList.toggle("active",me === "minju");
-
-  markRead();
-  renderLastData();
-}
-
-$("dadBtn").addEventListener("click",()=>setMe("dad"));
-$("minjuBtn").addEventListener("click",()=>setMe("minju"));
-
 function setKind(kind){
   currentKind = kind;
   $("requestKind").classList.toggle("active",kind === "request");
@@ -441,12 +443,7 @@ $("requestKind").addEventListener("click",()=>setKind("request"));
 $("talkKind").addEventListener("click",()=>setKind("talk"));
 
 async function sendMessage(){
-  if(!me){
-    alert("먼저 아빠 또는 민주를 선택해 주세요.");
-    return;
-  }
-
-  const text = $("messageInput").value.trim();
+const text = $("messageInput").value.trim();
 
   if(!text){
     $("messageInput").focus();
@@ -454,7 +451,6 @@ async function sendMessage(){
   }
 
   await messagesRef.push({
-    author: me,
     kind: currentKind,
     text,
     createdAt: firebase.database.ServerValue.TIMESTAMP
@@ -490,13 +486,7 @@ function renderMessages(rows){
 
   rows.forEach(({key,row})=>{
     const msg = document.createElement("div");
-    const mine = me && row.author === me;
-
-    msg.className =
-      `msg ${mine ? "mine" : "other"} ${row.author === "dad" ? "dad" : "minju"}`;
-
-    const authorText =
-      row.author === "dad" ? "아빠" : "민주";
+    msg.className = "msg";
 
     const kindText =
       row.kind === "request" ? "수정요청" : "하고싶은말";
@@ -506,26 +496,23 @@ function renderMessages(rows){
 
     msg.innerHTML = `
       <div class="meta">
-        <span class="author">${authorText}</span>
         <span>${formatTime(row.createdAt)}</span>
       </div>
       <div class="kind ${kindClass}">${kindText}</div>
       <div class="bubble">${esc(row.text)}</div>
     `;
 
-    if(mine){
-      const del = document.createElement("button");
-      del.className = "del";
-      del.type = "button";
-      del.textContent = "삭제";
-      del.addEventListener("click",()=>{
-        if(confirm("이 글을 삭제할까요?")){
-          db.ref(`민주용돈/게시판/messages/${key}`).remove();
-        }
-      });
-      msg.appendChild(del);
-    }
+    const del = document.createElement("button");
+    del.className = "del";
+    del.type = "button";
+    del.textContent = "삭제";
+    del.addEventListener("click",()=>{
+      if(confirm("이 글을 삭제할까요?")){
+        db.ref(`민주용돈/게시판/messages/${key}`).remove();
+      }
+    });
 
+    msg.appendChild(del);
     wrap.appendChild(msg);
   });
 
@@ -560,8 +547,7 @@ function updateUnread(rows){
 
   rows.forEach(({row})=>{
     if(
-      Number(row.createdAt || 0) > lastRead &&
-      (!me || row.author !== me)
+      Number(row.createdAt || 0) > lastRead
     ){
       unread++;
     }
@@ -598,14 +584,10 @@ function maybeNotify(rows){
   const newOtherRows =
     rows.filter(({row})=>{
       const ts = Number(row.createdAt || 0);
-      return (
-        ts > lastKnownTime &&
-        me &&
-        row.author !== me
-      );
+      return ts > lastKnownTime;
     });
 
-  rows.forEach(({row})=>{
+rows.forEach(({row})=>{
     lastKnownTime =
       Math.max(lastKnownTime,Number(row.createdAt || 0));
   });
@@ -619,12 +601,9 @@ function maybeNotify(rows){
     "Notification" in window &&
     Notification.permission === "granted"
   ){
-    const who =
-      newest.author === "dad" ? "아빠" : "민주";
-
     try{
       new Notification(
-        `${who}가 새 글을 남겼어요`,
+        `새 글이 등록됐어요`,
         {
           body: String(newest.text || "").slice(0,100),
           tag: "dad-minju-board"
@@ -694,12 +673,6 @@ document.addEventListener("visibilitychange",()=>{
     markRead();
 });
 
-if(me){
-  setMe(me);
-}else{
-  $("dadBtn").classList.remove("active");
-  $("minjuBtn").classList.remove("active");
-}
 </script>
 </body>
 </html>
