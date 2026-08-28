@@ -4,10 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f7a9b8" />
-  <meta name="application-name" content="민주용돈" />
+  <meta name="application-name" content="아빠와 민주" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <meta name="apple-mobile-web-app-title" content="민주용돈" />
+  <meta name="apple-mobile-web-app-title" content="아빠와 민주" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="format-detection" content="telephone=no" />
 
@@ -15,7 +15,7 @@
   <link rel="icon" type="image/png" href="./minjumoney.png" />
   <link rel="apple-touch-icon" href="./minjumoney.png" />
 
-  <title>민주용돈</title>
+  <title>아빠와 민주</title>
 
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
@@ -418,7 +418,7 @@
   <div class="wrap">
 
     <div class="page-title-row">
-      <h1>민주용돈</h1>
+      <h1>아빠와 민주</h1>
       <a class="schedule-link" href="./schedul.html">스케쥴</a>
     </div>
 
@@ -783,24 +783,19 @@
       tbody.innerHTML = "";
 
 
-      const rows =
+      // 잔액 계산은 오래된 순서대로 해야 각 거래 시점의 잔액이 정확합니다.
+      const rowsAsc =
         Object.entries(data)
         .sort((a, b) => {
 
           const dateCompare =
-            String(
-              a[1].date || ""
-            )
+            String(a[1].date || "")
             .localeCompare(
-              String(
-                b[1].date || ""
-              )
+              String(b[1].date || "")
             );
-
 
           if (dateCompare !== 0)
             return dateCompare;
-
 
           return (
             (a[1].createdAt || 0)
@@ -812,10 +807,34 @@
 
 
       let totalIncome = 0;
-
       let totalExpense = 0;
-
       let balance = 0;
+
+      // 각 거래가 끝난 시점의 잔액을 저장
+      const balanceAfter = {};
+
+      rowsAsc.forEach(
+        ([key, row]) => {
+
+          const income =
+            toNum(row.income);
+
+          const expense =
+            toNum(row.expense);
+
+          totalIncome += income;
+          totalExpense += expense;
+          balance += income - expense;
+
+          balanceAfter[key] = balance;
+
+        }
+      );
+
+
+      // 화면에는 최신 날짜 / 최신 입력 순으로 표시
+      const rows =
+        [...rowsAsc].reverse();
 
 
       rows.forEach(
@@ -827,13 +846,8 @@
           const expense =
             toNum(row.expense);
 
-
-          totalIncome += income;
-
-          totalExpense += expense;
-
-          balance +=
-            income - expense;
+          const rowBalance =
+            balanceAfter[key] ?? 0;
 
 
           const tr =
@@ -875,7 +889,7 @@
 
             <td class="num">
               <strong>
-                ${comma(balance)}
+                ${comma(rowBalance)}
               </strong>
             </td>
 
@@ -894,7 +908,6 @@
 
         }
       );
-
 
       el("totalIncome")
         .textContent =

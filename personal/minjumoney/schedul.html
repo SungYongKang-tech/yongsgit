@@ -4,7 +4,7 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
 <meta name="theme-color" content="#f6f7ff"/>
-<title>민주 스케쥴</title>
+<title>아빠와 민주 스케쥴</title>
 
 <style>
 :root{
@@ -267,7 +267,7 @@ button.small{min-height:36px;padding:6px 9px;font-size:12px}
 }
 .activity-row{
   display:grid;
-  grid-template-columns:22px minmax(0,1fr) 46px 54px;
+  grid-template-columns:22px minmax(0,1fr) 46px 46px 54px;
   gap:6px;
   align-items:center;
   padding:8px 7px;
@@ -287,6 +287,15 @@ button.small{min-height:36px;padding:6px 9px;font-size:12px}
   min-height:36px;
   padding:2px;
 }
+.edit{
+  background:#fff;
+  color:#2563eb;
+  border:1px solid #bfdbfe;
+  min-height:36px;
+  padding:5px 7px;
+  font-size:12px;
+}
+
 .del{
   background:#fff;
   color:#dc2626;
@@ -370,6 +379,14 @@ button.small{min-height:36px;padding:6px 9px;font-size:12px}
   .list{gap:4px 0}
   .tag{font-size:11px;padding:5px 7px}
   .activity-add{grid-template-columns:minmax(0,1fr) 46px 62px}
+  .activity-row{
+    grid-template-columns:18px minmax(0,1fr) 42px 42px 48px;
+    gap:4px;
+    padding:7px 4px;
+  }
+  .activity-row b{font-size:13px}
+  .edit,.del{padding:4px 3px;font-size:11px}
+  .activity-color{width:40px}
 }
 </style>
 </head>
@@ -378,8 +395,8 @@ button.small{min-height:36px;padding:6px 9px;font-size:12px}
 <div class="topbar">
   <div class="wrap">
     <div class="brand-row">
-      <div class="brand">📅 민주 스케쥴</div>
-      <a class="home-link" href="./index.html">← 민주용돈</a>
+      <div class="brand">📅 아빠와 민주 스케쥴</div>
+      <a class="home-link" href="./index.html">← 아빠와 민주</a>
     </div>
 
     <div class="row">
@@ -650,6 +667,36 @@ function renderActivityList(){
     const name = document.createElement("b");
     name.textContent = a.name;
 
+    const edit = document.createElement("button");
+    edit.className = "edit";
+    edit.type = "button";
+    edit.textContent = "수정";
+    edit.addEventListener("click", async ()=>{
+      const next = prompt("활동 이름을 수정하세요.", a.name);
+      if(next === null) return;
+
+      const newName = next.trim();
+
+      if(!newName){
+        alert("활동 이름을 입력해 주세요.");
+        return;
+      }
+
+      if(
+        activities.some(
+          item => item.key !== a.key && item.name === newName
+        )
+      ){
+        alert("같은 이름의 활동이 이미 있습니다.");
+        return;
+      }
+
+      await set(
+        ref(db,`${ROOT}/activities/${a.key}/name`),
+        newName
+      );
+    });
+
     const color = document.createElement("input");
     color.type = "color";
     color.className = "activity-color";
@@ -680,7 +727,7 @@ function renderActivityList(){
       await Promise.all(jobs);
     });
 
-    row.append(sw,name,color,del);
+    row.append(sw,name,edit,color,del);
     list.appendChild(row);
   });
 }
