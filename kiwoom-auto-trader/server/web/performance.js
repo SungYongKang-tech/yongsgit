@@ -132,7 +132,7 @@ function formatWon(value) {
 
     async function loadMasterPortfolioSummary() {
       try {
-        const response = await fetch("/api/portfolio-summary", { cache: "no-store" });
+        const response = await fetch("https://sytrader.duckdns.org/api/portfolio-summary", { cache: "no-store" });
         const data = await response.json();
         if (!response.ok || data.ok === false) {
           throw new Error(data.message || `HTTP ${response.status}`);
@@ -530,7 +530,7 @@ function formatWon(value) {
 
     async function loadStrategyDashboardSummary() {
       try {
-        const response = await fetch("/api/strategy-dashboard-summary", { cache: "no-store" });
+        const response = await fetch("https://sytrader.duckdns.org/api/strategy-dashboard-summary", { cache: "no-store" });
         const data = await response.json();
         if (!response.ok || data.ok === false) {
           throw new Error(data.message || `HTTP ${response.status}`);
@@ -1570,7 +1570,7 @@ async function refreshMissedWinners() {
       }
 
       try {
-        const response = await fetch("/api/manual-paper-sell", {
+        const response = await fetch("https://sytrader.duckdns.org/api/manual-paper-sell", {
           method: "POST",
           headers: {
             "Content-Type": "application/json"

@@ -10,7 +10,7 @@ const HOT_CANDIDATES_FILE = path.join(__dirname, "hot-candidates.json");
 const HOT_HISTORY_FILE = path.join(__dirname, "hot-candidates-history.json");
 const OPEN_MARKET_FILE = path.join(__dirname, "open-market.json");
 
-const STRATEGY_VERSION = "1.3.2-MASTER";
+const STRATEGY_VERSION = "1.3.3-MASTER";
 
 const FAST_MASTER_POSITION_RATIO = 0.10;
 
@@ -20,6 +20,9 @@ const SETTINGS = {
   positionRatio: 0.20,
   maxHoldingCount: 5,
   maxDailyBuyCount: 5,
+  // 장초 5개 슬롯을 너무 빨리 소진하지 않도록 09:10 전에는 4회까지만 허용한다.
+  earlyReservedSlotUntil: "09:10",
+  earlyMaxDailyBuyCount: 4,
 
   buyStartTime: "09:00",
   buyEndTime: "10:30",
@@ -104,6 +107,10 @@ const SETTINGS = {
   buyPriceRequestTimeoutMs: 5 * 1000,
   // 서버 가격큐 대기 + 키움 조회시간까지 감안해 매도는 더 오래 기다린다.
   sellPriceRequestTimeoutMs: 12 * 1000,
+  // 매도 현재가 조회가 일시 실패하면 짧게 1회만 재시도한다.
+  // 첫 요청 실패 뒤 오래 기다리며 다른 FAST 보유종목 점검을 막지 않도록 250ms만 둔다.
+  sellPriceRetryCount: 1,
+  sellPriceRetryDelayMs: 250,
 
   stopLossRate: -1.0,
   protectStartProfitRate: 2.0,
@@ -137,6 +144,16 @@ function getCurrentHHMM() {
   const hour = parts.find(part => part.type === "hour")?.value || "00";
   const minute = parts.find(part => part.type === "minute")?.value || "00";
   return `${hour}:${minute}`;
+}
+
+function getEffectiveDailyBuyLimit(hhmm = getCurrentHHMM()) {
+  if (hhmm < SETTINGS.earlyReservedSlotUntil) {
+    return Math.min(
+      SETTINGS.maxDailyBuyCount,
+      SETTINGS.earlyMaxDailyBuyCount
+    );
+  }
+  return SETTINGS.maxDailyBuyCount;
 }
 
 function isKoreanWeekday() {
@@ -882,29 +899,57 @@ async function fetchJson(url, timeoutMs = SETTINGS.buyPriceRequestTimeoutMs) {
 }
 
 async function getFastPrice(code, source = "fast") {
-  const isSellRequest = String(source || "").toLowerCase() === "fast-sell";
+  const normalizedSource = String(source || "").toLowerCase();
+  const isSellRequest = normalizedSource === "fast-sell";
   const timeoutMs = isSellRequest
     ? SETTINGS.sellPriceRequestTimeoutMs
     : SETTINGS.buyPriceRequestTimeoutMs;
   const maxQuoteAgeMs = isSellRequest
     ? SETTINGS.sellMaxQuoteAgeMs
     : SETTINGS.buyMaxQuoteAgeMs;
+  const maxAttempts = isSellRequest
+    ? 1 + Math.max(0, toNumber(SETTINGS.sellPriceRetryCount))
+    : 1;
 
-  const data = await fetchJson(
-    `${API_BASE}/api/price?code=${encodeURIComponent(code)}&source=${encodeURIComponent(source)}`,
-    timeoutMs
-  );
-  const currentPrice = Math.abs(toNumber(data.currentPrice || data.price || data.raw?.cur_prc));
-  const observedAtMs = toNumber(data.quoteObservedAtMs || data.cachedAtMs);
-  const quoteAgeMs = observedAtMs > 0 ? Math.max(0, Date.now() - observedAtMs) : 0;
-  if (!currentPrice) throw new Error("현재가 없음");
-  if (observedAtMs > 0 && quoteAgeMs > maxQuoteAgeMs) {
-    throw new Error(
-      `시세 오래됨 ${Math.round(quoteAgeMs / 1000)}초 / ` +
-      `허용 ${Math.round(maxQuoteAgeMs / 1000)}초`
-    );
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const data = await fetchJson(
+        `${API_BASE}/api/price?code=${encodeURIComponent(code)}&source=${encodeURIComponent(source)}`,
+        timeoutMs
+      );
+      const currentPrice = Math.abs(
+        toNumber(data.currentPrice || data.price || data.raw?.cur_prc)
+      );
+      const observedAtMs = toNumber(data.quoteObservedAtMs || data.cachedAtMs);
+      const quoteAgeMs = observedAtMs > 0
+        ? Math.max(0, Date.now() - observedAtMs)
+        : 0;
+
+      if (!currentPrice) throw new Error("현재가 없음");
+      if (observedAtMs > 0 && quoteAgeMs > maxQuoteAgeMs) {
+        throw new Error(
+          `시세 오래됨 ${Math.round(quoteAgeMs / 1000)}초 / ` +
+          `허용 ${Math.round(maxQuoteAgeMs / 1000)}초`
+        );
+      }
+
+      return { ...data, currentPrice, quoteAgeMs };
+    } catch (error) {
+      lastError = error;
+
+      if (attempt >= maxAttempts) break;
+
+      console.warn(
+        `[FAST 매도시세 재시도] ${normalizeCode(code) || code} / ` +
+        `${attempt}/${maxAttempts - 1} / ${error.message}`
+      );
+      await sleep(SETTINGS.sellPriceRetryDelayMs);
+    }
   }
-  return { ...data, currentPrice, quoteAgeMs };
+
+  throw lastError || new Error("FAST 현재가 조회 실패");
 }
 
 function buildRealtimeSnapshot(snapshot, priceData) {
@@ -981,7 +1026,16 @@ function paperBuy(state, candidate, snapshot, evaluation) {
 
   if (wasBoughtToday(state, code)) return false;
   if (state.holdings.length >= SETTINGS.maxHoldingCount) return false;
-  if (toNumber(daily.buyCount) >= SETTINGS.maxDailyBuyCount) return false;
+
+  const hhmm = getCurrentHHMM();
+  const effectiveDailyBuyLimit = getEffectiveDailyBuyLimit(hhmm);
+  if (toNumber(daily.buyCount) >= effectiveDailyBuyLimit) {
+    candidate.status = "WATCH";
+    candidate.reason = hhmm < SETTINGS.earlyReservedSlotUntil
+      ? `FAST 5번째 슬롯 예약 / ${SETTINGS.earlyReservedSlotUntil} 이후 재평가`
+      : `FAST 하루 매수한도 ${SETTINGS.maxDailyBuyCount}회`;
+    return false;
+  }
 
   const price =
     Math.abs(toNumber(evaluation.currentPrice));
@@ -1264,8 +1318,27 @@ async function checkHoldings(state) {
 
 async function tryFastBuys(state, evaluations, marketData) {
   const daily = getDailyStats(state);
+  const hhmm = getCurrentHHMM();
+  const effectiveDailyBuyLimit = getEffectiveDailyBuyLimit(hhmm);
+
   if (state.holdings.length >= SETTINGS.maxHoldingCount) return;
-  if (toNumber(daily.buyCount) >= SETTINGS.maxDailyBuyCount) return;
+  if (toNumber(daily.buyCount) >= effectiveDailyBuyLimit) {
+    if (
+      hhmm < SETTINGS.earlyReservedSlotUntil &&
+      toNumber(daily.buyCount) >= SETTINGS.earlyMaxDailyBuyCount
+    ) {
+      const nowMs = Date.now();
+      if (nowMs - toNumber(daily.lastReservedSlotLogAtMs) >= 60 * 1000) {
+        daily.lastReservedSlotLogAtMs = nowMs;
+        console.log(
+          `[FAST 슬롯예약] ${hhmm} / ` +
+          `09:10 전 ${SETTINGS.earlyMaxDailyBuyCount}회 사용 완료 / ` +
+          `5번째 매수는 ${SETTINGS.earlyReservedSlotUntil} 이후 허용`
+        );
+      }
+    }
+    return;
+  }
 
   const targets = evaluations
     .filter(row => canRealtimeRecheck(row.candidate, row.evaluation))
@@ -1294,7 +1367,7 @@ async function tryFastBuys(state, evaluations, marketData) {
 
     if (
       state.holdings.length >= SETTINGS.maxHoldingCount ||
-      toNumber(daily.buyCount) >= SETTINGS.maxDailyBuyCount
+      toNumber(daily.buyCount) >= getEffectiveDailyBuyLimit(getCurrentHHMM())
     ) break;
     await sleep(120);
   }
@@ -1385,6 +1458,9 @@ function getFastSummary(stateInput = null) {
     positionAmount: toNumber(daily.positionAmount),
     maxHoldingCount: SETTINGS.maxHoldingCount,
     maxDailyBuyCount: SETTINGS.maxDailyBuyCount,
+    earlyReservedSlotUntil: SETTINGS.earlyReservedSlotUntil,
+    earlyMaxDailyBuyCount: SETTINGS.earlyMaxDailyBuyCount,
+    effectiveDailyBuyLimit: getEffectiveDailyBuyLimit(),
     buyStartTime: SETTINGS.buyStartTime,
     buyEndTime: SETTINGS.buyEndTime,
     absoluteMarketBlockScore: SETTINGS.absoluteMarketBlockScore,
@@ -1493,7 +1569,8 @@ function startFastStrategy() {
   console.log(
     `[FAST] V${STRATEGY_VERSION} 시작 / MASTER 단일계좌 / ` +
     `종목당 당일 MASTER 기준자산 ${(FAST_MASTER_POSITION_RATIO * 100).toFixed(0)}% / 최대 ${SETTINGS.maxHoldingCount}종목 / ` +
-    `매수 ${SETTINGS.buyStartTime}~${SETTINGS.buyEndTime}`
+    `매수 ${SETTINGS.buyStartTime}~${SETTINGS.buyEndTime} / ` +
+    `${SETTINGS.earlyReservedSlotUntil} 전 최대 ${SETTINGS.earlyMaxDailyBuyCount}회`
   );
   void fastLoop();
 }
@@ -1507,6 +1584,7 @@ module.exports = {
   __test: {
     SETTINGS,
     getDailyStats,
+    getEffectiveDailyBuyLimit,
     paperBuy,
     calculatePersistence,
     evaluateCandidate,

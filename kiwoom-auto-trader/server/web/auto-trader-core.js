@@ -1119,6 +1119,16 @@ volumePullbackEntryEnabled: true,
 volumePullbackMinRate: -0.25,
 volumePullbackMaxRate: -1.50,
 volumeReboundMinRate: 0.15,
+
+// VOLUME 진입신호 유효시간
+// EARLY_MOMENTUM/REBOUND가 한 번 통과한 직후 paperBuy()가 현재가를 재조회하면서
+// 같은 판단함수를 다시 호출해도 신호가 즉시 사라지지 않게 한다.
+// 단, 확인가격 아래로 밀리거나 최근 2개 가격변화 중 -0.30% 이하 급락이 있으면 즉시 무효화한다.
+volumeEntryConfirmHoldMs: 45 * 1000,
+volumeEntryConfirmMinPriceHoldRate: 0.0,
+volumeEntryConfirmMaxStepDropRate: -0.30,
+volumeEntryConfirmRecentTransitionCount: 2,
+
 volumePullbackMaxWaitMs: 180 * 1000,
 volumePullbackMinVolumeRetentionRate: 0.70,
 volumePullbackMaxDayPositionDrop: 10,
@@ -6829,44 +6839,6 @@ function isVolumeCandidateGettingStronger(
     history.phaseStartedAtText = nowText();
   }
 
-  const phaseStartedAtMs = history.phase === "PULLBACK"
-    ? Number(history.pullbackStartedAtMs || now)
-    : Number(history.phaseStartedAtMs || history.firstSeenAtMs || now);
-  const phaseAgeMs = now - phaseStartedAtMs;
-  const maxPhaseWaitMs = Number(
-    settings.volumePullbackMaxWaitMs || 180000
-  );
-
-  if (phaseAgeMs > maxPhaseWaitMs) {
-    const expiredPhase = String(history.phase || "SURGE");
-    state.volumeCandidateHistory[code] = {
-      phase: "SURGE",
-      time: now,
-      lastSeenAtMs: now,
-      firstSeenAtMs: now,
-      phaseStartedAtMs: now,
-      phaseStartedAtText: nowText(),
-      firstPrice: current.price,
-      firstVolumeRatio: current.volumeRatio,
-      firstDayPosition: current.dayPosition,
-      peakPrice: current.price,
-      pullbackLowPrice: null,
-      previous: current,
-      samples: [current],
-      resetFromPhase: expiredPhase,
-      resetAtMs: now,
-      resetAtText: nowText()
-    };
-    return {
-      pass: false,
-      phase: "RESET",
-      phaseAgeMs,
-      reason:
-        `VOLUME ${expiredPhase} 단계 ` +
-        `${Math.round(phaseAgeMs / 1000)}초 초과 / 기준 재설정`
-    };
-  }
-
   history.samples = Array.isArray(history.samples) ? history.samples : [];
   const lastStoredSample = history.samples[history.samples.length - 1];
   if (
@@ -6926,6 +6898,58 @@ function isVolumeCandidateGettingStronger(
     ? ((current.price - recentHighPrice) / recentHighPrice) * 100
     : 0;
 
+  const maxPhaseWaitMs = Number(
+    settings.volumePullbackMaxWaitMs || 180000
+  );
+
+  const getCurrentPhaseAgeMs = () => {
+    const startedAtMs = history.phase === "PULLBACK"
+      ? Number(history.pullbackStartedAtMs || history.phaseStartedAtMs || now)
+      : Number(history.phaseStartedAtMs || history.firstSeenAtMs || now);
+
+    return Math.max(0, now - startedAtMs);
+  };
+
+  const resetVolumeObservation = expiredPhase => {
+    state.volumeCandidateHistory[code] = {
+      phase: "SURGE",
+      time: now,
+      lastSeenAtMs: now,
+      firstSeenAtMs: now,
+      phaseStartedAtMs: now,
+      phaseStartedAtText: nowText(),
+      firstPrice: current.price,
+      firstVolumeRatio: current.volumeRatio,
+      firstDayPosition: current.dayPosition,
+      peakPrice: current.price,
+      pullbackLowPrice: null,
+      previous: current,
+      samples: [current],
+      resetFromPhase: expiredPhase,
+      resetAtMs: now,
+      resetAtText: nowText()
+    };
+
+    return state.volumeCandidateHistory[code];
+  };
+
+  // BROKEN은 현재가 판단을 다시 할 수 없는 상태이므로 기존처럼 제한시간 후 초기화한다.
+  // SURGE/PULLBACK은 아래에서 "현재 가격으로 진입 가능한가"를 먼저 검사한 뒤 시간초과를 적용한다.
+  if (
+    history.phase === "BROKEN" &&
+    getCurrentPhaseAgeMs() > maxPhaseWaitMs
+  ) {
+    const phaseAgeMs = getCurrentPhaseAgeMs();
+    resetVolumeObservation("BROKEN");
+    return {
+      pass: false,
+      phase: "RESET",
+      phaseAgeMs,
+      reason:
+        `VOLUME BROKEN 단계 ${Math.round(phaseAgeMs / 1000)}초 초과 / 기준 재설정`
+    };
+  }
+
   if (
     settings.volumeRecentHighGuardEnabled === true &&
     recentHighSamples.length >= Number(settings.volumeRecentHighMinSampleCount || 3) &&
@@ -6950,6 +6974,146 @@ function isVolumeCandidateGettingStronger(
         `허용 ${Number(settings.volumeRecentHighMaxEntryDrawdownRate || -1.25).toFixed(2)}%`
     };
   }
+  /*
+   * 직전 통과신호 유지
+   *
+   * judgeVolumeBuy() 1차 통과 직후 paperBuy()가 새 현재가로 재검증할 때
+   * EARLY_MOMENTUM/REBOUND를 일회성 신호로 소모하지 않는다.
+   * 45초 안에서 확인가격 이상을 지키고 최근 2개 가격변화에 급락이 없을 때만
+   * 동일 확인신호를 재사용한다. 가격이 약해지면 즉시 SURGE/PULLBACK으로 되돌린다.
+   */
+  const confirmedPhase = ["EARLY_MOMENTUM", "REBOUND"].includes(history.phase)
+    ? history.phase
+    : null;
+
+  if (confirmedPhase) {
+    const confirmedAtMs = Number(
+      confirmedPhase === "REBOUND"
+        ? history.reboundConfirmedAtMs
+        : history.earlyConfirmedAtMs
+    );
+    const confirmedPrice = Number(
+      confirmedPhase === "REBOUND"
+        ? history.reboundConfirmedPrice
+        : history.earlyConfirmedPrice
+    );
+    const confirmationAgeMs = confirmedAtMs > 0
+      ? now - confirmedAtMs
+      : Number.MAX_SAFE_INTEGER;
+    const holdMs = Number(settings.volumeEntryConfirmHoldMs || 45000);
+    const minHoldRate = Number(
+      settings.volumeEntryConfirmMinPriceHoldRate || 0
+    );
+    const minHoldPrice = confirmedPrice > 0
+      ? confirmedPrice * (1 + minHoldRate / 100)
+      : 0;
+    const transitionCount = Math.max(
+      1,
+      Number(settings.volumeEntryConfirmRecentTransitionCount || 2)
+    );
+    const confirmedSamples = history.samples.filter(sample =>
+      Number(sample.time || 0) >= confirmedAtMs
+    );
+    const recentForHold = confirmedSamples.slice(-(transitionCount + 1));
+    const stepRates = [];
+
+    for (let index = 1; index < recentForHold.length; index++) {
+      const before = Number(recentForHold[index - 1]?.price || 0);
+      const after = Number(recentForHold[index]?.price || 0);
+      if (before > 0 && after > 0) {
+        stepRates.push(((after - before) / before) * 100);
+      }
+    }
+
+    const worstStepRate = stepRates.length
+      ? Math.min(...stepRates)
+      : 0;
+    const maxStepDropRate = Number(
+      settings.volumeEntryConfirmMaxStepDropRate || -0.30
+    );
+    const agePass =
+      confirmationAgeMs >= 0 &&
+      confirmationAgeMs <= holdMs;
+    const priceHoldPass =
+      confirmedPrice > 0 &&
+      current.price >= minHoldPrice;
+    const stepHoldPass =
+      worstStepRate > maxStepDropRate;
+
+    if (agePass && priceHoldPass && stepHoldPass) {
+      history.recentPriceChangeRate = recentPriceChangeRate;
+      history.volumeRetentionRate = volumeRetentionRate;
+      history.dayPositionDiff = dayPositionDiff;
+      history.confirmationReusedAtMs = now;
+      history.confirmationReusedAtText = nowText();
+      state.volumeCandidateHistory[code] = history;
+
+      return {
+        pass: true,
+        phase: confirmedPhase,
+        confirmationReused: true,
+        confirmationAgeMs,
+        confirmedPrice,
+        currentPrice: current.price,
+        recentPriceChangeRate,
+        worstStepRate,
+        volumeRetentionRate,
+        dayPositionDiff,
+        pullbackRate: Number(history.pullbackRate || pullbackRate || 0),
+        reboundRate: Number(history.reboundRate || 0),
+        earlyPriceRiseRate: Number(history.earlyPriceRiseRate || earlyPriceRiseRate || 0),
+        pricePersistence: Number(history.pricePersistence || pricePersistence || 0),
+        observationCount: Number(history.observationCount || observationCount || 0),
+        reason:
+          `VOLUME ${confirmedPhase} 확인유지 / ` +
+          `확인가 ${confirmedPrice.toLocaleString()}원→현재 ${current.price.toLocaleString()}원 / ` +
+          `경과 ${(confirmationAgeMs / 1000).toFixed(1)}초 / ` +
+          `최근최대하락 ${worstStepRate.toFixed(2)}%`
+      };
+    }
+
+    // 확인신호가 깨졌으면 같은 신호를 재사용하지 않고 다시 관찰한다.
+    // REBOUND는 눌림 저점부터 새 재상승을 확인하고, EARLY_MOMENTUM은 SURGE부터 다시 확인한다.
+    if (confirmedPhase === "REBOUND") {
+      history.phase = "PULLBACK";
+      history.phaseStartedAtMs = now;
+      history.phaseStartedAtText = nowText();
+      history.pullbackStartedAtMs = now;
+      history.pullbackStartedAtText = nowText();
+      history.pullbackLowPrice = Math.min(
+        Number(history.pullbackLowPrice || current.price),
+        current.price
+      );
+    } else {
+      history.phase = "SURGE";
+      history.phaseStartedAtMs = now;
+      history.phaseStartedAtText = nowText();
+    }
+
+    history.confirmationInvalidatedAtMs = now;
+    history.confirmationInvalidatedAtText = nowText();
+    history.confirmationInvalidatedReason = !agePass
+      ? `유효시간 ${Math.round(confirmationAgeMs / 1000)}초 초과`
+      : !priceHoldPass
+        ? `확인가 이탈 ${confirmedPrice.toLocaleString()}→${current.price.toLocaleString()}원`
+        : `최근 급락 ${worstStepRate.toFixed(2)}%`;
+
+    state.volumeCandidateHistory[code] = history;
+
+    return {
+      pass: false,
+      phase: history.phase,
+      confirmationInvalidated: true,
+      confirmationAgeMs,
+      confirmedPrice,
+      currentPrice: current.price,
+      worstStepRate,
+      reason:
+        `VOLUME ${confirmedPhase} 확인 무효 / ` +
+        `${history.confirmationInvalidatedReason} / 재관찰`
+    };
+  }
+
   const earlyMomentumMaxChangeRate = Number(
     settings.volumeLateChaseMinChangeRate || 5.5
   );
@@ -7030,6 +7194,7 @@ function isVolumeCandidateGettingStronger(
     history.observationCount = observationCount;
     history.earlyConfirmedAtMs = now;
     history.earlyConfirmedAtText = nowText();
+    history.earlyConfirmedPrice = current.price;
     state.volumeCandidateHistory[code] = history;
 
     return {
@@ -7138,6 +7303,7 @@ function isVolumeCandidateGettingStronger(
       history.dayPositionDiff = dayPositionDiff;
       history.reboundConfirmedAtMs = now;
       history.reboundConfirmedAtText = nowText();
+      history.reboundConfirmedPrice = current.price;
       state.volumeCandidateHistory[code] = history;
       return {
         pass: true,
@@ -7154,6 +7320,29 @@ function isVolumeCandidateGettingStronger(
           `거래량유지 ${(volumeRetentionRate * 100).toFixed(0)}%`
       };
     }
+  }
+
+  /*
+   * 단계 시간초과는 현재 가격의 진입/전환 판단을 모두 마친 뒤 적용한다.
+   * 예: PULLBACK 511초째에 +0.67% 재상승이 나왔다면 예전처럼 RESET부터 하지 않고
+   * 위 REBOUND 판정을 먼저 수행한다.
+   */
+  const phaseAgeMs = getCurrentPhaseAgeMs();
+
+  if (
+    ["SURGE", "PULLBACK"].includes(history.phase) &&
+    phaseAgeMs > maxPhaseWaitMs
+  ) {
+    const expiredPhase = String(history.phase || "SURGE");
+    resetVolumeObservation(expiredPhase);
+    return {
+      pass: false,
+      phase: "RESET",
+      phaseAgeMs,
+      reason:
+        `VOLUME ${expiredPhase} 단계 ` +
+        `${Math.round(phaseAgeMs / 1000)}초 초과 / 현재 진입신호 없음 / 기준 재설정`
+    };
   }
 
   state.volumeCandidateHistory[code] = history;

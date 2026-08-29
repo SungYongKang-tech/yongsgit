@@ -3083,8 +3083,12 @@ app.get("/api/price", async (req, res) => {
     const requestPriority = getKiwoomPricePriority(requestSource);
     const queueMaxWaitMs = getKiwoomPriceQueueMaxWaitMs(requestSource);
     const shouldCancelPriceRequest = () => req.aborted === true || res.destroyed === true;
+    // FAST 매도는 3초 주기로 위험관리를 하므로 5초 캐시를 정상조회처럼
+    // 계속 재사용하면 같은 가격을 연속으로 볼 수 있다.
+    // 1.2초 이내의 매우 신선한 캐시만 즉시 사용하고, 그보다 오래된 캐시는
+    // 아래 catch의 5초 비상대체 경로에서 실제 키움 조회 실패 때만 사용한다.
     const freshCacheMaxAgeMs = requestSource === "fast-sell"
-      ? 5 * 1000
+      ? 1200
       : isSellPriceRequest
         ? 1500
         : requestSource === "fast"
