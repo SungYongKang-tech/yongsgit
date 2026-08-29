@@ -1932,6 +1932,57 @@ app.get("/api/portfolio-summary", (req, res) => {
 
 
 // ============================================================
+// SY Quant MASTER 전략 운전설정
+// - 화면의 % 값은 API에서 백분율로 주고받고 내부 원장에는 0~1 비율로 저장한다.
+// - 신규매수 금지는 기존 보유종목의 매도/위험관리에 영향을 주지 않는다.
+// ============================================================
+app.get("/api/trading-settings", (req, res) => {
+  try {
+    const state = loadPaperState();
+    portfolioManager.ensureMasterState(state);
+    savePaperState(state);
+
+    return res.json({
+      ok: true,
+      settings: portfolioManager.getTradingSettings(state),
+      summary: portfolioManager.getPortfolioSummary(state)
+    });
+  } catch (error) {
+    console.error("[/api/trading-settings GET 오류]", error);
+    return res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
+app.post("/api/trading-settings", express.json(), (req, res) => {
+  try {
+    const result = portfolioManager.withMasterTransaction(state => {
+      const applied = portfolioManager.applyTradingSettings(state, req.body || {});
+      if (!applied.ok) return applied;
+      return {
+        ok: true,
+        message: "전략 운전설정 적용 완료",
+        settings: applied.settings,
+        summary: portfolioManager.getPortfolioSummary(state)
+      };
+    });
+
+    if (!result?.ok) {
+      return res.status(400).json({
+        ok: false,
+        message: result?.reason || "전략 운전설정 적용 실패"
+      });
+    }
+
+    console.log("[전략 운전설정 적용]", JSON.stringify(result.settings));
+    return res.json(result);
+  } catch (error) {
+    console.error("[/api/trading-settings POST 오류]", error);
+    return res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
+
+// ============================================================
 // SY Quant MASTER 전략 신규매수 제어
 // - portfolioControl.status=PAUSED는 신규매수만 막는다.
 // - 기존 보유종목의 손절/트레일링/시간청산 등 매도 위험관리는 계속 동작한다.
@@ -2302,7 +2353,16 @@ app.post("/api/core-paper-buy", express.json(), (req, res) => {
           String(log.date || "").slice(0, 10) === today &&
           log.type === "OPEN_BUY"
         ).length;
-        const maxHoldingCount = Math.max(1, Number(openMaxHoldingCount || 1));
+        const openRuntime = portfolioManager.getStrategyRuntimeSettings(state, "OPEN");
+        const maxHoldingCount = Math.max(
+          1,
+          Number(openRuntime?.maxHoldingCount || openMaxHoldingCount || 1)
+        );
+        const maxDailyBuyCount = Math.max(
+          1,
+          Number(openRuntime?.maxDailyBuyCount || maxHoldingCount)
+        );
+        const maxOpenBuyCount = Math.min(maxHoldingCount, maxDailyBuyCount);
 
         state.openSkipped = false;
         state.openSkipReason = null;
@@ -2318,7 +2378,7 @@ app.post("/api/core-paper-buy", express.json(), (req, res) => {
           state.openBuyNames.push(state.openBuyName);
         }
         state.openBuyCount = openBuyCount;
-        state.openCompleted = openBuyCount >= maxHoldingCount;
+        state.openCompleted = openBuyCount >= maxOpenBuyCount;
         state.openCompletedAt = state.openCompleted ? state.openBuyAt : null;
 
         if (state.openDailyStats?.date === today) {

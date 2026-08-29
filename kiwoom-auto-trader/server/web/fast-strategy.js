@@ -126,6 +126,24 @@ const SETTINGS = {
   weakMaxHoldingPeakRate: 2.0
 };
 
+function getFastRuntimeSettings(masterState = null) {
+  try {
+    const state = masterState || portfolioManager.loadMasterState();
+    portfolioManager.ensureMasterState(state);
+    const runtime = portfolioManager.getStrategyRuntimeSettings(state, "FAST");
+    if (runtime) return runtime;
+  } catch (error) {
+    console.warn(`[FAST 런타임설정 조회 실패] ${error.message}`);
+  }
+  return {
+    buyEnabled: SETTINGS.enabled !== false,
+    positionRatio: FAST_MASTER_POSITION_RATIO,
+    maxHoldingCount: SETTINGS.maxHoldingCount,
+    maxDailyBuyCount: SETTINGS.maxDailyBuyCount,
+    maxExposureRate: 1
+  };
+}
+
 function nowText() {
   return new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
 }
@@ -146,14 +164,16 @@ function getCurrentHHMM() {
   return `${hour}:${minute}`;
 }
 
-function getEffectiveDailyBuyLimit(hhmm = getCurrentHHMM()) {
+function getEffectiveDailyBuyLimit(hhmm = getCurrentHHMM(), masterState = null) {
+  const runtime = getFastRuntimeSettings(masterState);
+  const maxDailyBuyCount = Number(runtime.maxDailyBuyCount || 0);
   if (hhmm < SETTINGS.earlyReservedSlotUntil) {
     return Math.min(
-      SETTINGS.maxDailyBuyCount,
+      maxDailyBuyCount,
       SETTINGS.earlyMaxDailyBuyCount
     );
   }
-  return SETTINGS.maxDailyBuyCount;
+  return maxDailyBuyCount;
 }
 
 function isKoreanWeekday() {
@@ -399,12 +419,14 @@ function getDailyStats(state, date = todayKey()) {
     );
 
     daily.allocationBaseAsset = baseAsset;
-    daily.positionRatio = FAST_MASTER_POSITION_RATIO;
-    daily.positionAmount = Math.floor(
-      baseAsset * FAST_MASTER_POSITION_RATIO
-    );
     daily.allocationFixedAt = nowText();
   }
+
+  const runtime = getFastRuntimeSettings();
+  daily.positionRatio = Number(runtime.positionRatio || 0);
+  daily.positionAmount = Math.floor(
+    toNumber(daily.allocationBaseAsset) * daily.positionRatio
+  );
 
   return daily;
 }
@@ -1025,15 +1047,21 @@ function paperBuy(state, candidate, snapshot, evaluation) {
   }
 
   if (wasBoughtToday(state, code)) return false;
-  if (state.holdings.length >= SETTINGS.maxHoldingCount) return false;
+  const runtime = getFastRuntimeSettings(masterState);
+  if (!runtime.buyEnabled) {
+    candidate.status = "WATCH";
+    candidate.reason = "MASTER / FAST 신규매수 금지";
+    return false;
+  }
+  if (state.holdings.length >= Number(runtime.maxHoldingCount || 0)) return false;
 
   const hhmm = getCurrentHHMM();
-  const effectiveDailyBuyLimit = getEffectiveDailyBuyLimit(hhmm);
+  const effectiveDailyBuyLimit = getEffectiveDailyBuyLimit(hhmm, masterState);
   if (toNumber(daily.buyCount) >= effectiveDailyBuyLimit) {
     candidate.status = "WATCH";
     candidate.reason = hhmm < SETTINGS.earlyReservedSlotUntil
       ? `FAST 5번째 슬롯 예약 / ${SETTINGS.earlyReservedSlotUntil} 이후 재평가`
-      : `FAST 하루 매수한도 ${SETTINGS.maxDailyBuyCount}회`;
+      : `FAST 하루 매수한도 ${runtime.maxDailyBuyCount}회`;
     return false;
   }
 
@@ -1321,7 +1349,7 @@ async function tryFastBuys(state, evaluations, marketData) {
   const hhmm = getCurrentHHMM();
   const effectiveDailyBuyLimit = getEffectiveDailyBuyLimit(hhmm);
 
-  if (state.holdings.length >= SETTINGS.maxHoldingCount) return;
+  if (state.holdings.length >= Number(getFastRuntimeSettings().maxHoldingCount || 0)) return;
   if (toNumber(daily.buyCount) >= effectiveDailyBuyLimit) {
     if (
       hhmm < SETTINGS.earlyReservedSlotUntil &&
@@ -1366,7 +1394,7 @@ async function tryFastBuys(state, evaluations, marketData) {
     }
 
     if (
-      state.holdings.length >= SETTINGS.maxHoldingCount ||
+      state.holdings.length >= Number(getFastRuntimeSettings().maxHoldingCount || 0) ||
       toNumber(daily.buyCount) >= getEffectiveDailyBuyLimit(getCurrentHHMM())
     ) break;
     await sleep(120);
@@ -1454,10 +1482,10 @@ function getFastSummary(stateInput = null) {
     allocationDate: daily.date,
     allocationFixedAt: daily.allocationFixedAt || null,
     allocationBaseAsset: toNumber(daily.allocationBaseAsset),
-    positionRatio: FAST_MASTER_POSITION_RATIO,
+    positionRatio: getFastRuntimeSettings().positionRatio,
     positionAmount: toNumber(daily.positionAmount),
-    maxHoldingCount: SETTINGS.maxHoldingCount,
-    maxDailyBuyCount: SETTINGS.maxDailyBuyCount,
+    maxHoldingCount: getFastRuntimeSettings().maxHoldingCount,
+    maxDailyBuyCount: getFastRuntimeSettings().maxDailyBuyCount,
     earlyReservedSlotUntil: SETTINGS.earlyReservedSlotUntil,
     earlyMaxDailyBuyCount: SETTINGS.earlyMaxDailyBuyCount,
     effectiveDailyBuyLimit: getEffectiveDailyBuyLimit(),
@@ -1568,7 +1596,7 @@ function startFastStrategy() {
   started = true;
   console.log(
     `[FAST] V${STRATEGY_VERSION} 시작 / MASTER 단일계좌 / ` +
-    `종목당 당일 MASTER 기준자산 ${(FAST_MASTER_POSITION_RATIO * 100).toFixed(0)}% / 최대 ${SETTINGS.maxHoldingCount}종목 / ` +
+    `종목당 당일 MASTER 기준자산 ${(getFastRuntimeSettings().positionRatio * 100).toFixed(0)}% / 최대 ${getFastRuntimeSettings().maxHoldingCount}종목 / ` +
     `매수 ${SETTINGS.buyStartTime}~${SETTINGS.buyEndTime} / ` +
     `${SETTINGS.earlyReservedSlotUntil} 전 최대 ${SETTINGS.earlyMaxDailyBuyCount}회`
   );

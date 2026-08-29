@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const portfolioManager = require("./portfolio-manager");
 
 const STATE_FILE = path.join(__dirname, "paper-state-core.json");
 const OPEN_HISTORY_FILE = path.join(__dirname, "open-learning-history.json");
@@ -273,6 +274,26 @@ openFallbackChaseGuardMinOpenPositionRate: 4.0,
 openLateFallbackStartTime: "09:12"
 };
 
+function getOpenRuntimeSettings(state = null) {
+  try {
+    const masterState = state && typeof state === "object"
+      ? state
+      : portfolioManager.loadMasterState();
+    portfolioManager.ensureMasterState(masterState);
+    const runtime = portfolioManager.getStrategyRuntimeSettings(masterState, "OPEN");
+    if (runtime) return runtime;
+  } catch (error) {
+    console.warn(`[OPEN 런타임설정 조회 실패] ${error.message}`);
+  }
+  return {
+    buyEnabled: settings.openEnabled !== false,
+    positionRatio: Number(settings.openInvestmentRatio || 0.20),
+    maxHoldingCount: Number(settings.openMaxHoldingCount || 5),
+    maxDailyBuyCount: Number(settings.openMaxHoldingCount || 5),
+    maxExposureRate: 1
+  };
+}
+
 function nowText() {
   return new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
 }
@@ -499,8 +520,9 @@ function updateOpenLiveTracking(state, patch = {}, activityMessage = null, activ
       { label: "이후", minimum: getOpenTimeVolumeRatio("09:20") }
     ],
     maxQuoteAgeSeconds: Math.round(Number(settings.openMaxQuoteAgeMs || 0) / 1000),
-    maxHoldingCount: Number(settings.openMaxHoldingCount || 5),
-    investmentRatio: Number(settings.openInvestmentRatio || 0.20)
+    maxHoldingCount: Number(getOpenRuntimeSettings(state).maxHoldingCount || 0),
+    maxDailyBuyCount: Number(getOpenRuntimeSettings(state).maxDailyBuyCount || 0),
+    investmentRatio: Number(getOpenRuntimeSettings(state).positionRatio || 0)
   };
   if (activityMessage) pushOpenLiveActivity(state, activityMessage, activityType);
 }
@@ -2553,7 +2575,7 @@ state.lastOpenFullScanAt = null;
   state.openBuyCount = 0;
   state.openAllocationBaseCash = Number(state.totalCash || 0);
   state.openPerPositionBudget =
-    Number(state.openAllocationBaseCash || 0) * Number(settings.openInvestmentRatio || 0.20);
+    Number(state.openAllocationBaseCash || 0) * Number(getOpenRuntimeSettings(state).positionRatio || 0);
   state.openSellType = null;
   state.openSellReason = null;
   state.openTopCandidate = null;
@@ -2894,9 +2916,22 @@ function hasOpenBuyToday(state) {
   return getOpenBuyCountToday(state) > 0;
 }
 
+function getOpenEffectiveMaxBuyCount(state) {
+  const runtime = getOpenRuntimeSettings(state);
+  return Math.max(
+    0,
+    Math.min(
+      Number(runtime.maxHoldingCount || 0),
+      Number(runtime.maxDailyBuyCount || 0)
+    )
+  );
+}
+
 function isOpenBuyCapacityFull(state) {
-  return Math.max(getOpenHoldingCount(state), getOpenBuyCountToday(state)) >=
-    Number(settings.openMaxHoldingCount || 5);
+  const runtime = getOpenRuntimeSettings(state);
+  const holdingFull = getOpenHoldingCount(state) >= Number(runtime.maxHoldingCount || 0);
+  const dailyFull = getOpenBuyCountToday(state) >= Number(runtime.maxDailyBuyCount || 0);
+  return holdingFull || dailyFull;
 }
 
 function wasBoughtToday(state, code) {
@@ -5026,7 +5061,13 @@ async function paperOpenBuy(state, item, price, reason, judged = {}) {
     const allocationBaseCash = Number(
       state.openAllocationBaseCash || state.dailyStartAsset || availableCash
     );
-    const targetBuyAmount = allocationBaseCash * Number(settings.openInvestmentRatio || 0.20);
+    const runtime = getOpenRuntimeSettings(state);
+    if (!runtime.buyEnabled) {
+      const failReason = "MASTER / OPEN 신규매수 금지";
+      console.log(`[OPEN 매수차단] ${name}(${code}) / ${failReason}`);
+      return { ok: false, reason: failReason };
+    }
+    const targetBuyAmount = allocationBaseCash * Number(runtime.positionRatio || 0);
     const buyAmount = Math.min(availableCash, targetBuyAmount);
     const qty = Math.floor(buyAmount / Number(price || 0));
     if (qty <= 0) {
@@ -5054,7 +5095,7 @@ async function paperOpenBuy(state, item, price, reason, judged = {}) {
       strategyGroup: "OPEN",
       reason,
       openDiagnostic: buyDiagnostic,
-      openMaxHoldingCount: Number(settings.openMaxHoldingCount || 5),
+      openMaxHoldingCount: Number(runtime.maxHoldingCount || 0),
       buyRequestedAtMs,
       positionId,
       executionId
@@ -5144,7 +5185,7 @@ async function paperOpenBuy(state, item, price, reason, judged = {}) {
 
     console.log(
       `[OPEN 매수완료] ${name} / ${price.toLocaleString()}원 / ${qty}주 / ` +
-      `${getOpenBuyCountToday(state)}/${Number(settings.openMaxHoldingCount || 5)}종목 / ` +
+      `${getOpenBuyCountToday(state)}/${getOpenEffectiveMaxBuyCount(state)}종목 / ` +
       `종목예산 ${targetBuyAmount.toLocaleString()}원 / ` +
       `현금 ${Number(result.totalCash ?? state.totalCash ?? 0).toLocaleString()}원`
     );
@@ -5418,7 +5459,7 @@ async function paperOpenSell(state, holding, price, signal) {
     replaceOpenStateSnapshot(state, latestAfterSell);
 
     // 1종목 매도했다고 OPEN 하루가 끝난 것은 아니다. 5종목 일일 매수한도 또는 매수시간 종료일 때만 완료한다.
-    const buyCapacityFull = getOpenBuyCountToday(state) >= Number(settings.openMaxHoldingCount || 5);
+    const buyCapacityFull = isOpenBuyCapacityFull(state);
     const buyWindowClosed = getCurrentHHMM() >= String(settings.openBuyEndTime || "09:30");
     state.openCompleted = buyCapacityFull || buyWindowClosed;
     state.openSkipped = false;
@@ -6085,7 +6126,7 @@ async function runOpenBuyOnce() {
       stageLabel: "추가 후보 관찰 중",
       decision: "통과 후보가 모두 오늘 이미 매수한 종목이라 새 후보를 기다립니다.",
       boughtCount: getOpenBuyCountToday(state),
-      maxBuyCount: Number(settings.openMaxHoldingCount || 5)
+      maxBuyCount: getOpenEffectiveMaxBuyCount(state)
     });
     saveState(state);
     return;
@@ -6144,11 +6185,11 @@ async function runOpenBuyOnce() {
       : "BUY_FAILED",
     stageLabel: bought
       ? (isOpenBuyCapacityFull(state)
-          ? `OPEN 최대 ${Number(settings.openMaxHoldingCount || 5)}종목 매수완료`
+          ? `OPEN 최대 ${getOpenEffectiveMaxBuyCount(state)}종목 매수완료`
           : "OPEN 추가 후보 관찰 중")
       : "매수 실패",
     decision: bought
-      ? `${best.item.name || best.item.code} 매수완료 · ${getOpenBuyCountToday(state)}/${Number(settings.openMaxHoldingCount || 5)}종목`
+      ? `${best.item.name || best.item.code} 매수완료 · ${getOpenBuyCountToday(state)}/${getOpenEffectiveMaxBuyCount(state)}종목`
       : `${best.item.name || best.item.code} 매수실패 / ${buyFailureReason}`,
     bought: Boolean(bought),
     selectedCode: String(best.item.code || ""),

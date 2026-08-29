@@ -6322,13 +6322,33 @@ function checkSameDayReentryCandidate(
   };
 }
 
+function getRuntimeStrategySettings(state, strategyGroup) {
+  try {
+    portfolioManager.ensureMasterState(state);
+    const runtime = portfolioManager.getStrategyRuntimeSettings(state, strategyGroup);
+    if (runtime) return runtime;
+  } catch (error) {
+    console.warn(`[${strategyGroup} 런타임설정 조회 실패] ${error.message}`);
+  }
+  const isCore = String(strategyGroup).toUpperCase() === "CORE";
+  return {
+    buyEnabled: isCore ? settings.coreEnabled !== false : settings.volumeEnabled !== false,
+    positionRatio: Number(settings.buyAssetRatio || 0.10),
+    maxHoldingCount: Number(isCore ? settings.coreMaxHoldingCount : settings.volumeMaxHoldingCount),
+    maxDailyBuyCount: Number(isCore ? settings.coreMaxDailyBuyCount : settings.volumeMaxDailyBuyCount),
+    maxExposureRate: 1
+  };
+}
+
 function checkStrategyDailyBuyLimit(state, strategyGroup) {
-  const limit = strategyGroup === "CORE"
-    ? Number(settings.coreMaxDailyBuyCount || 0)
-    : Number(settings.volumeMaxDailyBuyCount || 0);
+  const runtime = getRuntimeStrategySettings(state, strategyGroup);
+  if (!runtime.buyEnabled) {
+    return { blocked: true, reason: `${strategyGroup} 신규매수 금지` };
+  }
+  const limit = Number(runtime.maxDailyBuyCount || 0);
   const count = getTodayStrategyBuyCount(state, strategyGroup);
 
-  if (limit > 0 && count >= limit) {
+  if (limit <= 0 || count >= limit) {
     return {
       blocked: true,
       reason: `${strategyGroup} 하루 매수한도 ${count}/${limit}건 도달`
@@ -7731,12 +7751,9 @@ function judgeCoreBuy(state, item, price) {
    * 보유한도 도달 시
    * 자동 스위칭 검토
    */
+  const coreRuntime = getRuntimeStrategySettings(state, "CORE");
   const coreHoldingFull =
-    getHoldingCount(
-      state,
-      "CORE"
-    ) >=
-    settings.coreMaxHoldingCount;
+    getHoldingCount(state, "CORE") >= Number(coreRuntime.maxHoldingCount || 0);
 
   if (coreHoldingFull) {
     const switchResult =
@@ -8193,12 +8210,9 @@ const volumeOverheatDetected =
   /*
    * 보유한도 도달 시 자동 스위칭 검토
    */
+  const volumeRuntime = getRuntimeStrategySettings(state, "VOLUME");
   const volumeHoldingFull =
-    getHoldingCount(
-      state,
-      "VOLUME"
-    ) >=
-    settings.volumeMaxHoldingCount;
+    getHoldingCount(state, "VOLUME") >= Number(volumeRuntime.maxHoldingCount || 0);
 
   if (volumeHoldingFull) {
     const switchResult =
@@ -8481,10 +8495,16 @@ async function paperBuy(
       );
 
     // 당일 최초자산의 설정 비율
+    const runtime = getRuntimeStrategySettings(state, strategyGroup);
+    if (!runtime.buyEnabled) {
+      console.log(`[${strategyGroup} 매수제외] 신규매수 금지`);
+      return false;
+    }
+
     const calculatedBuyAmount =
       Math.floor(
         dailyStartAsset *
-        settings.buyAssetRatio
+        Number(runtime.positionRatio || 0)
       );
 
     // 실제 매수금액은 남은 현금 한도 내

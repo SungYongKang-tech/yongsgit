@@ -1586,15 +1586,35 @@ function getWaveRunPhase() {
   return "OFF";
 }
 
-function getEffectiveDailyBuyLimit(analysis = {}) {
+function getWaveRuntimeSettings(masterState = null) {
+  try {
+    const state = masterState || portfolioManager.loadMasterState();
+    portfolioManager.ensureMasterState(state);
+    const runtime = portfolioManager.getStrategyRuntimeSettings(state, "WAVE");
+    if (runtime) return runtime;
+  } catch (error) {
+    console.warn(`[WAVE 런타임설정 조회 실패] ${error.message}`);
+  }
+  return {
+    buyEnabled: SETTINGS.enabled !== false,
+    positionRatio: SETTINGS.positionRatio,
+    maxHoldingCount: SETTINGS.maxHoldingCount,
+    maxDailyBuyCount: SETTINGS.maxDailyBuyCount,
+    maxExposureRate: 1
+  };
+}
+
+function getEffectiveDailyBuyLimit(analysis = {}, masterState = null) {
+  const runtime = getWaveRuntimeSettings(masterState);
+  const maxDailyBuyCount = Number(runtime.maxDailyBuyCount || 0);
   const marketScore = toNumber(analysis.marketScore);
   if (marketScore > 0 && marketScore < SETTINGS.weakMarketScore) {
     return Math.max(
       0,
-      Math.min(SETTINGS.maxDailyBuyCount, SETTINGS.weakMarketMaxDailyBuyCount)
+      Math.min(maxDailyBuyCount, SETTINGS.weakMarketMaxDailyBuyCount)
     );
   }
-  return SETTINGS.maxDailyBuyCount;
+  return maxDailyBuyCount;
 }
 
 function logWaveBuyBlock(candidate, reason) {
@@ -1624,6 +1644,12 @@ function paperBuy(state, candidate, analysis) {
     portfolioManager.loadMasterState();
 
   portfolioManager.ensureMasterState(masterState);
+
+  const runtime = getWaveRuntimeSettings(masterState);
+  if (!runtime.buyEnabled) {
+    logWaveBuyBlock(candidate, "MASTER / WAVE 신규매수 금지");
+    return false;
+  }
 
   const strategyCheck =
     portfolioManager.canStrategyTrade(
@@ -1659,17 +1685,17 @@ function paperBuy(state, candidate, analysis) {
     return false;
   }
 
-  if (state.holdings.length >= SETTINGS.maxHoldingCount) {
+  if (state.holdings.length >= Number(runtime.maxHoldingCount || 0)) {
     logWaveBuyBlock(
       candidate,
-      `WAVE 보유한도 ${state.holdings.length}/${SETTINGS.maxHoldingCount}종목`
+      `WAVE 보유한도 ${state.holdings.length}/${runtime.maxHoldingCount}종목`
     );
     return false;
   }
 
   const todayBuyCount = getTodayBuyCount(state);
   const effectiveDailyBuyLimit =
-    getEffectiveDailyBuyLimit(analysis);
+    getEffectiveDailyBuyLimit(analysis, masterState);
 
   if (todayBuyCount >= effectiveDailyBuyLimit) {
     const weakMarketText =
@@ -1686,7 +1712,7 @@ function paperBuy(state, candidate, analysis) {
 
   const targetAmount =
     toNumber(masterState.initialCapital) *
-    SETTINGS.positionRatio;
+    Number(runtime.positionRatio || 0);
 
   const availability =
     portfolioManager.getAvailableCash(

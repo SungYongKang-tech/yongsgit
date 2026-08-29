@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>SY Quant 전략 운전설정</title>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;padding:12px;font-family:Arial,sans-serif;background:#111827;color:#f9fafb}
+    .page{max-width:820px;margin:0 auto}
+    .header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+    h1{margin:0;font-size:27px;line-height:1.15;white-space:nowrap}
+    button{border:0;border-radius:10px;padding:10px 13px;font-weight:900;cursor:pointer;color:#fff;background:#2563eb;font-size:14px}
+    button:disabled{opacity:.45;cursor:not-allowed}
+    .back-btn{background:#475569}
+    .reload-btn{background:#374151}
+    .save-btn{background:#0f766e}
+    .danger-btn{background:#b91c1c}
+    .top-actions{display:flex;gap:6px}
+    .status{border-radius:10px;padding:9px 11px;margin-bottom:8px;background:#1f2937;color:#cbd5e1;font-size:13px;line-height:1.45}
+    .status.ok{background:#14532d;color:#bbf7d0}.status.warn{background:#78350f;color:#fde68a}.status.bad{background:#7f1d1d;color:#fecaca}
+    .safety-note{border:1px solid #92400e;background:#422006;border-radius:12px;padding:10px 12px;margin-bottom:9px;font-size:13px;line-height:1.55;color:#fde68a}
+    .global-card{background:#1f2937;border:1px solid #334155;border-radius:14px;padding:12px;margin-bottom:9px}
+    .global-head,.strategy-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .global-title{font-size:18px;font-weight:950}.sub{margin-top:4px;color:#94a3b8;font-size:12px;line-height:1.45}
+    .switch{position:relative;display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:900;white-space:nowrap}
+    .switch input{position:absolute;opacity:0;pointer-events:none}
+    .switch-ui{width:52px;height:30px;border-radius:999px;background:#7f1d1d;border:1px solid #991b1b;position:relative;transition:.15s}
+    .switch-ui::after{content:"";position:absolute;width:24px;height:24px;border-radius:50%;left:2px;top:2px;background:#fff;transition:.15s}
+    .switch input:checked + .switch-ui{background:#166534;border-color:#22c55e}
+    .switch input:checked + .switch-ui::after{transform:translateX(22px)}
+    .global-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:11px}
+    .field{background:#111827;border-radius:10px;padding:8px}
+    .field label{display:block;color:#94a3b8;font-size:11px;font-weight:800;margin-bottom:5px}
+    .input-row{display:flex;align-items:center;gap:5px}
+    input[type=number]{width:100%;min-width:0;border:1px solid #475569;border-radius:8px;background:#0b1220;color:#fff;padding:9px 8px;font-size:16px;font-weight:900;text-align:right;outline:none}
+    input[type=number]:focus{border-color:#60a5fa}
+    .unit{flex:0 0 auto;color:#cbd5e1;font-size:12px;font-weight:800}
+    .strategy-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+    .strategy-card{background:#1f2937;border:1px solid #334155;border-top:4px solid #64748b;border-radius:14px;padding:11px;min-width:0}
+    .strategy-card.OPEN{border-top-color:#f59e0b}.strategy-card.CORE{border-top-color:#3b82f6}.strategy-card.VOLUME{border-top-color:#8b5cf6}.strategy-card.WAVE{border-top-color:#14b8a6}.strategy-card.FAST{border-top-color:#ef4444}
+    .strategy-name{font-size:17px;font-weight:950}.state-text{font-size:11px;font-weight:900;padding:4px 7px;border-radius:999px;background:#7f1d1d;color:#fecaca}.state-text.on{background:#14532d;color:#bbf7d0}
+    .field-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:9px}
+    .summary{margin-top:8px;padding:8px;border-radius:9px;background:#0f172a;color:#cbd5e1;font-size:12px;line-height:1.45}
+    .bottom-bar{display:flex;gap:7px;position:sticky;bottom:0;margin-top:10px;padding:8px 0;background:linear-gradient(180deg,rgba(17,24,39,0),#111827 28%)}
+    .bottom-bar button{flex:1;min-height:46px}
+    .dirty{color:#fde68a}.muted{color:#94a3b8}
+    @media(max-width:680px){
+      body{padding:5px}.header{margin-bottom:6px}.page{max-width:none}h1{font-size:23px}.top-actions button{padding:8px 9px;font-size:12px}
+      .global-card,.strategy-card{padding:8px;border-radius:10px}.global-title{font-size:17px}.strategy-name{font-size:16px}
+      .strategy-grid{grid-template-columns:1fr;gap:5px}.field-grid,.global-grid{gap:4px}.field{padding:6px}.field label{font-size:12px;margin-bottom:3px}
+      input[type=number]{padding:8px 6px;font-size:17px}.safety-note,.status{margin-bottom:5px;padding:8px;font-size:12px}.summary{margin-top:5px;padding:6px;font-size:12px}
+      .bottom-bar{margin-top:6px;padding:6px 0}.bottom-bar button{min-height:44px;font-size:14px}
+    }
+    @media(max-width:380px){h1{font-size:20px}.top-actions{gap:4px}.top-actions button{font-size:11px;padding:7px 7px}.field-grid{grid-template-columns:1fr 1fr}}
+  </style>
+</head>
+<body>
+<div class="page">
+  <div class="header">
+    <h1>⚙️ 전략 운전설정</h1>
+    <div class="top-actions">
+      <button class="back-btn" type="button" onclick="location.href='./performance.html'">대시보드</button>
+      <button class="reload-btn" id="reloadBtn" type="button">새로고침</button>
+    </div>
+  </div>
+
+  <div id="connectionStatus" class="status warn">서버 설정을 불러오는 중입니다.</div>
+
+  <div class="safety-note">
+    <b>안전 원칙</b> · 여기서 끄는 기능은 <b>신규매수만 차단</b>합니다. 이미 보유한 종목의 손절·익절·트레일링 등 자동매도 관리는 계속 작동하도록 서버에서 분리합니다.
+  </div>
+
+  <section class="global-card">
+    <div class="global-head">
+      <div>
+        <div class="global-title">MASTER 전체 신규매수</div>
+        <div class="sub">OFF로 바꾸면 OPEN·CORE·VOLUME·WAVE·FAST의 신규매수를 모두 차단합니다.</div>
+      </div>
+      <label class="switch">
+        <input id="globalBuyEnabled" type="checkbox" />
+        <span class="switch-ui"></span>
+      </label>
+    </div>
+    <div class="global-grid">
+      <div class="field">
+        <label for="maxTotalExposureRate">MASTER 최대 투자비율</label>
+        <div class="input-row"><input id="maxTotalExposureRate" type="number" min="0" max="100" step="1" /><span class="unit">%</span></div>
+      </div>
+      <div class="field">
+        <label>남겨둘 최소 현금</label>
+        <div class="input-row"><input id="reserveCashRate" type="number" min="0" max="100" step="1" /><span class="unit">%</span></div>
+      </div>
+    </div>
+  </section>
+
+  <div id="strategyGrid" class="strategy-grid"></div>
+
+  <div class="bottom-bar">
+    <button type="button" class="reload-btn" id="discardBtn">변경 취소</button>
+    <button type="button" class="save-btn" id="saveBtn" disabled>설정 적용</button>
+  </div>
+</div>
+<script src="./strategy-control.js?v=20260829-v1"></script>
+</body>
+</html>

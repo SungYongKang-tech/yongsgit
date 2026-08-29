@@ -23,7 +23,7 @@ const MASTER_LOCK_DIR =
   path.join(__dirname, ".syquant-master-portfolio.lock");
 
 const MASTER_INITIAL_CAPITAL = 100000000;
-const PORTFOLIO_SCHEMA_VERSION = 2;
+const PORTFOLIO_SCHEMA_VERSION = 3;
 
 const STRATEGIES = ["OPEN", "CORE", "VOLUME", "WAVE", "FAST"];
 
@@ -31,43 +31,70 @@ const DEFAULT_PORTFOLIO_CONTROL = Object.freeze({
   schemaVersion: PORTFOLIO_SCHEMA_VERSION,
   allocationMode: "MANUAL",
 
-  // 고정 예약현금은 두지 않는다. 전략별 매수조건과 실제 남은 현금 범위 안에서
-  // MASTER 전체자산의 최대 100%까지 주식에 노출할 수 있다.
+  // 대시보드 전략 운전설정의 MASTER 전체 신규매수 스위치.
+  // false여도 기존 보유종목의 매도/위험관리는 계속 동작한다.
+  globalBuyEnabled: true,
+
+  // MASTER 전체 노출/현금 안전한도.
   totalExposureLimitRate: 1.00,
   reserveCashRate: 0.00,
 
   // 동일 종목은 먼저 산 전략만 보유한다.
   duplicateStockPolicy: "BLOCK",
 
-  // 1단계에서는 기존 전략의 투자비율을 그대로 관찰하기 위해
-  // 전략별 allocationRate를 강제로 적용하지 않는다.
+  // 구버전 allocationRate 호환용. 신규 전략 최대노출은 maxExposureRate로 항상 관리한다.
   strategyAllocationEnforced: false,
 
   strategies: {
     OPEN: {
       enabled: true,
+      buyEnabled: true,
       status: "ACTIVE",
-      allocationRate: null
+      allocationRate: null,
+      positionRatio: 0.20,
+      maxHoldingCount: 5,
+      maxDailyBuyCount: 5,
+      maxExposureRate: 1.00
     },
     CORE: {
       enabled: true,
+      buyEnabled: true,
       status: "ACTIVE",
-      allocationRate: null
+      allocationRate: null,
+      positionRatio: 0.10,
+      maxHoldingCount: 5,
+      maxDailyBuyCount: 5,
+      maxExposureRate: 1.00
     },
     VOLUME: {
       enabled: true,
+      buyEnabled: true,
       status: "ACTIVE",
-      allocationRate: null
+      allocationRate: null,
+      positionRatio: 0.10,
+      maxHoldingCount: 5,
+      maxDailyBuyCount: 5,
+      maxExposureRate: 1.00
     },
     WAVE: {
       enabled: true,
+      buyEnabled: true,
       status: "ACTIVE",
-      allocationRate: null
+      allocationRate: null,
+      positionRatio: 0.10,
+      maxHoldingCount: 5,
+      maxDailyBuyCount: 2,
+      maxExposureRate: 1.00
     },
     FAST: {
       enabled: true,
+      buyEnabled: true,
       status: "ACTIVE",
-      allocationRate: null
+      allocationRate: null,
+      positionRatio: 0.10,
+      maxHoldingCount: 5,
+      maxDailyBuyCount: 5,
+      maxExposureRate: 1.00
     }
   }
 });
@@ -174,6 +201,8 @@ function ensurePortfolioControl(state) {
   }
 
   state.portfolioControl.schemaVersion = PORTFOLIO_SCHEMA_VERSION;
+  state.portfolioControl.globalBuyEnabled =
+    state.portfolioControl.globalBuyEnabled !== false;
   state.portfolioControl.totalExposureLimitRate = clamp(
     state.portfolioControl.totalExposureLimitRate,
     0,
@@ -209,6 +238,30 @@ function ensurePortfolioControl(state) {
       state.portfolioControl.strategies[strategy].allocationRate =
         clamp(rawRate, 0, 1);
     }
+
+    const runtimeConfig = state.portfolioControl.strategies[strategy];
+    runtimeConfig.buyEnabled =
+      runtimeConfig.buyEnabled !== false &&
+      runtimeConfig.enabled === true &&
+      runtimeConfig.status !== "PAUSED";
+    runtimeConfig.positionRatio = clamp(
+      runtimeConfig.positionRatio,
+      0,
+      1
+    );
+    runtimeConfig.maxHoldingCount = Math.max(
+      0,
+      Math.min(20, Math.floor(toNumber(runtimeConfig.maxHoldingCount, defaultConfig.maxHoldingCount)))
+    );
+    runtimeConfig.maxDailyBuyCount = Math.max(
+      0,
+      Math.min(20, Math.floor(toNumber(runtimeConfig.maxDailyBuyCount, defaultConfig.maxDailyBuyCount)))
+    );
+    runtimeConfig.maxExposureRate = clamp(
+      runtimeConfig.maxExposureRate,
+      0,
+      1
+    );
   }
 
   return state.portfolioControl;
@@ -393,14 +446,17 @@ function getStrategyAllocationLimitAmount(state, strategy) {
   const config = getStrategyConfig(state, strategy);
   if (!config) return 0;
 
+  // 신규 운전설정의 전략 최대투자비율은 항상 적용한다.
+  if (config.maxExposureRate !== null && config.maxExposureRate !== undefined) {
+    return getEquity(state) * clamp(config.maxExposureRate, 0, 1);
+  }
+
+  // 구버전 allocationRate 호환.
   if (state.portfolioControl.strategyAllocationEnforced !== true) {
     return Infinity;
   }
 
-  if (
-    config.allocationRate === null ||
-    config.allocationRate === undefined
-  ) {
+  if (config.allocationRate === null || config.allocationRate === undefined) {
     return Infinity;
   }
 
@@ -465,6 +521,15 @@ function canStrategyTrade(state, strategy) {
     };
   }
 
+  ensureMasterState(state);
+
+  if (state.portfolioControl.globalBuyEnabled === false) {
+    return {
+      ok: false,
+      reason: "MASTER 전체 신규매수 금지"
+    };
+  }
+
   const config = getStrategyConfig(state, normalized);
 
   if (!config || config.enabled !== true) {
@@ -474,10 +539,10 @@ function canStrategyTrade(state, strategy) {
     };
   }
 
-  if (String(config.status).toUpperCase() === "PAUSED") {
+  if (config.buyEnabled === false || String(config.status).toUpperCase() === "PAUSED") {
     return {
       ok: false,
-      reason: `${normalized} 전략 PAUSED`
+      reason: `${normalized} 신규매수 금지`
     };
   }
 
@@ -485,6 +550,138 @@ function canStrategyTrade(state, strategy) {
     ok: true,
     strategy: normalized,
     status: config.status
+  };
+}
+
+function getTodayStrategyBuyCount(state, strategy, date = todayKey()) {
+  ensureMasterState(state);
+  const normalized = normalizeStrategy(strategy);
+  if (!normalized) return 0;
+
+  return state.tradeLogs.filter(log => {
+    const logDate = String(log.date || "").slice(0, 10);
+    const type = String(log.type || "").toUpperCase();
+    return (
+      logDate === date &&
+      getStrategyOfTradeLog(log) === normalized &&
+      (type === "BUY" || type.endsWith("_BUY"))
+    );
+  }).length;
+}
+
+function getStrategyRuntimeSettings(state, strategy) {
+  ensureMasterState(state);
+  const normalized = normalizeStrategy(strategy);
+  if (!normalized) return null;
+  const config = getStrategyConfig(state, normalized);
+  return {
+    strategy: normalized,
+    buyEnabled:
+      state.portfolioControl.globalBuyEnabled !== false &&
+      config.enabled === true &&
+      config.buyEnabled !== false &&
+      String(config.status).toUpperCase() !== "PAUSED",
+    positionRatio: clamp(config.positionRatio, 0, 1),
+    maxHoldingCount: Math.max(0, Math.floor(toNumber(config.maxHoldingCount))),
+    maxDailyBuyCount: Math.max(0, Math.floor(toNumber(config.maxDailyBuyCount))),
+    maxExposureRate: clamp(config.maxExposureRate, 0, 1),
+    holdingCount: getStrategyHoldingCount(state, normalized),
+    todayBuyCount: getTodayStrategyBuyCount(state, normalized)
+  };
+}
+
+function getTradingSettings(state) {
+  ensureMasterState(state);
+  const settings = {
+    globalBuyEnabled: state.portfolioControl.globalBuyEnabled !== false,
+    maxTotalExposureRate: clamp(state.portfolioControl.totalExposureLimitRate, 0, 1) * 100,
+    reserveCashRate: clamp(state.portfolioControl.reserveCashRate, 0, 1) * 100,
+    strategies: {}
+  };
+
+  for (const strategy of STRATEGIES) {
+    const runtime = getStrategyRuntimeSettings(state, strategy);
+    const config = getStrategyConfig(state, strategy);
+    settings.strategies[strategy] = {
+      buyEnabled:
+        config.enabled === true &&
+        config.buyEnabled !== false &&
+        String(config.status).toUpperCase() !== "PAUSED",
+      effectiveBuyEnabled: runtime.buyEnabled,
+      status: config.status,
+      positionRatio: runtime.positionRatio * 100,
+      maxHoldingCount: runtime.maxHoldingCount,
+      maxDailyBuyCount: runtime.maxDailyBuyCount,
+      maxExposureRate: runtime.maxExposureRate * 100,
+      holdingCount: runtime.holdingCount,
+      todayBuyCount: runtime.todayBuyCount,
+      currentExposure: Math.floor(getStrategyExposure(state, strategy)),
+      currentExposureRate: getEquity(state) > 0
+        ? (getStrategyExposure(state, strategy) / getEquity(state)) * 100
+        : 0
+    };
+  }
+
+  return settings;
+}
+
+function applyTradingSettings(state, input = {}) {
+  ensureMasterState(state);
+  const source = input && typeof input === "object" ? input : {};
+  const totalExposureRate = clamp(toNumber(source.maxTotalExposureRate, 100) / 100, 0, 1);
+  const reserveCashRate = clamp(toNumber(source.reserveCashRate, 0) / 100, 0, 1);
+
+  if (totalExposureRate + reserveCashRate > 1.0000001) {
+    return {
+      ok: false,
+      reason: "MASTER 최대 투자비율 + 최소 현금비율은 100%를 넘을 수 없습니다."
+    };
+  }
+
+  state.portfolioControl.globalBuyEnabled = source.globalBuyEnabled !== false;
+  state.portfolioControl.totalExposureLimitRate = totalExposureRate;
+  state.portfolioControl.reserveCashRate = reserveCashRate;
+
+  const rows = source.strategies && typeof source.strategies === "object"
+    ? source.strategies
+    : {};
+
+  for (const strategy of STRATEGIES) {
+    const incoming = rows[strategy];
+    if (!incoming || typeof incoming !== "object") continue;
+    const current = getStrategyConfig(state, strategy);
+
+    const buyEnabled = incoming.buyEnabled !== false;
+    const positionRatio = clamp(toNumber(incoming.positionRatio) / 100, 0, 1);
+    const maxExposureRate = clamp(toNumber(incoming.maxExposureRate, 100) / 100, 0, 1);
+    const maxHoldingCount = Math.max(0, Math.min(20, Math.floor(toNumber(incoming.maxHoldingCount))));
+    const maxDailyBuyCount = Math.max(0, Math.min(20, Math.floor(toNumber(incoming.maxDailyBuyCount))));
+
+    if (maxExposureRate > 0 && positionRatio > maxExposureRate) {
+      return {
+        ok: false,
+        reason: `${strategy} 1종목 매수비율이 전략 최대 투자비율보다 큽니다.`
+      };
+    }
+    if (buyEnabled && maxHoldingCount <= 0) {
+      return { ok: false, reason: `${strategy} 신규매수 허용 시 최대 보유종목은 1 이상이어야 합니다.` };
+    }
+    if (buyEnabled && maxDailyBuyCount <= 0) {
+      return { ok: false, reason: `${strategy} 신규매수 허용 시 하루 최대 신규매수는 1 이상이어야 합니다.` };
+    }
+
+    current.buyEnabled = buyEnabled;
+    current.status = buyEnabled ? "ACTIVE" : "PAUSED";
+    current.positionRatio = positionRatio;
+    current.maxHoldingCount = maxHoldingCount;
+    current.maxDailyBuyCount = maxDailyBuyCount;
+    current.maxExposureRate = maxExposureRate;
+  }
+
+  state.portfolioControl.runtimeSettingsUpdatedAt = nowText();
+  return {
+    ok: true,
+    settings: getTradingSettings(state)
   };
 }
 
@@ -501,6 +698,25 @@ function canBuy(state, options = {}) {
     return {
       ok: false,
       reason: "종목코드 오류"
+    };
+  }
+
+  const runtime = getStrategyRuntimeSettings(state, strategy);
+  if (!runtime) {
+    return { ok: false, reason: `${strategy} 런타임 설정 없음` };
+  }
+
+  if (runtime.holdingCount >= runtime.maxHoldingCount) {
+    return {
+      ok: false,
+      reason: `${strategy} 보유한도 ${runtime.holdingCount}/${runtime.maxHoldingCount}종목 도달`
+    };
+  }
+
+  if (runtime.todayBuyCount >= runtime.maxDailyBuyCount) {
+    return {
+      ok: false,
+      reason: `${strategy} 하루 매수한도 ${runtime.todayBuyCount}/${runtime.maxDailyBuyCount}회 도달`
     };
   }
 
@@ -534,6 +750,28 @@ function canBuy(state, options = {}) {
     return {
       ok: false,
       reason: "매수금액 오류"
+    };
+  }
+
+  const positionBaseAsset = Math.max(
+    getEquity(state),
+    toNumber(state.dailyStartAsset),
+    toNumber(state.initialCapital, MASTER_INITIAL_CAPITAL)
+  );
+  const perPositionLimit = Math.floor(positionBaseAsset * runtime.positionRatio);
+  if (perPositionLimit <= 0) {
+    return {
+      ok: false,
+      reason: `${strategy} 1종목 매수비율 0% / 신규매수 차단`
+    };
+  }
+  if (requestedAmount > perPositionLimit) {
+    return {
+      ok: false,
+      reason:
+        `${strategy} 종목당 매수한도 초과 / 요청 ${requestedAmount.toLocaleString()}원 / ` +
+        `한도 ${perPositionLimit.toLocaleString()}원`,
+      perPositionLimit
     };
   }
 
@@ -995,6 +1233,12 @@ function getPortfolioSummary(state) {
       enabled: config.enabled === true,
       status: config.status,
       allocationRate: config.allocationRate,
+      buyEnabled: getStrategyRuntimeSettings(state, strategy).buyEnabled,
+      positionRatio: getStrategyRuntimeSettings(state, strategy).positionRatio,
+      maxHoldingCount: getStrategyRuntimeSettings(state, strategy).maxHoldingCount,
+      maxDailyBuyCount: getStrategyRuntimeSettings(state, strategy).maxDailyBuyCount,
+      maxExposureRate: getStrategyRuntimeSettings(state, strategy).maxExposureRate,
+      todayBuyCount: getStrategyRuntimeSettings(state, strategy).todayBuyCount,
       exposure: Math.floor(exposure),
       holdingCount,
       exposureRate: equity > 0 ? exposure / equity : 0
@@ -1198,6 +1442,28 @@ function setStrategyControl(state, strategy, patch = {}) {
       };
     }
     current.status = status;
+    current.buyEnabled = status !== "PAUSED";
+  }
+
+  if (patch.buyEnabled !== undefined) {
+    current.buyEnabled = patch.buyEnabled === true;
+    current.status = current.buyEnabled ? "ACTIVE" : "PAUSED";
+  }
+
+  if (patch.positionRatio !== undefined) {
+    current.positionRatio = clamp(patch.positionRatio, 0, 1);
+  }
+
+  if (patch.maxHoldingCount !== undefined) {
+    current.maxHoldingCount = Math.max(0, Math.min(20, Math.floor(toNumber(patch.maxHoldingCount))));
+  }
+
+  if (patch.maxDailyBuyCount !== undefined) {
+    current.maxDailyBuyCount = Math.max(0, Math.min(20, Math.floor(toNumber(patch.maxDailyBuyCount))));
+  }
+
+  if (patch.maxExposureRate !== undefined) {
+    current.maxExposureRate = clamp(patch.maxExposureRate, 0, 1);
   }
 
   if (patch.allocationRate !== undefined) {
@@ -1267,6 +1533,10 @@ module.exports = {
   updateStrategyHoldingMarks,
 
   getStrategyConfig,
+  getStrategyRuntimeSettings,
+  getTodayStrategyBuyCount,
+  getTradingSettings,
+  applyTradingSettings,
   canStrategyTrade,
   isDuplicateHolding,
   findHoldingByCode,
