@@ -8,6 +8,7 @@ const cors = require('cors');
 const kiwoom = require('./kiwoom-us-client');
 const portfolioManager = require('./portfolio-manager');
 const strategySettings = require('./strategy-settings-store');
+const activityStore = require('./us-dashboard-activity-store');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -26,10 +27,7 @@ app.use(express.json());
 
 function sendError(res, err) {
   console.error('[SY Quant US API]', err.message);
-  res.status(500).json({
-    ok: false,
-    error: err.message
-  });
+  res.status(500).json({ ok: false, error: err.message });
 }
 
 function buildUsStrategyDashboardSummary(portfolio = {}) {
@@ -38,26 +36,30 @@ function buildUsStrategyDashboardSummary(portfolio = {}) {
   const totalReturnRate = Number(portfolio.totalReturnRate || 0);
   const unrealizedProfitLoss = Number(portfolio.unrealizedProfitLoss || 0);
   const settings = strategySettings.getSettings();
+  const activity = activityStore.getDashboardActivity();
 
-  const strategies = Object.values(settings.strategies).map(item => ({
-    id: item.id,
-    label: item.label,
-    icon: item.icon,
-    status: item.implemented
-      ? (item.buyEnabled ? 'BUY ON' : 'BUY OFF')
-      : '준비중 · BUY OFF',
-    implemented: Boolean(item.implemented),
-    buyEnabled: Boolean(item.buyEnabled),
-    singleBuyRate: Number(item.singleBuyRate || 0),
-    strategyMaxInvestmentRate: Number(item.strategyMaxInvestmentRate || item.allocationRate || 0),
-    allocationRate: Number(item.strategyMaxInvestmentRate || item.allocationRate || 0),
-    maxHoldings: Number(item.maxHoldings || 0),
-    dailyMaxNewBuys: Number(item.dailyMaxNewBuys || 0),
-    netProfit: 0,
-    profitRate: 0,
-    realizedProfit: 0,
-    unrealizedProfit: 0
-  }));
+  const strategies = Object.values(settings.strategies).map(item => {
+    const realizedProfit = Number(activity.realizedByStrategy?.[item.id] || 0);
+    return {
+      id: item.id,
+      label: item.label,
+      icon: item.icon,
+      status: item.implemented
+        ? (item.buyEnabled ? 'BUY ON' : 'BUY OFF')
+        : '준비중 · BUY OFF',
+      implemented: Boolean(item.implemented),
+      buyEnabled: Boolean(item.buyEnabled),
+      singleBuyRate: Number(item.singleBuyRate || 0),
+      strategyMaxInvestmentRate: Number(item.strategyMaxInvestmentRate || item.allocationRate || 0),
+      allocationRate: Number(item.strategyMaxInvestmentRate || item.allocationRate || 0),
+      maxHoldings: Number(item.maxHoldings || 0),
+      dailyMaxNewBuys: Number(item.dailyMaxNewBuys || 0),
+      netProfit: realizedProfit,
+      profitRate: 0,
+      realizedProfit,
+      unrealizedProfit: 0
+    };
+  });
 
   return {
     ok: true,
@@ -87,8 +89,11 @@ function buildUsStrategyDashboardSummary(portfolio = {}) {
       buyEnabledCount: Number(settings.buyEnabledCount || 0)
     },
     strategies,
+    recent7Days: activity.recent7Days,
     details: {
-      holdings: Array.isArray(portfolio.holdings) ? portfolio.holdings : []
+      holdings: Array.isArray(portfolio.holdings) ? portfolio.holdings : [],
+      candidates: Array.isArray(activity.candidates) ? activity.candidates : [],
+      sellHistory: Array.isArray(activity.sellHistory) ? activity.sellHistory : []
     },
     calculationNote: settings.masterBuyEnabled
       ? '전체 신규매수 ON · 전략별 매수허용과 운전한도는 설정에서 관리합니다.'
@@ -115,11 +120,7 @@ app.get('/api/status', (req, res) => {
 
 app.get('/api/strategy-settings', (req, res) => {
   try {
-    res.json({
-      ok: true,
-      mode: MODE,
-      settings: strategySettings.getSettings()
-    });
+    res.json({ ok: true, mode: MODE, settings: strategySettings.getSettings() });
   } catch (err) {
     sendError(res, err);
   }
@@ -159,6 +160,14 @@ app.get('/api/strategy-buy-check/:strategyId', (req, res) => {
   }
 });
 
+app.get('/api/dashboard-activity', (req, res) => {
+  try {
+    res.json({ ok: true, mode: MODE, activity: activityStore.getDashboardActivity() });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
 app.get('/api/portfolio-summary', async (req, res) => {
   try {
     const summary = await portfolioManager.getPortfolioSummary();
@@ -182,7 +191,6 @@ app.get('/api/us/quote', async (req, res) => {
     const exchange = String(req.query.exchange || '').toUpperCase();
     const symbol = String(req.query.symbol || '').toUpperCase();
     const data = await kiwoom.getQuote(exchange, symbol);
-
     res.json({
       ok: true,
       mode: MODE,
@@ -207,7 +215,6 @@ app.get('/api/us/quote', async (req, res) => {
 app.get('/api/us/deposit', async (req, res) => {
   try {
     const usd = await kiwoom.getUsdDeposit();
-
     res.json({
       ok: true,
       mode: MODE,
@@ -227,7 +234,6 @@ app.get('/api/us/holdings', async (req, res) => {
     const exchange = String(req.query.exchange || '').toUpperCase();
     const symbol = String(req.query.symbol || '').toUpperCase();
     const result = await kiwoom.getHoldings({ exchange, symbol });
-
     res.json({
       ok: true,
       mode: MODE,
