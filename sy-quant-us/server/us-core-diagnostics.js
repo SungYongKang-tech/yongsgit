@@ -168,6 +168,26 @@ async function runDiagnostics() {
   };
 }
 
+if (require.main === module) {
+  runDiagnostics()
+    .then(result => {
+      console.log(JSON.stringify(result, null, 2));
+      process.exitCode = result.status === 'FAIL' ? 1 : 0;
+    })
+    .catch(err => {
+      console.error(JSON.stringify({
+        ok: false,
+        strategy: 'CORE',
+        diagnosticOnly: true,
+        actualOrderEnabled: false,
+        status: 'FAIL',
+        error: err.message,
+        checkedAt: new Date().toISOString()
+      }, null, 2));
+      process.exitCode = 1;
+    });
+}
+
 module.exports = {
   runDiagnostics
 };
