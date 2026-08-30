@@ -10,6 +10,7 @@ const portfolioManager = require('./portfolio-manager');
 const strategySettings = require('./strategy-settings-store');
 const activityStore = require('./us-dashboard-activity-store');
 const usCore = require('./us-core-strategy');
+const virtualTracker = require('./us-core-virtual-tracker');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -107,12 +108,13 @@ function buildUsStrategyDashboardSummary(portfolio = {}) {
         orderSubmissionEnabled: false,
         implemented: false,
         session: coreStatus.session,
-        lastScan: coreStatus.lastScan
+        lastScan: coreStatus.lastScan,
+        virtualTracker: virtualTracker.getStatus()
       }
     },
     calculationNote: settings.masterBuyEnabled
       ? '전체 신규매수 ON · 전략별 매수허용과 운전한도는 설정에서 관리합니다.'
-      : '전체 신규매수 OFF · US-CORE는 현재 후보 관찰만 수행하고 주문은 하지 않습니다.',
+      : '전체 신규매수 OFF · US-CORE는 현재 후보 관찰과 가상성과 추적만 수행하고 주문은 하지 않습니다.',
     updatedAt: portfolio.time || new Date().toISOString()
   };
 }
@@ -186,6 +188,14 @@ app.get('/api/dashboard-activity', (req, res) => {
 app.get('/api/us-core/status', (req, res) => {
   try {
     res.json(usCore.getCoreStatus());
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-core/virtual-trades', (req, res) => {
+  try {
+    res.json(virtualTracker.getStatus({ includePositions: true }));
   } catch (err) {
     sendError(res, err);
   }
@@ -303,4 +313,5 @@ app.listen(PORT, '0.0.0.0', () => {
     '미구현 전략 BUY는 서버에서 강제 OFF'
   );
   usCore.startCoreObserver();
+  virtualTracker.startVirtualTracker();
 });
