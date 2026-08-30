@@ -290,7 +290,7 @@ function ensureMasterState(state = {}) {
     ...(state.masterAccount || {}),
     enabled: true,
     version: PORTFOLIO_SCHEMA_VERSION,
-    accountName: "SY Quant MASTER",
+    accountName: "SY Quant KR MASTER",
     initialCapital: toNumber(state.initialCapital, MASTER_INITIAL_CAPITAL)
   };
 
@@ -1078,7 +1078,7 @@ function getStrategyAccountSnapshot(state, strategy) {
 
   return {
     accountMode: "MASTER_SHARED",
-    accountName: "SY Quant MASTER",
+    accountName: "SY Quant KR MASTER",
     strategy: normalized,
 
     // MASTER 전체 계좌 값
@@ -1246,7 +1246,7 @@ function getPortfolioSummary(state) {
   }
 
   return {
-    accountName: "SY Quant MASTER",
+    accountName: "SY Quant KR MASTER",
     initialCapital: Math.floor(initialCapital),
     totalCash: Math.floor(totalCash),
     totalExposure: Math.floor(totalExposure),

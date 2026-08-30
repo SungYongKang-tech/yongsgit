@@ -1897,7 +1897,7 @@ app.get("/", (req, res) => {
 app.get("/api/status", (req, res) => {
   res.json({
     ok: true,
-    server: "kiwoom-server",
+    server: "sy-quant-kr",
     file: __filename,
     cwd: process.cwd(),
     time: new Date().toLocaleString("ko-KR")
@@ -2776,7 +2776,7 @@ app.post("/api/manual-paper-sell", express.json(), async (req, res) => {
 });
 
 app.post("/api/token/reissue", (req, res) => {
-  exec("cd /home/ubuntu/kiwoom-server && node token.js", (error, stdout, stderr) => {
+  exec(`cd "${__dirname}" && node token.js`, (error, stdout, stderr) => {
     if (error) {
       return res.status(500).json({
         ok: false,
@@ -2794,7 +2794,7 @@ app.post("/api/token/reissue", (req, res) => {
     });
 
     setTimeout(() => {
-      exec("pm2 restart kiwwm-server --update-env");
+      exec("pm2 restart sy-quant-kr-server --update-env");
     }, 1000);
   });
 });
