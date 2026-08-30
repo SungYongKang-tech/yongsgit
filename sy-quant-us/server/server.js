@@ -9,6 +9,7 @@ const kiwoom = require('./kiwoom-us-client');
 const portfolioManager = require('./portfolio-manager');
 const strategySettings = require('./strategy-settings-store');
 const activityStore = require('./us-dashboard-activity-store');
+require('./us-core-data-safety-patch');
 const usCore = require('./us-core-strategy');
 const virtualTracker = require('./us-core-virtual-tracker');
 const coreHistory = require('./us-core-history-store');
