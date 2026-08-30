@@ -10,10 +10,9 @@ const MODE = String(process.env.TRADING_MODE || '').toUpperCase();
 const ORDER_ENABLED = String(process.env.US_ORDER_ENABLED || '').toLowerCase() === 'true';
 const MAX_ORDER_QTY = Number(process.env.US_MAX_ORDER_QTY || 100);
 const MAX_ORDER_USD = Number(process.env.US_MAX_ORDER_USD || 10000);
-const MARKET_PRICE_BUFFER = Number(process.env.US_MARKET_PRICE_BUFFER || 0.03);
 
 const EXCHANGES = new Set(['NA', 'ND', 'NY']);
-const ORDER_TYPES = new Set(['00', '03']);
+const ORDER_TYPES = new Set(['00']);
 
 function toNumber(value) {
   if (value === null || value === undefined || value === '') return 0;
@@ -44,9 +43,6 @@ function validateRiskSettings() {
   if (!Number.isFinite(MAX_ORDER_USD) || MAX_ORDER_USD <= 0) {
     throw new Error('US_MAX_ORDER_USD must be a positive number');
   }
-  if (!Number.isFinite(MARKET_PRICE_BUFFER) || MARKET_PRICE_BUFFER < 0 || MARKET_PRICE_BUFFER > 0.20) {
-    throw new Error('US_MARKET_PRICE_BUFFER must be between 0 and 0.20');
-  }
 }
 
 function normalizeOrder({ exchange, symbol, quantity, orderType = '00', price = null }) {
@@ -71,15 +67,12 @@ function normalizeOrder({ exchange, symbol, quantity, orderType = '00', price = 
     throw new Error('quantity exceeds US_MAX_ORDER_QTY');
   }
   if (!ORDER_TYPES.has(trdeTp)) {
-    throw new Error('initial PAPER order types are limited to 00(limit) and 03(market)');
+    throw new Error('Kiwoom US PAPER trading currently allows limit orders only (orderType 00)');
   }
 
-  let ordUv = null;
-  if (trdeTp === '00') {
-    ordUv = Number(price);
-    if (!Number.isFinite(ordUv) || ordUv <= 0 || ordUv > 1000000) {
-      throw new Error('limit price must be a positive number');
-    }
+  const ordUv = Number(price);
+  if (!Number.isFinite(ordUv) || ordUv <= 0 || ordUv > 1000000) {
+    throw new Error('limit price must be a positive number');
   }
 
   return {
@@ -91,22 +84,9 @@ function normalizeOrder({ exchange, symbol, quantity, orderType = '00', price = 
   };
 }
 
-async function getReferencePrice(order) {
-  if (order.orderType === '00') return order.price;
-
-  const quote = await kiwoom.getQuote(order.exchange, order.symbol);
-  const currentPrice = Math.abs(toNumber(quote.cur_prc));
-  if (!(currentPrice > 0)) {
-    throw new Error('unable to determine a valid market reference price');
-  }
-  return currentPrice;
-}
-
 async function previewBuy(input) {
   const order = normalizeOrder(input);
-  const referencePrice = await getReferencePrice(order);
-  const bufferRate = order.orderType === '03' ? 1 + MARKET_PRICE_BUFFER : 1;
-  const estimatedNotional = referencePrice * order.quantity * bufferRate;
+  const estimatedNotional = order.price * order.quantity;
 
   if (estimatedNotional > MAX_ORDER_USD) {
     throw new Error('estimated buy amount exceeds US_MAX_ORDER_USD');
@@ -120,12 +100,11 @@ async function previewBuy(input) {
   return {
     side: 'BUY',
     ...order,
-    referencePrice,
+    referencePrice: order.price,
     estimatedNotional,
     orderAvailable: toNumber(usd.orderAvailable),
     maxOrderQty: MAX_ORDER_QTY,
     maxOrderUsd: MAX_ORDER_USD,
-    marketPriceBuffer: MARKET_PRICE_BUFFER,
     submissionEnabled: ORDER_ENABLED
   };
 }
@@ -150,8 +129,7 @@ async function previewSell(input) {
     throw new Error('sell quantity exceeds sellable holding quantity');
   }
 
-  const referencePrice = await getReferencePrice(order);
-  const estimatedNotional = referencePrice * order.quantity;
+  const estimatedNotional = order.price * order.quantity;
   if (estimatedNotional > MAX_ORDER_USD) {
     throw new Error('estimated sell amount exceeds US_MAX_ORDER_USD');
   }
@@ -159,7 +137,7 @@ async function previewSell(input) {
   return {
     side: 'SELL',
     ...order,
-    referencePrice,
+    referencePrice: order.price,
     estimatedNotional,
     sellableQuantity,
     maxOrderQty: MAX_ORDER_QTY,
@@ -176,9 +154,9 @@ async function submitBuy(input) {
     stex_tp: preview.exchange,
     stk_cd: preview.symbol,
     ord_qty: String(preview.quantity),
-    trde_tp: preview.orderType
+    trde_tp: preview.orderType,
+    ord_uv: String(preview.price)
   };
-  if (preview.orderType === '00') body.ord_uv = String(preview.price);
 
   const { data } = await kiwoom.requestPage({
     apiId: 'ust20000',
@@ -204,9 +182,9 @@ async function submitSell(input) {
     stex_tp: preview.exchange,
     stk_cd: preview.symbol,
     ord_qty: String(preview.quantity),
-    trde_tp: preview.orderType
+    trde_tp: preview.orderType,
+    ord_uv: String(preview.price)
   };
-  if (preview.orderType === '00') body.ord_uv = String(preview.price);
 
   const { data } = await kiwoom.requestPage({
     apiId: 'ust20001',
