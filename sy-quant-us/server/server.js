@@ -6,6 +6,7 @@ require('dotenv').config({ path: path.join(__dirname, '.env'), quiet: true });
 const express = require('express');
 const cors = require('cors');
 const kiwoom = require('./kiwoom-us-client');
+const portfolioManager = require('./portfolio-manager');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -40,6 +41,15 @@ app.get('/api/status', (req, res) => {
     cwd: process.cwd(),
     time: new Date().toISOString()
   });
+});
+
+app.get('/api/portfolio-summary', async (req, res) => {
+  try {
+    const summary = await portfolioManager.getPortfolioSummary();
+    res.json(summary);
+  } catch (err) {
+    sendError(res, err);
+  }
 });
 
 app.get('/api/us/quote', async (req, res) => {
