@@ -58,7 +58,6 @@ function toNumber(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
-// 미국 실현손익은 한국 날짜가 아니라 NYSE 현지 거래일로 묶는다.
 function usMarketDateKey(value) {
   const d = value ? new Date(value) : new Date();
   if (Number.isNaN(d.getTime())) return null;
@@ -131,12 +130,27 @@ function setCandidates(strategyId, rows = []) {
   const keep = state.candidates.filter(item => String(item.strategy || '').toUpperCase() !== id);
   const incoming = (Array.isArray(rows) ? rows : []).slice(0, 100).map(item => ({
     strategy: id,
+    exchange: String(item.exchange || ''),
     symbol: String(item.symbol || '').toUpperCase(),
     name: String(item.name || ''),
     status: String(item.status || 'WATCH'),
     score: toNumber(item.score),
     price: toNumber(item.price),
     changeRate: toNumber(item.changeRate),
+    dayPositionRate: toNumber(item.dayPositionRate),
+    vwap: toNumber(item.vwap),
+    vwapGapRate: toNumber(item.vwapGapRate),
+    rvol: toNumber(item.rvol),
+    tradeValue: toNumber(item.tradeValue),
+    trendPersistence: toNumber(item.trendPersistence),
+    marketScore: toNumber(item.marketScore),
+    qqqChangeRate: toNumber(item.qqqChangeRate),
+    qqqVwapGapRate: toNumber(item.qqqVwapGapRate),
+    averageDailyVolume: toNumber(item.averageDailyVolume),
+    dailyVolumeSampleCount: toNumber(item.dailyVolumeSampleCount),
+    sources: Array.isArray(item.sources) ? item.sources.map(String) : [],
+    blocks: Array.isArray(item.blocks) ? item.blocks.map(String) : [],
+    components: item.components && typeof item.components === 'object' ? clone(item.components) : {},
     reason: String(item.reason || ''),
     updatedAt: item.updatedAt || now
   }));
