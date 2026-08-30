@@ -142,6 +142,12 @@ function buildSettings(saved = {}) {
     .filter(item => item.implemented).length;
   result.buyEnabledCount = Object.values(result.strategies)
     .filter(item => item.buyEnabled).length;
+
+  // 아직 구현된 전략이 하나도 없으면 MASTER도 항상 OFF로 유지한다.
+  if (result.implementedCount === 0) {
+    result.masterBuyEnabled = false;
+  }
+
   result.updatedAt = saved.updatedAt || null;
 
   return result;
@@ -248,6 +254,11 @@ function updateSettings(input = {}) {
     .filter(item => item.implemented).length;
   candidate.buyEnabledCount = Object.values(candidate.strategies)
     .filter(item => item.buyEnabled).length;
+
+  if (candidate.implementedCount === 0) {
+    candidate.masterBuyEnabled = false;
+  }
+
   candidate.version = 2;
   candidate.updatedAt = new Date().toISOString();
 
