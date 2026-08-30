@@ -58,13 +58,34 @@ function formatTime(value) {
   if (Number.isNaN(date.getTime())) return '갱신 완료';
   return '갱신 ' + new Intl.DateTimeFormat('ko-KR', {
     timeZone: 'Asia/Seoul',
-    month: 'numeric',
-    day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit',
     hourCycle: 'h23'
   }).format(date);
+}
+
+function strategyCssClass(id) {
+  const normalized = String(id || '').toLowerCase();
+  return ['open', 'core', 'volume', 'wave', 'fast'].includes(normalized)
+    ? `strategy-${normalized}`
+    : '';
+}
+
+function getCurrentStrategyText(data = {}) {
+  const holdings = Array.isArray(data.details?.holdings) ? data.details.holdings : [];
+  const strategies = Array.isArray(data.strategies) ? data.strategies : [];
+  const buyEnabled = strategies.filter(item => item.buyEnabled);
+
+  if (!holdings.length && !buyEnabled.length) return '없음';
+
+  if (buyEnabled.length) {
+    return buyEnabled
+      .map(item => String(item.id || item.label || '').replace(/^US-/i, ''))
+      .filter(Boolean)
+      .join(' · ');
+  }
+
+  return holdings.length ? `기존 보유 ${holdings.length}종목` : '없음';
 }
 
 function renderStrategies(data = {}) {
@@ -89,7 +110,7 @@ function renderStrategies(data = {}) {
     const implementedText = item.implemented ? '구현완료' : '준비중';
 
     return `
-      <article class="strategy-card">
+      <article class="strategy-card ${strategyCssClass(item.id)}">
         <div class="strategy-head">
           <div class="strategy-name">${escapeHtml(item.icon || '📈')} ${escapeHtml(item.label || item.id || 'STRATEGY')}</div>
           <div class="strategy-status">${escapeHtml(item.status || 'BUY OFF')}</div>
@@ -139,9 +160,9 @@ function renderDashboard(data = {}) {
   setMetric('totalAsset', formatUsd(overall.totalAsset));
   setMetric('netProfit', formatUsd(overall.netProfit, true), overall.netProfit);
   setMetric('profitRate', formatRate(overall.profitRate), overall.profitRate);
+  setMetric('currentStrategy', getCurrentStrategyText(data));
   setMetric('totalExposure', formatUsd(overall.totalExposure));
   setMetric('unrealizedProfit', formatUsd(overall.unrealizedProfit, true), overall.unrealizedProfit);
-  setMetric('totalCash', formatUsd(overall.totalCash));
 
   renderStrategies(data);
   renderHoldings(data);
@@ -149,14 +170,14 @@ function renderDashboard(data = {}) {
   const status = document.getElementById('apiStatus');
   if (status) {
     status.textContent = 'API 정상';
-    status.className = 'status-pill ok';
+    status.className = 'status-ok';
   }
 
   const masterBuyStatus = document.getElementById('masterBuyStatus');
   if (masterBuyStatus) {
     const enabled = Boolean(data.strategyControl?.masterBuyEnabled);
     masterBuyStatus.textContent = enabled ? '전체 매수 ON' : '전체 매수 OFF';
-    masterBuyStatus.className = enabled ? 'status-pill ok' : 'status-pill';
+    masterBuyStatus.className = enabled ? 'status-on' : 'status-off';
   }
 
   const updatedAt = document.getElementById('updatedAt');
@@ -168,7 +189,7 @@ async function loadDashboard() {
   try {
     if (status) {
       status.textContent = 'API 조회 중';
-      status.className = 'status-pill';
+      status.className = '';
     }
 
     const response = await fetch(`${US_API_BASE}/strategy-dashboard-summary`, { cache: 'no-store' });
@@ -181,7 +202,7 @@ async function loadDashboard() {
     console.error('SY Quant US dashboard error', error);
     if (status) {
       status.textContent = 'API 확인 필요';
-      status.className = 'status-pill bad';
+      status.className = 'minus';
     }
     const updatedAt = document.getElementById('updatedAt');
     if (updatedAt) updatedAt.textContent = error.message || '갱신 실패';
