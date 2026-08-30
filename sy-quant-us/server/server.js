@@ -48,8 +48,11 @@ function buildUsStrategyDashboardSummary(portfolio = {}) {
       : '준비중 · BUY OFF',
     implemented: Boolean(item.implemented),
     buyEnabled: Boolean(item.buyEnabled),
-    allocationRate: Number(item.allocationRate || 0),
+    singleBuyRate: Number(item.singleBuyRate || 0),
+    strategyMaxInvestmentRate: Number(item.strategyMaxInvestmentRate || item.allocationRate || 0),
+    allocationRate: Number(item.strategyMaxInvestmentRate || item.allocationRate || 0),
     maxHoldings: Number(item.maxHoldings || 0),
+    dailyMaxNewBuys: Number(item.dailyMaxNewBuys || 0),
     netProfit: 0,
     profitRate: 0,
     realizedProfit: 0,
@@ -76,17 +79,20 @@ function buildUsStrategyDashboardSummary(portfolio = {}) {
     },
     strategyControl: {
       masterBuyEnabled: Boolean(settings.masterBuyEnabled),
+      masterMaxInvestmentRate: Number(settings.masterMaxInvestmentRate || 0),
+      minimumCashRate: Number(settings.minimumCashRate || 0),
       allocationTotal: Number(settings.allocationTotal || 0),
       unallocatedRate: Number(settings.unallocatedRate || 0),
-      buyEnabledCount: strategies.filter(item => item.buyEnabled).length
+      implementedCount: Number(settings.implementedCount || 0),
+      buyEnabledCount: Number(settings.buyEnabledCount || 0)
     },
     strategies,
     details: {
       holdings: Array.isArray(portfolio.holdings) ? portfolio.holdings : []
     },
     calculationNote: settings.masterBuyEnabled
-      ? '전체 매수 허용 ON · 전략별 매수허용은 설정에서 관리합니다.'
-      : '전체 매수 허용 OFF · 모든 신규 매수가 차단됩니다.',
+      ? '전체 신규매수 ON · 전략별 매수허용과 운전한도는 설정에서 관리합니다.'
+      : '전체 신규매수 OFF · 모든 신규 매수가 차단됩니다.',
     updatedAt: portfolio.time || new Date().toISOString()
   };
 }
@@ -125,9 +131,10 @@ app.put('/api/strategy-settings', (req, res) => {
     console.log(
       '[US 전략설정 저장]',
       `MASTER=${settings.masterBuyEnabled ? 'ON' : 'OFF'}`,
-      `배분=${settings.allocationTotal}%`,
+      `MASTER_MAX=${settings.masterMaxInvestmentRate}%`,
+      `MIN_CASH=${settings.minimumCashRate}%`,
       Object.values(settings.strategies)
-        .map(item => `${item.id}:${item.allocationRate}%/${item.maxHoldings}종목/${item.buyEnabled ? 'BUY_ON' : 'BUY_OFF'}`)
+        .map(item => `${item.id}:1종목${item.singleBuyRate}%/전략${item.strategyMaxInvestmentRate}%/${item.maxHoldings}종목/일${item.dailyMaxNewBuys}회/${item.buyEnabled ? 'BUY_ON' : 'BUY_OFF'}`)
         .join(' | ')
     );
     res.json({ ok: true, mode: MODE, settings });
@@ -240,7 +247,9 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(
     '[US 전략설정]',
     `MASTER=${settings.masterBuyEnabled ? 'ON' : 'OFF'}`,
-    `배분=${settings.allocationTotal}%`,
+    `MASTER_MAX=${settings.masterMaxInvestmentRate}%`,
+    `MIN_CASH=${settings.minimumCashRate}%`,
+    `구현전략=${settings.implementedCount}개`,
     '미구현 전략 BUY는 서버에서 강제 OFF'
   );
 });
