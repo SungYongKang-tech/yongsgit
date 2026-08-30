@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { getRecentTradingDates, dateKeyInTimeZone } = require('./market-calendar');
 
 const DATA_FILE = path.join(__dirname, 'us-dashboard-activity.json');
 const STRATEGY_META = {
@@ -57,32 +58,19 @@ function toNumber(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function kstDateKey(value) {
+// 미국 실현손익은 한국 날짜가 아니라 NYSE 현지 거래일로 묶는다.
+function usMarketDateKey(value) {
   const d = value ? new Date(value) : new Date();
   if (Number.isNaN(d.getTime())) return null;
-  const shifted = new Date(d.getTime() + 9 * 60 * 60 * 1000);
-  const y = shifted.getUTCFullYear();
-  const m = String(shifted.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(shifted.getUTCDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return dateKeyInTimeZone(d, 'America/New_York');
 }
 
-function last7Dates() {
-  const now = new Date(Date.now() + 9 * 60 * 60 * 1000);
-  const y = now.getUTCFullYear();
-  const m = now.getUTCMonth();
-  const d = now.getUTCDate();
-  const result = [];
-  for (let i = 6; i >= 0; i -= 1) {
-    const date = new Date(Date.UTC(y, m, d - i));
-    const key = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
-    result.push({ key, label: `${date.getUTCMonth() + 1}/${date.getUTCDate()}` });
-  }
-  return result;
+function last7TradingDates() {
+  return getRecentTradingDates('US', 7);
 }
 
 function getRecent7DayRealized(state = readState()) {
-  const dates = last7Dates();
+  const dates = last7TradingDates();
   const dateSet = new Set(dates.map(item => item.key));
   const matrix = {};
   STRATEGY_IDS.forEach(id => {
@@ -92,7 +80,7 @@ function getRecent7DayRealized(state = readState()) {
   for (const sell of state.sells) {
     const id = String(sell.strategy || '').toUpperCase();
     if (!matrix[id]) continue;
-    const key = kstDateKey(sell.soldAt || sell.time || sell.createdAt);
+    const key = usMarketDateKey(sell.soldAt || sell.time || sell.createdAt);
     if (!key || !dateSet.has(key)) continue;
     matrix[id][key] += toNumber(sell.realizedProfit);
   }
