@@ -31,6 +31,11 @@ function formatRate(value) {
   return `${n > 0 ? '+' : ''}${n.toFixed(2)}%`;
 }
 
+function formatPercent(value) {
+  const n = toNumber(value);
+  return `${Number.isInteger(n) ? n : n.toFixed(1)}%`;
+}
+
 function profitClass(value) {
   const n = toNumber(value);
   return n > 0 ? 'plus' : n < 0 ? 'minus' : '';
@@ -80,13 +85,18 @@ function renderStrategies(data = {}) {
     const profitRate = toNumber(item.profitRate);
     const realizedProfit = toNumber(item.realizedProfit);
     const unrealizedProfit = toNumber(item.unrealizedProfit);
+    const buyText = item.buyEnabled ? 'ON' : 'OFF';
+    const implementedText = item.implemented ? '구현완료' : '준비중';
+
     return `
       <article class="strategy-card">
         <div class="strategy-head">
           <div class="strategy-name">${escapeHtml(item.icon || '📈')} ${escapeHtml(item.label || item.id || 'STRATEGY')}</div>
-          <div class="strategy-status">${escapeHtml(item.status || 'ACTIVE')}</div>
+          <div class="strategy-status">${escapeHtml(item.status || 'BUY OFF')}</div>
         </div>
         <div class="strategy-profit ${profitClass(netProfit)}">${formatUsd(netProfit, true)}</div>
+        <div class="strategy-sub"><span>자금비율 / 최대종목</span><b>${formatPercent(item.allocationRate)} / ${toNumber(item.maxHoldings)}종목</b></div>
+        <div class="strategy-sub"><span>매수허용 / 상태</span><b>${buyText} / ${implementedText}</b></div>
         <div class="strategy-sub"><span>수익률</span><b class="${profitClass(profitRate)}">${formatRate(profitRate)}</b></div>
         <div class="strategy-sub"><span>확정 / 보유</span><b>${formatUsd(realizedProfit, true)} / ${formatUsd(unrealizedProfit, true)}</b></div>
       </article>`;
@@ -141,6 +151,14 @@ function renderDashboard(data = {}) {
     status.textContent = 'API 정상';
     status.className = 'status-pill ok';
   }
+
+  const masterBuyStatus = document.getElementById('masterBuyStatus');
+  if (masterBuyStatus) {
+    const enabled = Boolean(data.strategyControl?.masterBuyEnabled);
+    masterBuyStatus.textContent = enabled ? '전체 매수 ON' : '전체 매수 OFF';
+    masterBuyStatus.className = enabled ? 'status-pill ok' : 'status-pill';
+  }
+
   const updatedAt = document.getElementById('updatedAt');
   if (updatedAt) updatedAt.textContent = formatTime(data.updatedAt);
 }
