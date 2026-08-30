@@ -107,13 +107,24 @@ function getRealizedByStrategy(state = readState()) {
   return result;
 }
 
+function candidateStatusRank(value) {
+  const status = String(value || '').toUpperCase();
+  if (status === 'READY') return 3;
+  if (status === 'WATCH') return 2;
+  return 1;
+}
+
 function getDashboardActivity() {
   const state = readState();
   return {
     recent7Days: getRecent7DayRealized(state),
     realizedByStrategy: getRealizedByStrategy(state),
     candidates: clone(state.candidates)
-      .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))
+      .sort((a, b) =>
+        candidateStatusRank(b.status) - candidateStatusRank(a.status) ||
+        toNumber(b.score) - toNumber(a.score) ||
+        String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''))
+      )
       .slice(0, 100),
     sellHistory: clone(state.sells)
       .sort((a, b) => String(b.soldAt || '').localeCompare(String(a.soldAt || '')))
