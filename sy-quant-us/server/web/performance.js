@@ -108,6 +108,9 @@ function renderStrategies(data = {}) {
     const unrealizedProfit = toNumber(item.unrealizedProfit);
     const buyText = item.buyEnabled ? 'ON' : 'OFF';
     const implementedText = item.implemented ? '구현완료' : '준비중';
+    const singleBuyRate = item.singleBuyRate ?? 0;
+    const strategyMaxRate = item.strategyMaxInvestmentRate ?? item.allocationRate ?? 0;
+    const dailyMaxNewBuys = item.dailyMaxNewBuys ?? item.maxHoldings ?? 0;
 
     return `
       <article class="strategy-card ${strategyCssClass(item.id)}">
@@ -116,7 +119,8 @@ function renderStrategies(data = {}) {
           <div class="strategy-status">${escapeHtml(item.status || 'BUY OFF')}</div>
         </div>
         <div class="strategy-profit ${profitClass(netProfit)}">${formatUsd(netProfit, true)}</div>
-        <div class="strategy-sub"><span>자금비율 / 최대종목</span><b>${formatPercent(item.allocationRate)} / ${toNumber(item.maxHoldings)}종목</b></div>
+        <div class="strategy-sub"><span>1종목 / 전략한도</span><b>${formatPercent(singleBuyRate)} / ${formatPercent(strategyMaxRate)}</b></div>
+        <div class="strategy-sub"><span>최대종목 / 일일매수</span><b>${toNumber(item.maxHoldings)}종목 / ${toNumber(dailyMaxNewBuys)}회</b></div>
         <div class="strategy-sub"><span>매수허용 / 상태</span><b>${buyText} / ${implementedText}</b></div>
         <div class="strategy-sub"><span>수익률</span><b class="${profitClass(profitRate)}">${formatRate(profitRate)}</b></div>
         <div class="strategy-sub"><span>확정 / 보유</span><b>${formatUsd(realizedProfit, true)} / ${formatUsd(unrealizedProfit, true)}</b></div>
