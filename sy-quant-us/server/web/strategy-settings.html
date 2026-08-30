@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>SY Quant US 전략 설정</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 12px;
+      font-family: Arial, sans-serif;
+      background: #111827;
+      color: #f9fafb;
+    }
+    .wrap { max-width: 920px; margin: 0 auto; }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    h1 { margin: 0; font-size: 26px; line-height: 1.15; }
+    .actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+    .btn {
+      min-height: 40px;
+      border: 0;
+      border-radius: 10px;
+      padding: 9px 13px;
+      color: #fff;
+      background: #2563eb;
+      text-decoration: none;
+      font-weight: 800;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .btn.secondary { background: #374151; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .status-line {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 12px;
+      color: #9ca3af;
+      font-size: 12px;
+    }
+    .pill {
+      padding: 5px 8px;
+      border-radius: 999px;
+      background: #1f2937;
+      color: #d1d5db;
+      font-weight: 700;
+    }
+    .pill.ok { color: #86efac; }
+    .pill.bad { color: #fca5a5; }
+    .master-card,
+    .strategy-card,
+    .summary-card {
+      background: #1f2937;
+      border: 1px solid #374151;
+      border-radius: 14px;
+    }
+    .master-card { padding: 15px; margin-bottom: 10px; }
+    .master-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+    .master-title { font-size: 17px; font-weight: 900; }
+    .master-sub { margin-top: 4px; color: #9ca3af; font-size: 12px; line-height: 1.5; }
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 58px;
+      height: 32px;
+      flex: 0 0 auto;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute;
+      inset: 0;
+      cursor: pointer;
+      background: #4b5563;
+      border-radius: 999px;
+      transition: .2s;
+    }
+    .slider:before {
+      content: '';
+      position: absolute;
+      width: 24px;
+      height: 24px;
+      left: 4px;
+      top: 4px;
+      background: white;
+      border-radius: 50%;
+      transition: .2s;
+    }
+    input:checked + .slider { background: #16a34a; }
+    input:checked + .slider:before { transform: translateX(26px); }
+    input:disabled + .slider { opacity: .45; cursor: not-allowed; }
+    .summary-card {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1px;
+      overflow: hidden;
+      margin-bottom: 10px;
+      background: #374151;
+    }
+    .summary-cell { background: #1f2937; padding: 11px; text-align: center; }
+    .summary-label { color: #9ca3af; font-size: 11px; margin-bottom: 4px; }
+    .summary-value { font-size: 18px; font-weight: 900; }
+    .strategy-list { display: grid; gap: 8px; }
+    .strategy-card { padding: 13px; }
+    .strategy-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 11px;
+    }
+    .strategy-name { font-size: 17px; font-weight: 900; }
+    .strategy-state {
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #374151;
+      color: #cbd5e1;
+      font-size: 11px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .strategy-state.ready { color: #86efac; }
+    .settings-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1.15fr;
+      gap: 8px;
+      align-items: end;
+    }
+    label.field { display: block; min-width: 0; }
+    .field-title { display: block; color: #9ca3af; font-size: 11px; margin-bottom: 5px; }
+    .input-wrap { display: flex; align-items: center; gap: 5px; }
+    input[type="number"] {
+      width: 100%;
+      min-width: 0;
+      height: 42px;
+      border: 1px solid #4b5563;
+      border-radius: 9px;
+      background: #111827;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 800;
+      padding: 8px 9px;
+      outline: none;
+    }
+    input[type="number"]:focus { border-color: #60a5fa; }
+    .unit { color: #9ca3af; font-size: 12px; }
+    .buy-control {
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      border: 1px solid #374151;
+      border-radius: 9px;
+      padding: 5px 8px;
+      background: #111827;
+    }
+    .buy-text { font-size: 12px; font-weight: 800; }
+    .buy-text.off { color: #fca5a5; }
+    .buy-text.on { color: #86efac; }
+    .hint {
+      margin-top: 8px;
+      color: #6b7280;
+      font-size: 11px;
+      line-height: 1.5;
+    }
+    .footer-actions {
+      position: sticky;
+      bottom: 0;
+      padding: 10px 0 4px;
+      background: linear-gradient(to bottom, rgba(17,24,39,0), #111827 35%);
+    }
+    .save-btn { width: 100%; min-height: 48px; font-size: 16px; }
+    .message { min-height: 20px; margin-top: 7px; text-align: center; color: #9ca3af; font-size: 12px; }
+    .message.ok { color: #86efac; }
+    .message.bad { color: #fca5a5; }
+    @media (max-width: 640px) {
+      body { padding: 8px; }
+      h1 { font-size: 21px; }
+      .btn { min-height: 36px; padding: 8px 10px; font-size: 12px; }
+      .summary-value { font-size: 16px; }
+      .settings-grid { grid-template-columns: 1fr 1fr; }
+      .settings-grid .buy-field { grid-column: 1 / -1; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header class="header">
+      <h1>⚙️ US 전략 운전 설정</h1>
+      <div class="actions">
+        <a class="btn secondary" href="/us-performance.html">대시보드</a>
+        <button id="reloadBtn" class="btn secondary" type="button">다시 불러오기</button>
+      </div>
+    </header>
+
+    <div class="status-line">
+      <span id="apiStatus" class="pill">API 확인 중</span>
+      <span class="pill">PAPER</span>
+      <span id="updatedAt">설정 불러오는 중</span>
+    </div>
+
+    <section class="master-card">
+      <div class="master-row">
+        <div>
+          <div class="master-title">US Quant 전체 매수 허용</div>
+          <div class="master-sub">최상위 안전 스위치입니다. OFF이면 모든 전략의 신규 매수를 차단합니다.</div>
+        </div>
+        <label class="switch" aria-label="US Quant 전체 매수 허용">
+          <input id="masterBuyEnabled" type="checkbox" />
+          <span class="slider"></span>
+        </label>
+      </div>
+    </section>
+
+    <section class="summary-card" aria-label="전략 설정 요약">
+      <div class="summary-cell"><div class="summary-label">사용 비율</div><div id="allocationTotal" class="summary-value">100%</div></div>
+      <div class="summary-cell"><div class="summary-label">미사용 비율</div><div id="unallocatedRate" class="summary-value">0%</div></div>
+      <div class="summary-cell"><div class="summary-label">매수허용 전략</div><div id="enabledCount" class="summary-value">0개</div></div>
+    </section>
+
+    <section id="strategyList" class="strategy-list"></section>
+
+    <div class="footer-actions">
+      <button id="saveBtn" class="btn save-btn" type="button">설정 저장</button>
+      <div id="message" class="message">5개 전략은 모두 매수 OFF 상태로 시작합니다.</div>
+    </div>
+  </main>
+
+  <script>
+    'use strict';
+
+    const API = '/us-api/api/strategy-settings';
+    const ORDER = ['OPEN', 'CORE', 'VOLUME', 'WAVE', 'FAST'];
+    let current = null;
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function setMessage(text, type = '') {
+      const el = document.getElementById('message');
+      el.textContent = text;
+      el.className = `message ${type}`.trim();
+    }
+
+    function percentText(value) {
+      const n = Number(value || 0);
+      return `${Number.isInteger(n) ? n : n.toFixed(1)}%`;
+    }
+
+    function render(data) {
+      current = data;
+      document.getElementById('masterBuyEnabled').checked = Boolean(data.masterBuyEnabled);
+      document.getElementById('allocationTotal').textContent = percentText(data.allocationTotal);
+      document.getElementById('unallocatedRate').textContent = percentText(data.unallocatedRate);
+      document.getElementById('updatedAt').textContent = data.updatedAt
+        ? '마지막 저장 ' + new Intl.DateTimeFormat('ko-KR', {
+            timeZone: 'Asia/Seoul',
+            month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+          }).format(new Date(data.updatedAt))
+        : '기본 설정';
+
+      const list = document.getElementById('strategyList');
+      list.innerHTML = ORDER.map(id => {
+        const s = data.strategies[id];
+        const stateText = s.implemented ? '구현 완료' : '전략 준비중';
+        const stateClass = s.implemented ? 'ready' : '';
+        const buyText = s.buyEnabled ? '매수 ON' : '매수 OFF';
+        const buyClass = s.buyEnabled ? 'on' : 'off';
+        return `
+          <article class="strategy-card" data-id="${id}">
+            <div class="strategy-head">
+              <div class="strategy-name">${escapeHtml(s.icon)} ${escapeHtml(s.label)}</div>
+              <div class="strategy-state ${stateClass}">${stateText}</div>
+            </div>
+            <div class="settings-grid">
+              <label class="field">
+                <span class="field-title">자금 비율</span>
+                <span class="input-wrap">
+                  <input class="allocation" type="number" min="0" max="100" step="0.1" value="${Number(s.allocationRate)}" />
+                  <span class="unit">%</span>
+                </span>
+              </label>
+              <label class="field">
+                <span class="field-title">최대 매수/보유 종목</span>
+                <span class="input-wrap">
+                  <input class="max-holdings" type="number" min="1" max="20" step="1" value="${Number(s.maxHoldings)}" />
+                  <span class="unit">종목</span>
+                </span>
+              </label>
+              <div class="field buy-field">
+                <span class="field-title">매수 허용</span>
+                <div class="buy-control">
+                  <span class="buy-text ${buyClass}">${buyText}${s.implemented ? '' : ' · 미구현'}</span>
+                  <label class="switch" aria-label="${escapeHtml(s.label)} 매수 허용">
+                    <input class="buy-enabled" type="checkbox" ${s.buyEnabled ? 'checked' : ''} ${s.implemented ? '' : 'disabled'} />
+                    <span class="slider"></span>
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div class="hint">${s.implemented ? '전체 매수 허용과 이 전략의 매수 허용이 모두 ON일 때만 신규 매수가 가능합니다.' : '전략 코드가 아직 없으므로 서버가 매수허용을 강제로 OFF 처리합니다.'}</div>
+          </article>`;
+      }).join('');
+
+      bindInputs();
+      refreshSummary();
+    }
+
+    function bindInputs() {
+      document.querySelectorAll('.allocation, .max-holdings, .buy-enabled').forEach(el => {
+        el.addEventListener('input', refreshSummary);
+        el.addEventListener('change', refreshSummary);
+      });
+      document.getElementById('masterBuyEnabled').addEventListener('change', refreshSummary);
+    }
+
+    function collect() {
+      const strategies = {};
+      document.querySelectorAll('.strategy-card').forEach(card => {
+        const id = card.dataset.id;
+        strategies[id] = {
+          allocationRate: Number(card.querySelector('.allocation').value),
+          maxHoldings: Number(card.querySelector('.max-holdings').value),
+          buyEnabled: Boolean(card.querySelector('.buy-enabled').checked)
+        };
+      });
+      return {
+        masterBuyEnabled: document.getElementById('masterBuyEnabled').checked,
+        strategies
+      };
+    }
+
+    function refreshSummary() {
+      const form = collect();
+      const total = ORDER.reduce((sum, id) => sum + (Number.isFinite(form.strategies[id].allocationRate) ? form.strategies[id].allocationRate : 0), 0);
+      const enabled = ORDER.filter(id => form.strategies[id].buyEnabled).length;
+      document.getElementById('allocationTotal').textContent = percentText(total);
+      document.getElementById('unallocatedRate').textContent = percentText(Math.max(0, 100 - total));
+      document.getElementById('enabledCount').textContent = `${enabled}개`;
+      document.getElementById('allocationTotal').style.color = total > 100 ? '#fca5a5' : '';
+    }
+
+    async function loadSettings() {
+      const status = document.getElementById('apiStatus');
+      status.textContent = 'API 조회 중';
+      status.className = 'pill';
+      try {
+        const response = await fetch(API, { cache: 'no-store' });
+        const data = await response.json();
+        if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+        render(data.settings || data);
+        status.textContent = 'API 정상';
+        status.className = 'pill ok';
+        setMessage('설정을 불러왔습니다. 미구현 전략은 매수 OFF로 고정됩니다.');
+      } catch (err) {
+        status.textContent = 'API 확인 필요';
+        status.className = 'pill bad';
+        setMessage(err.message || '설정 불러오기 실패', 'bad');
+      }
+    }
+
+    async function saveSettings() {
+      const payload = collect();
+      const total = ORDER.reduce((sum, id) => sum + Number(payload.strategies[id].allocationRate || 0), 0);
+      if (total > 100.0001) {
+        setMessage(`자금 비율 합계가 ${total.toFixed(1)}%입니다. 100% 이하로 맞춰주세요.`, 'bad');
+        return;
+      }
+      for (const id of ORDER) {
+        const s = payload.strategies[id];
+        if (!Number.isFinite(s.allocationRate) || s.allocationRate < 0 || s.allocationRate > 100) {
+          setMessage(`${id} 자금 비율을 0~100%로 입력해주세요.`, 'bad');
+          return;
+        }
+        if (!Number.isInteger(s.maxHoldings) || s.maxHoldings < 1 || s.maxHoldings > 20) {
+          setMessage(`${id} 최대 종목 수를 1~20으로 입력해주세요.`, 'bad');
+          return;
+        }
+      }
+
+      const btn = document.getElementById('saveBtn');
+      btn.disabled = true;
+      setMessage('저장 중...');
+      try {
+        const response = await fetch(API, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+        render(data.settings);
+        setMessage('설정을 저장했습니다.', 'ok');
+      } catch (err) {
+        setMessage(err.message || '설정 저장 실패', 'bad');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    document.getElementById('saveBtn').addEventListener('click', saveSettings);
+    document.getElementById('reloadBtn').addEventListener('click', loadSettings);
+    loadSettings();
+  </script>
+</body>
+</html>
