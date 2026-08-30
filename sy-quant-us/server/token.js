@@ -101,6 +101,26 @@ function saveToken(token) {
   try { fs.chmodSync(TOKEN_FILE, 0o600); } catch {}
 }
 
+async function issueFreshAfterRevoke() {
+  await sleep(REVOKE_SETTLE_MS);
+
+  let lastError = null;
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      const data = await issueToken();
+      const left = remainingMs(data.expires_dt);
+      if (left >= MIN_REMAINING_MS) return data;
+      lastError = new Error('Fresh token still has insufficient remaining lifetime');
+    } catch (err) {
+      lastError = err;
+    }
+
+    if (attempt < 5) await sleep(3000);
+  }
+
+  throw lastError || new Error('Fresh token issuance failed after revoke');
+}
+
 async function obtainSafeToken() {
   let data = await issueToken();
   let left = remainingMs(data.expires_dt);
@@ -114,16 +134,6 @@ async function obtainSafeToken() {
 
   try {
     await revokeToken(data.token);
-    await sleep(REVOKE_SETTLE_MS);
-
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
-      data = await issueToken();
-      left = remainingMs(data.expires_dt);
-      if (left >= MIN_REMAINING_MS) return data;
-      if (attempt < 3) await sleep(3000);
-    }
-
-    throw new Error('Fresh token still has insufficient remaining lifetime');
   } catch (revokeError) {
     left = remainingMs(data.expires_dt);
 
@@ -140,6 +150,8 @@ async function obtainSafeToken() {
 
     throw new Error('Unable to obtain safely valid token: ' + revokeError.message);
   }
+
+  return issueFreshAfterRevoke();
 }
 
 async function main() {
