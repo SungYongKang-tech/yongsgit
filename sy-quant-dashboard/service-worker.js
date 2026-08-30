@@ -1,11 +1,14 @@
 'use strict';
 
-const CACHE_NAME = 'sy-quant-shell-v1';
+const CACHE_NAME = 'sy-quant-shell-v2';
 const STATIC_ASSETS = [
   '/',
   '/sy-quant.js',
   '/manifest.webmanifest',
-  '/sy-quant-icon.svg'
+  '/sy-quant-icon.svg',
+  '/sy-quant-icon-192.png',
+  '/sy-quant-icon-512.png',
+  '/apple-touch-icon.png'
 ];
 
 self.addEventListener('install', event => {
