@@ -9,6 +9,7 @@ const kiwoom = require('./kiwoom-us-client');
 const portfolioManager = require('./portfolio-manager');
 const strategySettings = require('./strategy-settings-store');
 const activityStore = require('./us-dashboard-activity-store');
+const usCore = require('./us-core-strategy');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -37,18 +38,23 @@ function buildUsStrategyDashboardSummary(portfolio = {}) {
   const unrealizedProfitLoss = Number(portfolio.unrealizedProfitLoss || 0);
   const settings = strategySettings.getSettings();
   const activity = activityStore.getDashboardActivity();
+  const coreStatus = usCore.getCoreStatus();
 
   const strategies = Object.values(settings.strategies).map(item => {
     const realizedProfit = Number(activity.realizedByStrategy?.[item.id] || 0);
+    const observerStatus = item.id === 'CORE' && !item.implemented
+      ? '관찰중 · BUY OFF'
+      : null;
     return {
       id: item.id,
       label: item.label,
       icon: item.icon,
-      status: item.implemented
+      status: observerStatus || (item.implemented
         ? (item.buyEnabled ? 'BUY ON' : 'BUY OFF')
-        : '준비중 · BUY OFF',
+        : '준비중 · BUY OFF'),
       implemented: Boolean(item.implemented),
       buyEnabled: Boolean(item.buyEnabled),
+      observerOnly: item.id === 'CORE' ? Boolean(coreStatus.observerOnly) : false,
       singleBuyRate: Number(item.singleBuyRate || 0),
       strategyMaxInvestmentRate: Number(item.strategyMaxInvestmentRate || item.allocationRate || 0),
       allocationRate: Number(item.strategyMaxInvestmentRate || item.allocationRate || 0),
@@ -95,9 +101,18 @@ function buildUsStrategyDashboardSummary(portfolio = {}) {
       candidates: Array.isArray(activity.candidates) ? activity.candidates : [],
       sellHistory: Array.isArray(activity.sellHistory) ? activity.sellHistory : []
     },
+    observers: {
+      CORE: {
+        observerOnly: true,
+        orderSubmissionEnabled: false,
+        implemented: false,
+        session: coreStatus.session,
+        lastScan: coreStatus.lastScan
+      }
+    },
     calculationNote: settings.masterBuyEnabled
       ? '전체 신규매수 ON · 전략별 매수허용과 운전한도는 설정에서 관리합니다.'
-      : '전체 신규매수 OFF · 모든 신규 매수가 차단됩니다.',
+      : '전체 신규매수 OFF · US-CORE는 현재 후보 관찰만 수행하고 주문은 하지 않습니다.',
     updatedAt: portfolio.time || new Date().toISOString()
   };
 }
@@ -163,6 +178,35 @@ app.get('/api/strategy-buy-check/:strategyId', (req, res) => {
 app.get('/api/dashboard-activity', (req, res) => {
   try {
     res.json({ ok: true, mode: MODE, activity: activityStore.getDashboardActivity() });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-core/status', (req, res) => {
+  try {
+    res.json(usCore.getCoreStatus());
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.post('/api/us-core/scan', async (req, res) => {
+  try {
+    const force = req.body?.force === true || String(req.query.force || '') === '1';
+    const result = await usCore.runCoreScan({ force });
+    res.status(result.ok === false && result.status === 'ERROR' ? 500 : 200).json(result);
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-core/analyze', async (req, res) => {
+  try {
+    const exchange = String(req.query.exchange || '').toUpperCase();
+    const symbol = String(req.query.symbol || '').toUpperCase();
+    const result = await usCore.analyzeSymbol({ exchange, symbol });
+    res.json(result);
   } catch (err) {
     sendError(res, err);
   }
@@ -258,4 +302,5 @@ app.listen(PORT, '0.0.0.0', () => {
     `구현전략=${settings.implementedCount}개`,
     '미구현 전략 BUY는 서버에서 강제 OFF'
   );
+  usCore.startCoreObserver();
 });
