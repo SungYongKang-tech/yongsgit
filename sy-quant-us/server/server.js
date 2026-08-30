@@ -31,6 +31,39 @@ function sendError(res, err) {
   });
 }
 
+function buildUsStrategyDashboardSummary(portfolio = {}) {
+  const totalAsset = Number(portfolio.totalAsset || 0);
+  const totalProfitLoss = Number(portfolio.totalProfitLoss || 0);
+  const totalReturnRate = Number(portfolio.totalReturnRate || 0);
+  const unrealizedProfitLoss = Number(portfolio.unrealizedProfitLoss || 0);
+
+  return {
+    ok: true,
+    market: 'US',
+    mode: MODE,
+    currency: 'USD',
+    overall: {
+      initialCapital: Number(portfolio.initialCapital || 0),
+      currentAsset: totalAsset,
+      totalAsset,
+      totalCash: Number(portfolio.totalCash || 0),
+      availableCash: Number(portfolio.availableCash || 0),
+      totalExposure: Number(portfolio.totalExposure || 0),
+      netProfit: totalProfitLoss,
+      profitRate: totalReturnRate,
+      realizedProfit: totalProfitLoss - unrealizedProfitLoss,
+      unrealizedProfit: unrealizedProfitLoss,
+      holdingCount: Number(portfolio.holdingCount || 0)
+    },
+    strategies: [],
+    details: {
+      holdings: Array.isArray(portfolio.holdings) ? portfolio.holdings : []
+    },
+    calculationNote: 'US 전략은 아직 준비 중입니다. 현재는 USD 계좌 전체 성과를 표시합니다.',
+    updatedAt: portfolio.time || new Date().toISOString()
+  };
+}
+
 app.get('/api/status', (req, res) => {
   res.json({
     ok: true,
@@ -47,6 +80,15 @@ app.get('/api/portfolio-summary', async (req, res) => {
   try {
     const summary = await portfolioManager.getPortfolioSummary();
     res.json(summary);
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/strategy-dashboard-summary', async (req, res) => {
+  try {
+    const portfolio = await portfolioManager.getPortfolioSummary();
+    res.json(buildUsStrategyDashboardSummary(portfolio));
   } catch (err) {
     sendError(res, err);
   }
