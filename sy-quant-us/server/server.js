@@ -7,6 +7,7 @@ const express = require('express');
 const cors = require('cors');
 const kiwoom = require('./kiwoom-us-client');
 const portfolioManager = require('./portfolio-manager');
+const strategySettings = require('./strategy-settings-store');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -36,6 +37,24 @@ function buildUsStrategyDashboardSummary(portfolio = {}) {
   const totalProfitLoss = Number(portfolio.totalProfitLoss || 0);
   const totalReturnRate = Number(portfolio.totalReturnRate || 0);
   const unrealizedProfitLoss = Number(portfolio.unrealizedProfitLoss || 0);
+  const settings = strategySettings.getSettings();
+
+  const strategies = Object.values(settings.strategies).map(item => ({
+    id: item.id,
+    label: item.label,
+    icon: item.icon,
+    status: item.implemented
+      ? (item.buyEnabled ? 'BUY ON' : 'BUY OFF')
+      : '준비중 · BUY OFF',
+    implemented: Boolean(item.implemented),
+    buyEnabled: Boolean(item.buyEnabled),
+    allocationRate: Number(item.allocationRate || 0),
+    maxHoldings: Number(item.maxHoldings || 0),
+    netProfit: 0,
+    profitRate: 0,
+    realizedProfit: 0,
+    unrealizedProfit: 0
+  }));
 
   return {
     ok: true,
@@ -55,14 +74,26 @@ function buildUsStrategyDashboardSummary(portfolio = {}) {
       unrealizedProfit: unrealizedProfitLoss,
       holdingCount: Number(portfolio.holdingCount || 0)
     },
-    strategies: [],
+    strategyControl: {
+      masterBuyEnabled: Boolean(settings.masterBuyEnabled),
+      allocationTotal: Number(settings.allocationTotal || 0),
+      unallocatedRate: Number(settings.unallocatedRate || 0),
+      buyEnabledCount: strategies.filter(item => item.buyEnabled).length
+    },
+    strategies,
     details: {
       holdings: Array.isArray(portfolio.holdings) ? portfolio.holdings : []
     },
-    calculationNote: 'US 전략은 아직 준비 중입니다. 현재는 USD 계좌 전체 성과를 표시합니다.',
+    calculationNote: settings.masterBuyEnabled
+      ? '전체 매수 허용 ON · 전략별 매수허용은 설정에서 관리합니다.'
+      : '전체 매수 허용 OFF · 모든 신규 매수가 차단됩니다.',
     updatedAt: portfolio.time || new Date().toISOString()
   };
 }
+
+app.get('/strategy-settings', (req, res) => {
+  res.sendFile(path.join(__dirname, 'web', 'strategy-settings.html'));
+});
 
 app.get('/api/status', (req, res) => {
   res.json({
@@ -74,6 +105,51 @@ app.get('/api/status', (req, res) => {
     cwd: process.cwd(),
     time: new Date().toISOString()
   });
+});
+
+app.get('/api/strategy-settings', (req, res) => {
+  try {
+    res.json({
+      ok: true,
+      mode: MODE,
+      settings: strategySettings.getSettings()
+    });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.put('/api/strategy-settings', (req, res) => {
+  try {
+    const settings = strategySettings.updateSettings(req.body || {});
+    console.log(
+      '[US 전략설정 저장]',
+      `MASTER=${settings.masterBuyEnabled ? 'ON' : 'OFF'}`,
+      `배분=${settings.allocationTotal}%`,
+      Object.values(settings.strategies)
+        .map(item => `${item.id}:${item.allocationRate}%/${item.maxHoldings}종목/${item.buyEnabled ? 'BUY_ON' : 'BUY_OFF'}`)
+        .join(' | ')
+    );
+    res.json({ ok: true, mode: MODE, settings });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+app.get('/api/strategy-buy-check/:strategyId', (req, res) => {
+  try {
+    const result = strategySettings.isBuyAllowed(req.params.strategyId);
+    res.json({
+      ok: true,
+      strategyId: String(req.params.strategyId || '').toUpperCase(),
+      allowed: result.allowed,
+      reason: result.reason,
+      masterBuyEnabled: Boolean(result.settings?.masterBuyEnabled),
+      strategy: result.strategy
+    });
+  } catch (err) {
+    sendError(res, err);
+  }
 });
 
 app.get('/api/portfolio-summary', async (req, res) => {
@@ -159,5 +235,12 @@ app.get('/api/us/holdings', async (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
+  const settings = strategySettings.getSettings();
   console.log('SY Quant US PAPER server listening on port ' + PORT);
+  console.log(
+    '[US 전략설정]',
+    `MASTER=${settings.masterBuyEnabled ? 'ON' : 'OFF'}`,
+    `배분=${settings.allocationTotal}%`,
+    '미구현 전략 BUY는 서버에서 강제 OFF'
+  );
 });
