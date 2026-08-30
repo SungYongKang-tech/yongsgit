@@ -1,6 +1,8 @@
 'use strict';
 
 const US_API_BASE = '/us-api/api';
+let currentDashboardData = null;
+let activeTab = 'holdings';
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -24,6 +26,16 @@ function formatUsd(value, signed = false) {
   });
   if (!signed) return `${n < 0 ? '-' : ''}$${absolute}`;
   return `${n > 0 ? '+' : n < 0 ? '-' : ''}$${absolute}`;
+}
+
+function formatUsdCompact(value) {
+  const n = toNumber(value);
+  if (n === 0) return '0';
+  const digits = Number.isInteger(n) ? 0 : 2;
+  return `${n > 0 ? '+' : '-'}$${Math.abs(n).toLocaleString('en-US', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: 2
+  })}`;
 }
 
 function formatRate(value) {
@@ -64,6 +76,20 @@ function formatTime(value) {
   }).format(date);
 }
 
+function formatDateTime(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23'
+  }).format(date);
+}
+
 function strategyCssClass(id) {
   const normalized = String(id || '').toLowerCase();
   return ['open', 'core', 'volume', 'wave', 'fast'].includes(normalized)
@@ -75,17 +101,36 @@ function getCurrentStrategyText(data = {}) {
   const holdings = Array.isArray(data.details?.holdings) ? data.details.holdings : [];
   const strategies = Array.isArray(data.strategies) ? data.strategies : [];
   const buyEnabled = strategies.filter(item => item.buyEnabled);
-
   if (!holdings.length && !buyEnabled.length) return '없음';
-
   if (buyEnabled.length) {
     return buyEnabled
       .map(item => String(item.id || item.label || '').replace(/^US-/i, ''))
       .filter(Boolean)
       .join(' · ');
   }
-
   return holdings.length ? `기존 보유 ${holdings.length}종목` : '없음';
+}
+
+function renderRecent7Days(data = {}) {
+  const head = document.getElementById('recentHead');
+  const body = document.getElementById('recentBody');
+  if (!head || !body) return;
+
+  const dates = Array.isArray(data.recent7Days?.dates) ? data.recent7Days.dates : [];
+  const rows = Array.isArray(data.recent7Days?.rows) ? data.recent7Days.rows : [];
+
+  head.innerHTML = `<tr><th>전략</th>${dates.map(item => `<th>${escapeHtml(item.label)}</th>`).join('')}</tr>`;
+
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="8">실현손익 자료가 없습니다.</td></tr>';
+    return;
+  }
+
+  body.innerHTML = rows.map(row => `
+    <tr>
+      <td>${escapeHtml(row.icon || '')} ${escapeHtml(String(row.label || row.id || '').replace(/^US-/i, ''))}</td>
+      ${(Array.isArray(row.values) ? row.values : []).map(value => `<td class="${profitClass(value)}">${formatUsdCompact(value)}</td>`).join('')}
+    </tr>`).join('');
 }
 
 function renderStrategies(data = {}) {
@@ -97,7 +142,7 @@ function renderStrategies(data = {}) {
   if (note) note.textContent = data.calculationNote || '전략별 누적성과';
 
   if (!rows.length) {
-    grid.innerHTML = '<div class="empty">미국 전략은 아직 준비 중입니다. 전략을 추가하면 이곳에 전략별 수익이 자동 표시됩니다.</div>';
+    grid.innerHTML = '<div class="empty">미국 전략은 아직 준비 중입니다.</div>';
     return;
   }
 
@@ -128,38 +173,99 @@ function renderStrategies(data = {}) {
   }).join('');
 }
 
-function renderHoldings(data = {}) {
-  const list = document.getElementById('holdingList');
-  const count = document.getElementById('holdingCount');
-  if (!list) return;
+function holdingHtml(item) {
+  const profit = toNumber(item.profitLoss);
+  const rate = toNumber(item.profitLossRate);
+  return `
+    <article class="holding-card">
+      <div>
+        <div class="holding-name">${escapeHtml(item.name || item.symbol || '-')}</div>
+        <div class="holding-sub">${escapeHtml(item.symbol || '')} · ${escapeHtml(item.exchange || '')} · ${escapeHtml(item.currency || 'USD')}</div>
+      </div>
+      <div class="metric"><span>수량</span><b>${toNumber(item.quantity).toLocaleString()}주</b></div>
+      <div class="metric"><span>매수가</span><b>${formatUsd(item.buyPrice)}</b></div>
+      <div class="metric"><span>현재가</span><b>${formatUsd(item.currentPrice)}</b></div>
+      <div class="metric"><span>평가금액</span><b>${formatUsd(item.evaluationAmount)}</b></div>
+      <div class="metric"><span>보유손익</span><b class="${profitClass(profit)}">${formatUsd(profit, true)} · ${formatRate(rate)}</b></div>
+    </article>`;
+}
 
-  const rows = Array.isArray(data.details?.holdings) ? data.details.holdings : [];
-  if (count) count.textContent = `${rows.length}종목`;
+function candidateHtml(item) {
+  return `
+    <article class="activity-card candidate">
+      <div>
+        <div class="holding-name">${escapeHtml(item.name || item.symbol || '-')}</div>
+        <div class="holding-sub">${escapeHtml(item.symbol || '')} · ${escapeHtml(item.strategy || '')}${item.reason ? ' · ' + escapeHtml(item.reason) : ''}</div>
+      </div>
+      <div class="metric"><span>상태</span><b>${escapeHtml(item.status || 'WATCH')}</b></div>
+      <div class="metric"><span>점수</span><b>${Math.round(toNumber(item.score))}</b></div>
+      <div class="metric"><span>현재가</span><b>${formatUsd(item.price)}</b></div>
+      <div class="metric"><span>등락률</span><b class="${profitClass(item.changeRate)}">${formatRate(item.changeRate)}</b></div>
+    </article>`;
+}
 
-  if (!rows.length) {
-    list.innerHTML = '<div class="empty">현재 보유종목이 없습니다.</div>';
+function sellHtml(item) {
+  const profit = toNumber(item.realizedProfit);
+  return `
+    <article class="activity-card sell">
+      <div>
+        <div class="holding-name">${escapeHtml(item.name || item.symbol || '-')}</div>
+        <div class="holding-sub">${escapeHtml(item.symbol || '')} · ${escapeHtml(item.strategy || '')} · ${escapeHtml(formatDateTime(item.soldAt))}${item.reason ? ' · ' + escapeHtml(item.reason) : ''}</div>
+      </div>
+      <div class="metric"><span>수량</span><b>${toNumber(item.quantity).toLocaleString()}주</b></div>
+      <div class="metric"><span>매수가</span><b>${formatUsd(item.buyPrice)}</b></div>
+      <div class="metric"><span>매도가</span><b>${formatUsd(item.sellPrice)}</b></div>
+      <div class="metric"><span>실현손익</span><b class="${profitClass(profit)}">${formatUsd(profit, true)}</b></div>
+      <div class="metric"><span>수익률</span><b class="${profitClass(item.profitRate)}">${formatRate(item.profitRate)}</b></div>
+    </article>`;
+}
+
+function renderActivityPanel() {
+  const panel = document.getElementById('activityPanel');
+  if (!panel || !currentDashboardData) return;
+
+  const holdings = Array.isArray(currentDashboardData.details?.holdings) ? currentDashboardData.details.holdings : [];
+  const candidates = Array.isArray(currentDashboardData.details?.candidates) ? currentDashboardData.details.candidates : [];
+  const sells = Array.isArray(currentDashboardData.details?.sellHistory) ? currentDashboardData.details.sellHistory : [];
+
+  document.getElementById('holdingsTabCount').textContent = holdings.length;
+  document.getElementById('candidatesTabCount').textContent = candidates.length;
+  document.getElementById('sellsTabCount').textContent = sells.length;
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === activeTab);
+  });
+
+  if (activeTab === 'candidates') {
+    panel.innerHTML = candidates.length
+      ? candidates.map(candidateHtml).join('')
+      : '<div class="empty">현재 전략 후보가 없습니다.</div>';
     return;
   }
 
-  list.innerHTML = rows.map(item => {
-    const profit = toNumber(item.profitLoss);
-    const rate = toNumber(item.profitLossRate);
-    return `
-      <article class="holding-card">
-        <div>
-          <div class="holding-name">${escapeHtml(item.name || item.symbol || '-')}</div>
-          <div class="holding-sub">${escapeHtml(item.symbol || '')} · ${escapeHtml(item.exchange || '')} · ${escapeHtml(item.currency || 'USD')}</div>
-        </div>
-        <div class="metric"><span>수량</span><b>${toNumber(item.quantity).toLocaleString()}주</b></div>
-        <div class="metric"><span>매수가</span><b>${formatUsd(item.buyPrice)}</b></div>
-        <div class="metric"><span>현재가</span><b>${formatUsd(item.currentPrice)}</b></div>
-        <div class="metric"><span>평가금액</span><b>${formatUsd(item.evaluationAmount)}</b></div>
-        <div class="metric"><span>보유손익</span><b class="${profitClass(profit)}">${formatUsd(profit, true)} · ${formatRate(rate)}</b></div>
-      </article>`;
-  }).join('');
+  if (activeTab === 'sells') {
+    panel.innerHTML = sells.length
+      ? sells.map(sellHtml).join('')
+      : '<div class="empty">아직 매도 내역이 없습니다.</div>';
+    return;
+  }
+
+  panel.innerHTML = holdings.length
+    ? holdings.map(holdingHtml).join('')
+    : '<div class="empty">현재 보유종목이 없습니다.</div>';
+}
+
+function setupTabs() {
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeTab = btn.dataset.tab || 'holdings';
+      renderActivityPanel();
+    });
+  });
 }
 
 function renderDashboard(data = {}) {
+  currentDashboardData = data;
   const overall = data.overall || {};
   setMetric('totalAsset', formatUsd(overall.totalAsset));
   setMetric('netProfit', formatUsd(overall.netProfit, true), overall.netProfit);
@@ -168,8 +274,9 @@ function renderDashboard(data = {}) {
   setMetric('totalExposure', formatUsd(overall.totalExposure));
   setMetric('unrealizedProfit', formatUsd(overall.unrealizedProfit, true), overall.unrealizedProfit);
 
+  renderRecent7Days(data);
   renderStrategies(data);
-  renderHoldings(data);
+  renderActivityPanel();
 
   const status = document.getElementById('apiStatus');
   if (status) {
@@ -195,7 +302,6 @@ async function loadDashboard() {
       status.textContent = 'API 조회 중';
       status.className = '';
     }
-
     const response = await fetch(`${US_API_BASE}/strategy-dashboard-summary`, { cache: 'no-store' });
     const data = await response.json();
     if (!response.ok || data.ok === false) {
@@ -213,6 +319,7 @@ async function loadDashboard() {
   }
 }
 
+setupTabs();
 window.loadDashboard = loadDashboard;
 loadDashboard();
 setInterval(loadDashboard, 30000);
