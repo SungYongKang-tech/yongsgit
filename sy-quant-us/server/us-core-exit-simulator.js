@@ -284,6 +284,16 @@ function getSimulation(dateKey) {
   };
 }
 
+if (require.main === module) {
+  try {
+    const dateKey = String(process.argv[2] || '').trim();
+    console.log(JSON.stringify(getSimulation(dateKey), null, 2));
+  } catch (err) {
+    console.error(JSON.stringify({ ok: false, simulationOnly: true, actualOrderEnabled: false, error: err.message }, null, 2));
+    process.exitCode = 1;
+  }
+}
+
 module.exports = {
   PROFILES,
   evaluatePosition,
