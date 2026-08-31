@@ -6,6 +6,7 @@ const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
 const { exec } = require("child_process");
+const { getRecentTradingDateKeys } = require("./market-calendar");
 
 // SY Quant MASTER 단일계좌 공통 자금관리
 const portfolioManager = require("./portfolio-manager");
@@ -71,6 +72,9 @@ function isKoreanWeekday() {
 
 app.use(cors());
 app.use(express.json());
+
+// SY Quant 분석자료 ZIP 다운로드 API
+require("./analysis-download")(app);
 
 const stocksPath = path.join(__dirname, "stocks.json");
 
@@ -198,7 +202,6 @@ const AUTO_TRADER_CORE_FILE = path.join(
   __dirname,
   "auto-trader-core.js"
 );
-
 const CODE_CHANGE_LOG_FILE = path.join(
   __dirname,
   "code-change-log.json"
@@ -1267,6 +1270,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 
 
+
 /*
  * HOT 후보 API
  *
@@ -1398,7 +1402,6 @@ function normalizeHotRankRow(row = {}, source) {
     row.now_trde_qty || row.trde_qty || row.volume || row.exp_cntr_qty || 0
   ));
   const surgeRate = hotToNumber(row.sdnin_rt ?? row.surgeRate ?? 0);
-
   return {
     code,
     name: row.stk_nm || row.name || code,
@@ -3849,14 +3852,9 @@ function dashboardTodayKey() {
 }
 
 function dashboardRecentDateKeys(days = 7) {
-  const nowKst = new Date(Date.now() + 9 * 60 * 60 * 1000);
-  const result = [];
-  for (let offset = days - 1; offset >= 0; offset--) {
-    const date = new Date(nowKst);
-    date.setUTCDate(date.getUTCDate() - offset);
-    result.push(date.toISOString().slice(0, 10));
-  }
-  return result;
+  // 달력 7일이 아니라 KRX 실제 최근 7거래일을 사용한다.
+  // 주말·공휴일·대체공휴일·특별휴장일·연말휴장일은 제외된다.
+  return getRecentTradingDateKeys(days);
 }
 
 function dashboardLogDate(log = {}) {
@@ -4115,7 +4113,7 @@ function dashboardMetric({
     ? dashboardNumber(initialCapital)
     : dashboardNumber(contributionBase);
   const profitRate = rateBase > 0 ? (netProfit / rateBase) * 100 : 0;
-  const today = recentDateKeys[recentDateKeys.length - 1] || dashboardTodayKey();
+  const today = dashboardTodayKey();
   const todayBuyLogs = buyLogs.filter(log => dashboardLogDate(log) === today);
   const todaySellLogs = sellLogs.filter(log => dashboardLogDate(log) === today);
   const wins = closedRows.filter(row => dashboardNumber(row.profit) > 0).length;
@@ -4176,7 +4174,7 @@ app.get("/api/strategy-dashboard-summary", (req, res) => {
     const waveSummary = waveState.summary || getWaveSummary();
     const fastSummary = getFastSummary(fastState);
     const recentDateKeys = dashboardRecentDateKeys(7);
-    const today = recentDateKeys[recentDateKeys.length - 1];
+    const today = dashboardTodayKey();
 
     const mainLogs = Array.isArray(mainState.tradeLogs) ? mainState.tradeLogs : [];
     const mainHoldings = Array.isArray(mainState.holdings) ? mainState.holdings : [];
@@ -4869,10 +4867,7 @@ const openSummary = {
 
 
 
-for (let i = 6; i >= 0; i--) {
-  const d = new Date();
-  d.setDate(d.getDate() - i);
-  const dateKey = d.toISOString().slice(0, 10);
+for (const dateKey of getRecentTradingDateKeys(7)) {
 
   const daySellLogs = sellLogs.filter((log) =>
     String(log.date || "").includes(dateKey)
@@ -7297,7 +7292,6 @@ app.get("/api/today-trade-analysis", (req, res) => {
       sellReasonAnalysis.topLossReason;
 
     const byStrategy = {};
-
     function ensureTodayStrategy(strategy) {
       if (!byStrategy[strategy]) {
         byStrategy[strategy] = {

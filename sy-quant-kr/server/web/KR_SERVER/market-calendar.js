@@ -1,14 +1,11 @@
 'use strict';
 
 const KR_HOLIDAY_CACHE = new Map();
-const US_HOLIDAY_CACHE = new Map();
 
+// 선거일·임시공휴일처럼 규칙만으로 계산할 수 없는 KRX 휴장일.
+// 새 임시휴장 공지가 나오면 이 목록만 추가하면 된다.
 const KR_SPECIAL_CLOSURES = new Set([
   '2026-06-03' // 제9회 전국동시지방선거
-]);
-
-const US_SPECIAL_CLOSURES = new Set([
-  '2025-01-09' // Jimmy Carter national day of mourning
 ]);
 
 function pad2(value) {
@@ -50,68 +47,8 @@ function dateKeyInTimeZone(date, timeZone) {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
-function marketTodayKey(market, now = new Date()) {
-  const id = String(market || '').toUpperCase();
-  return dateKeyInTimeZone(now, id === 'US' ? 'America/New_York' : 'Asia/Seoul');
-}
-
-function nthWeekdayOfMonth(year, month, targetWeekday, nth) {
-  const first = new Date(Date.UTC(year, month - 1, 1, 12));
-  const delta = (targetWeekday - first.getUTCDay() + 7) % 7;
-  return keyFromUtcDate(new Date(Date.UTC(year, month - 1, 1 + delta + (nth - 1) * 7, 12)));
-}
-
-function lastWeekdayOfMonth(year, month, targetWeekday) {
-  const last = new Date(Date.UTC(year, month, 0, 12));
-  const delta = (last.getUTCDay() - targetWeekday + 7) % 7;
-  last.setUTCDate(last.getUTCDate() - delta);
-  return keyFromUtcDate(last);
-}
-
-function easterSundayKey(year) {
-  const a = year % 19;
-  const b = Math.floor(year / 100);
-  const c = year % 100;
-  const d = Math.floor(b / 4);
-  const e = b % 4;
-  const f = Math.floor((b + 8) / 25);
-  const g = Math.floor((b - f + 1) / 3);
-  const h = (19 * a + b - d - g + 15) % 30;
-  const i = Math.floor(c / 4);
-  const k = c % 4;
-  const l = (32 + 2 * e + 2 * i - h - k) % 7;
-  const m = Math.floor((a + 11 * h + 22 * l) / 451);
-  const month = Math.floor((h + l - 7 * m + 114) / 31);
-  const day = ((h + l - 7 * m + 114) % 31) + 1;
-  return `${year}-${pad2(month)}-${pad2(day)}`;
-}
-
-function addObservedFixedHoliday(set, year, month, day, options = {}) {
-  const key = `${year}-${pad2(month)}-${pad2(day)}`;
-  const wd = weekday(key);
-  set.add(key);
-  if (wd === 6 && options.observeSaturday !== false) set.add(addDaysKey(key, -1));
-  if (wd === 0 && options.observeSunday !== false) set.add(addDaysKey(key, 1));
-}
-
-function buildUsHolidaySet(year) {
-  if (US_HOLIDAY_CACHE.has(year)) return US_HOLIDAY_CACHE.get(year);
-  const set = new Set();
-  addObservedFixedHoliday(set, year, 1, 1, { observeSaturday: false });
-  set.add(nthWeekdayOfMonth(year, 1, 1, 3));
-  set.add(nthWeekdayOfMonth(year, 2, 1, 3));
-  set.add(addDaysKey(easterSundayKey(year), -2));
-  set.add(lastWeekdayOfMonth(year, 5, 1));
-  if (year >= 2022) addObservedFixedHoliday(set, year, 6, 19);
-  addObservedFixedHoliday(set, year, 7, 4);
-  set.add(nthWeekdayOfMonth(year, 9, 1, 1));
-  set.add(nthWeekdayOfMonth(year, 11, 4, 4));
-  addObservedFixedHoliday(set, year, 12, 25);
-  for (const key of US_SPECIAL_CLOSURES) {
-    if (Number(key.slice(0, 4)) === year) set.add(key);
-  }
-  US_HOLIDAY_CACHE.set(year, set);
-  return set;
+function marketTodayKey(now = new Date()) {
+  return dateKeyInTimeZone(now, 'Asia/Seoul');
 }
 
 const CHINESE_LUNAR_FORMATTER = new Intl.DateTimeFormat('en-u-ca-chinese', {
@@ -144,6 +81,7 @@ function findLunarDate(year, lunarMonth, lunarDay) {
 
 function buildKrHolidaySet(year) {
   if (KR_HOLIDAY_CACHE.has(year)) return KR_HOLIDAY_CACHE.get(year);
+
   const groups = [];
   const addGroup = (name, dates, substituteRule = 'none') => {
     groups.push({ name, dates: dates.filter(Boolean), substituteRule });
@@ -158,6 +96,7 @@ function buildKrHolidaySet(year) {
 
   const lunarNewYear = findLunarDate(year, 1, 1);
   addGroup('설날', [addDaysKey(lunarNewYear, -1), lunarNewYear, addDaysKey(lunarNewYear, 1)], 'sunday');
+
   addGroup('부처님오신날', [findLunarDate(year, 4, 8)], 'weekend');
   addGroup('노동절', [`${year}-05-01`], year >= 2026 ? 'weekend' : 'none');
   addGroup('어린이날', [`${year}-05-05`], 'weekend');
@@ -181,10 +120,12 @@ function buildKrHolidaySet(year) {
 
   const holidays = new Set(base);
   const triggers = new Map();
+
   for (const group of groups) {
     let triggerKey = null;
     const overlap = group.dates.find(key => !isWeekend(key) && (counts.get(key) || 0) > 1);
     if (overlap && group.substituteRule !== 'none') triggerKey = `overlap:${overlap}`;
+
     if (!triggerKey && group.substituteRule === 'weekend') {
       const hit = group.dates.find(key => isWeekend(key));
       if (hit) triggerKey = `${group.name}:${hit}`;
@@ -194,6 +135,7 @@ function buildKrHolidaySet(year) {
       if (hit) triggerKey = `${group.name}:${hit}`;
     }
     if (!triggerKey) continue;
+
     const groupEnd = group.dates.slice().sort().at(-1);
     if (!triggers.has(triggerKey)) triggers.set(triggerKey, groupEnd);
   }
@@ -204,6 +146,7 @@ function buildKrHolidaySet(year) {
     holidays.add(candidate);
   }
 
+  // KRX는 12월 31일 또는 그 직전 거래일을 연말 휴장일로 둔다.
   let yearEndClosure = `${year}-12-31`;
   while (isWeekend(yearEndClosure) || holidays.has(yearEndClosure)) {
     yearEndClosure = addDaysKey(yearEndClosure, -1);
@@ -220,45 +163,23 @@ function isKrTradingDay(key) {
   return !buildKrHolidaySet(year).has(key);
 }
 
-function isUsTradingDay(key) {
-  if (isWeekend(key)) return false;
-  const year = Number(String(key).slice(0, 4));
-  return !buildUsHolidaySet(year).has(key);
-}
-
-function isTradingDay(market, key) {
-  return String(market || '').toUpperCase() === 'US'
-    ? isUsTradingDay(key)
-    : isKrTradingDay(key);
-}
-
-function getRecentTradingDates(market, count = 7, now = new Date()) {
-  const id = String(market || '').toUpperCase();
+function getRecentTradingDateKeys(count = 7, now = new Date()) {
   const target = Math.max(1, Math.trunc(Number(count) || 7));
   const result = [];
-  let key = marketTodayKey(id, now);
+  let key = marketTodayKey(now);
   let guard = 0;
+
   while (result.length < target && guard < 60) {
-    if (isTradingDay(id, key)) {
-      const [, month, day] = key.split('-').map(Number);
-      result.push({ key, label: `${month}/${day}` });
-    }
+    if (isKrTradingDay(key)) result.push(key);
     key = addDaysKey(key, -1);
     guard += 1;
   }
-  return result.reverse();
-}
 
-function getRecentTradingDateKeys(market, count = 7, now = new Date()) {
-  return getRecentTradingDates(market, count, now).map(item => item.key);
+  return result.reverse();
 }
 
 module.exports = {
   marketTodayKey,
-  dateKeyInTimeZone,
-  isTradingDay,
   isKrTradingDay,
-  isUsTradingDay,
-  getRecentTradingDates,
   getRecentTradingDateKeys
 };
