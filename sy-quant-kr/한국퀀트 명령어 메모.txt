@@ -1,0 +1,487 @@
+SY QUANT KR - 자주 사용하는 명령어 / 분석 메모
+기준: 2026-08-31 현재 구조
+
+======================================================================
+[현재 한국 서버 핵심]
+======================================================================
+
+SSH / PuTTY
+host : ubuntu@sytrader.duckdns.org
+키   : 바탕화면 oracle.ppk
+
+서버 폴더
+cd /home/ubuntu/sy-quant-kr
+
+PM2 이름
+sy-quant-kr-server
+
+포트
+3000
+
+실행 파일
+/home/ubuntu/sy-quant-kr/server.js
+
+======================================================================
+[자주 사용하는 입력어]
+======================================================================
+
+cd /home/ubuntu/sy-quant-kr
+
+pm2 list
+pm2 describe sy-quant-kr-server | grep -Ei "status|script path|cwd"
+pm2 logs sy-quant-kr-server --lines 50
+pm2 logs sy-quant-kr-server --lines 100
+pm2 logs sy-quant-kr-server --err --lines 50 --nostream
+pm2 flush
+
+node --check server.js
+node --check portfolio-manager.js
+
+# 전략 파일이 실제 폴더에 있을 때만 검사
+for f in auto-trader-core.js open-strategy.js wave-strategy.js fast-strategy.js hot-scanner.js; do
+  [ -f "$f" ] && echo "CHECK $f" && node --check "$f"
+done
+
+pm2 restart sy-quant-kr-server --update-env
+pm2 save
+
+======================================================================
+[서버 정상 여부 한 번에 확인]
+======================================================================
+
+cd /home/ubuntu/sy-quant-kr
+
+echo "===== PM2 ====="
+pm2 list
+
+echo ""
+echo "===== SERVER STATUS ====="
+curl -s http://127.0.0.1:3000/api/status | python3 -m json.tool
+
+echo ""
+echo "===== MASTER PORTFOLIO ====="
+curl -s http://127.0.0.1:3000/api/portfolio-summary | python3 -m json.tool
+
+echo ""
+echo "===== RECENT ERROR ====="
+pm2 logs sy-quant-kr-server --err --lines 50 --nostream
+
+======================================================================
+[장 종료 후 분석파일 만들기]
+맨 위 DATE만 바꾸면 됨.
+
+예전 sy-quant-core / kiwwm-server 두 로그를 나눠 보지 않고,
+현재 단일 PM2 sy-quant-kr-server 로그를 전략별로 분리해서 저장.
+
+ChatGPT 분석 시 아래 5개를 같이 주는 것이 좋음.
+1) CORE/VOLUME
+2) OPEN/HOT
+3) WAVE
+4) FAST
+5) MASTER
+======================================================================
+
+DATE=2026-08-31
+DAY=${DATE//-/}
+
+KR_DIR=/home/ubuntu/sy-quant-kr
+KR_OUT=/home/ubuntu/.pm2/logs/sy-quant-kr-server-out.log
+KR_ERR=/home/ubuntu/.pm2/logs/sy-quant-kr-server-error.log
+
+echo "분석일: $DATE"
+
+# ============================================================
+# 1. CORE / VOLUME
+# ============================================================
+{
+  echo "===== CORE / VOLUME : KR SERVER OUT ====="
+  grep "${DATE}T" "$KR_OUT" 2>/dev/null \
+    | grep -Ei 'CORE|VOLUME|MASTER|PORTFOLIO|매수|매도|보유|차단|후보|재평가|점수|스위칭' \
+    || true
+
+  echo ""
+  echo "===== CORE / VOLUME : KR SERVER ERROR ====="
+  grep "${DATE}T" "$KR_ERR" 2>/dev/null \
+    | grep -Ei 'CORE|VOLUME|MASTER|PORTFOLIO|error|fail|timeout|시간초과|오류|실패' \
+    || true
+
+  echo ""
+  echo "===== CORE / VOLUME : MASTER SUMMARY ====="
+  curl -fsS http://127.0.0.1:3000/api/portfolio-summary \
+    | python3 -c '
+import sys,json
+d=json.load(sys.stdin)
+s=d.get("strategies") or {}
+print(json.dumps({"CORE":s.get("CORE") or {},"VOLUME":s.get("VOLUME") or {}}, ensure_ascii=False, indent=2))
+' 2>/dev/null || echo "CORE/VOLUME MASTER 요약 조회 실패"
+
+} > ~/syquant-kr-core-volume-${DAY}-analysis.txt
+
+# ============================================================
+# 2. OPEN / HOT
+# HOT은 OPEN 후보탐색 보조자료
+# ============================================================
+{
+  echo "===== OPEN / HOT : KR SERVER OUT ====="
+  grep "${DATE}T" "$KR_OUT" 2>/dev/null \
+    | grep -Ei 'OPEN|HOT|MASTER|PORTFOLIO|매수|매도|차단|후보|지속|관찰|시장' \
+    || true
+
+  echo ""
+  echo "===== OPEN / HOT : KR SERVER ERROR ====="
+  grep "${DATE}T" "$KR_ERR" 2>/dev/null \
+    | grep -Ei 'OPEN|HOT|MASTER|PORTFOLIO|error|fail|timeout|시간초과|API|오류|실패' \
+    || true
+
+  echo ""
+  echo "===== OPEN LEARNING SUMMARY ====="
+  curl -fsS http://127.0.0.1:3000/api/open-learning-summary \
+    | python3 -m json.tool 2>/dev/null \
+    || echo "OPEN learning summary 조회 실패"
+
+  echo ""
+  echo "===== OPEN MASTER SUMMARY ====="
+  curl -fsS http://127.0.0.1:3000/api/portfolio-summary \
+    | python3 -c '
+import sys,json
+d=json.load(sys.stdin)
+print(json.dumps((d.get("strategies") or {}).get("OPEN") or {}, ensure_ascii=False, indent=2))
+' 2>/dev/null || echo "OPEN MASTER 요약 조회 실패"
+
+} > ~/syquant-kr-open-${DAY}-analysis.txt
+
+# ============================================================
+# 3. WAVE
+# ============================================================
+{
+  echo "===== WAVE : KR SERVER OUT ====="
+  grep "${DATE}T" "$KR_OUT" 2>/dev/null \
+    | grep -Ei 'WAVE|READY|TRIGGER|HOLD|PROTECT|REBOUND|COOLDOWN|전일급등|MASTER|PORTFOLIO|매수|매도' \
+    || true
+
+  echo ""
+  echo "===== WAVE : KR SERVER ERROR ====="
+  grep "${DATE}T" "$KR_ERR" 2>/dev/null \
+    | grep -Ei 'WAVE|wave-strategy|MASTER|PORTFOLIO|error|fail|timeout|시간초과|오류|실패' \
+    || true
+
+  echo ""
+  echo "===== WAVE LOCAL STATE ====="
+  if [ -f "$KR_DIR/paper-state-wave.json" ]; then
+    cat "$KR_DIR/paper-state-wave.json"
+  else
+    echo "paper-state-wave.json 없음 또는 현재 구조에서 별도 상태파일 미사용"
+  fi
+
+  echo ""
+  echo "===== MASTER WAVE SUMMARY ====="
+  curl -fsS http://127.0.0.1:3000/api/portfolio-summary \
+    | python3 -c '
+import sys,json
+d=json.load(sys.stdin)
+print(json.dumps((d.get("strategies") or {}).get("WAVE") or {}, ensure_ascii=False, indent=2))
+' 2>/dev/null || echo "MASTER WAVE 요약 조회 실패"
+
+} > ~/syquant-kr-wave-${DAY}-analysis.txt
+
+# ============================================================
+# 4. FAST
+# ============================================================
+{
+  echo "===== FAST : KR SERVER OUT ====="
+  grep "${DATE}T" "$KR_OUT" 2>/dev/null \
+    | grep -Ei 'FAST|MASTER|PORTFOLIO|매수|매도|후보|점수|트리거|관찰|진입|청산|손절|익절|보유' \
+    || true
+
+  echo ""
+  echo "===== FAST : KR SERVER ERROR ====="
+  grep "${DATE}T" "$KR_ERR" 2>/dev/null \
+    | grep -Ei 'FAST|MASTER|PORTFOLIO|error|fail|timeout|시간초과|API|오류|실패' \
+    || true
+
+  echo ""
+  echo "===== FAST LOCAL STATE ====="
+  if [ -f "$KR_DIR/paper-state-fast.json" ]; then
+    cat "$KR_DIR/paper-state-fast.json"
+  else
+    echo "paper-state-fast.json 없음 또는 현재 구조에서 별도 상태파일 미사용"
+  fi
+
+  echo ""
+  echo "===== MASTER FAST SUMMARY ====="
+  curl -fsS http://127.0.0.1:3000/api/portfolio-summary \
+    | python3 -c '
+import sys,json
+d=json.load(sys.stdin)
+print(json.dumps((d.get("strategies") or {}).get("FAST") or {}, ensure_ascii=False, indent=2))
+' 2>/dev/null || echo "MASTER FAST 요약 조회 실패"
+
+} > ~/syquant-kr-fast-${DAY}-analysis.txt
+
+# ============================================================
+# 5. MASTER 전체 계좌
+# ============================================================
+{
+  echo "===== MASTER PORTFOLIO SUMMARY ====="
+  curl -fsS http://127.0.0.1:3000/api/portfolio-summary \
+    | python3 -m json.tool \
+    || echo "MASTER portfolio 조회 실패"
+
+  echo ""
+  echo "===== PERFORMANCE SUMMARY ====="
+  curl -fsS http://127.0.0.1:3000/api/performance-summary \
+    | python3 -m json.tool 2>/dev/null \
+    || echo "performance-summary 조회 실패"
+
+  echo ""
+  echo "===== PAPER STATE FILE LIST ====="
+  find "$KR_DIR" -maxdepth 1 -type f -name 'paper-state*.json' -printf '%f\n' 2>/dev/null | sort
+
+  echo ""
+  echo "===== MASTER FINANCIAL STATE ====="
+
+  STATE=""
+  for p in "$KR_DIR/paper-state-core.json" "$KR_DIR/paper-state.json"; do
+    if [ -f "$p" ]; then STATE="$p"; break; fi
+  done
+
+  if [ -n "$STATE" ]; then
+    echo "사용 상태파일: $STATE"
+    STATE="$STATE" python3 - <<'PY'
+import os,json
+p=os.environ["STATE"]
+with open(p, encoding="utf-8") as f:
+    d=json.load(f)
+
+def n(v):
+    try: return int(float(v or 0))
+    except: return 0
+
+print("초기자산:", f'{n(d.get("initialCapital")):,}원')
+print("현금:", f'{n(d.get("totalCash")):,}원')
+holdings=d.get("holdings") or []
+logs=d.get("tradeLogs") or []
+print("보유종목:", len(holdings))
+print("거래로그:", len(logs))
+print("\n----- 현재 보유 -----")
+for x in holdings:
+    print(x.get("strategyGroup") or x.get("strategy"), x.get("name"), x.get("code"), "수량", x.get("qty"), "매수가", x.get("buyPrice"), "현재가", x.get("currentPrice"))
+print("\n----- 최근 거래 50건 -----")
+for x in logs[-50:]:
+    print(x.get("time") or x.get("date"), x.get("strategyGroup") or x.get("strategy"), x.get("type"), x.get("name"), x.get("code"), "손익", x.get("profit"), "수익률", x.get("profitRate"))
+PY
+  else
+    echo "MASTER 상태파일을 자동으로 찾지 못함"
+  fi
+
+  echo ""
+  echo "===== RECENT KR SERVER ERRORS ====="
+  tail -n 100 "$KR_ERR" 2>/dev/null || true
+
+} > ~/syquant-kr-master-${DAY}-analysis.txt
+
+echo ""
+echo "===== 생성 완료 ====="
+ls -lh \
+  ~/syquant-kr-core-volume-${DAY}-analysis.txt \
+  ~/syquant-kr-open-${DAY}-analysis.txt \
+  ~/syquant-kr-wave-${DAY}-analysis.txt \
+  ~/syquant-kr-fast-${DAY}-analysis.txt \
+  ~/syquant-kr-master-${DAY}-analysis.txt
+
+======================================================================
+[ChatGPT에 분석시킬 때]
+======================================================================
+
+한국장은 아래 5개를 같이 올리면 됨.
+
+syquant-kr-core-volume-YYYYMMDD-analysis.txt
+syquant-kr-open-YYYYMMDD-analysis.txt
+syquant-kr-wave-YYYYMMDD-analysis.txt
+syquant-kr-fast-YYYYMMDD-analysis.txt
+syquant-kr-master-YYYYMMDD-analysis.txt
+
+특정 전략만 볼 때도 MASTER 파일은 같이 주는 것이 좋음.
+
+======================================================================
+[OPEN 미매수 원인 파악]
+======================================================================
+
+브라우저
+https://sytrader.duckdns.org/api/open-learning-summary
+
+서버 내부
+curl -s http://127.0.0.1:3000/api/open-learning-summary | python3 -m json.tool
+
+======================================================================
+[PuTTY 접속]
+======================================================================
+
+host : ubuntu@sytrader.duckdns.org
+key  : 바탕화면 oracle.ppk
+
+======================================================================
+[WinSCP 접속]
+======================================================================
+
+host : ubuntu@sytrader.duckdns.org
+키   : 고급 → 인증 → ... → 바탕화면 oracle.ppk
+
+공개 웹 폴더
+/var/www/html
+
+한국 서버 작업 폴더
+/home/ubuntu/sy-quant-kr
+
+======================================================================
+[토큰 신규발급]
+======================================================================
+
+cd /home/ubuntu/sy-quant-kr
+ls -l token.js
+node token.js
+pm2 restart sy-quant-kr-server --update-env
+pm2 save
+curl -s http://127.0.0.1:3000/api/status | python3 -m json.tool
+
+======================================================================
+[코드 변경 후 서버 재시작]
+======================================================================
+
+cd /home/ubuntu/sy-quant-kr
+node --check server.js
+node --check portfolio-manager.js
+for f in auto-trader-core.js open-strategy.js wave-strategy.js fast-strategy.js hot-scanner.js; do
+  [ -f "$f" ] && node --check "$f"
+done
+pm2 restart sy-quant-kr-server --update-env
+pm2 save
+sleep 3
+curl -s http://127.0.0.1:3000/api/status | python3 -m json.tool
+curl -s http://127.0.0.1:3000/api/portfolio-summary | python3 -m json.tool
+pm2 logs sy-quant-kr-server --err --lines 30 --nostream
+
+======================================================================
+[전체 리셋 - 주의]
+======================================================================
+
+예전 메모의 ~/kiwoom-server 경로는 현재 틀림.
+리셋은 데이터 삭제 작업이므로 현재 server.js에 API가 실제 존재하는지 먼저 확인.
+
+cd /home/ubuntu/sy-quant-kr
+grep -n 'api/paper-state/reset' server.js
+
+위 grep에서 reset API가 확인될 때만:
+curl -X POST http://127.0.0.1:3000/api/paper-state/reset
+
+확인:
+curl -s http://127.0.0.1:3000/api/portfolio-summary | python3 -m json.tool
+
+※ 리셋 전 paper-state*.json 백업 권장.
+※ 장중 리셋 금지.
+
+======================================================================
+[오늘 거래로그만 상태파일에서 보기]
+======================================================================
+
+cd /home/ubuntu/sy-quant-kr
+STATE=""
+for p in paper-state-core.json paper-state.json; do
+  [ -f "$p" ] && STATE="$p" && break
+done
+
+echo "STATE=$STATE"
+
+if [ -n "$STATE" ]; then
+  jq --arg today "$(date +%F)" '
+    .tradeLogs[]
+    | select((.date // "") | contains($today))
+    | {time,name,type,strategyGroup,strategyName,discoverScore,buyPrice,sellPrice,profit,profitRate,changeRate,volume}
+  ' "$STATE"
+fi
+
+======================================================================
+[Crontab]
+======================================================================
+
+확인 : crontab -l
+수정 : crontab -e
+삭제 : crontab -r
+
+주의:
+예전 crontab에 /home/ubuntu/kiwoom-server, kiwwm-server, sy-quant-core가 있으면 현재 구조와 맞지 않음.
+
+현재 한국 서버 기준
+경로 : /home/ubuntu/sy-quant-kr
+PM2  : sy-quant-kr-server
+
+기존 cron 수정 전:
+crontab -l
+
+grep -nE 'api/token/refresh|api/server-auto-on|api/server-auto-buy-once|api/server-closing-profit-sell' \
+  /home/ubuntu/sy-quant-kr/server.js
+
+해당 API가 현재 server.js에 있는 것을 확인한 뒤 cron을 수정할 것.
+
+======================================================================
+[서버시간 확인]
+======================================================================
+
+date
+
+======================================================================
+[종목 단가 조회]
+======================================================================
+
+curl -s "http://127.0.0.1:3000/api/price?code=005930" | python3 -m json.tool
+
+======================================================================
+[로그 보기]
+======================================================================
+
+실시간
+pm2 logs sy-quant-kr-server --lines 50
+
+최근 100줄
+pm2 logs sy-quant-kr-server --lines 100 --nostream
+
+오류만
+pm2 logs sy-quant-kr-server --err --lines 100 --nostream
+
+로그 전체 삭제
+pm2 flush
+
+======================================================================
+[현재 서버파일 확인]
+======================================================================
+
+cd /home/ubuntu/sy-quant-kr
+pwd
+pm2 describe sy-quant-kr-server | grep -Ei "status|script path|cwd"
+ls -lh *.js 2>/dev/null
+
+======================================================================
+[브라우저 팁]
+======================================================================
+
+노트북만 화면을 잘 못 읽어올 때 크롬 콘솔:
+location.reload();
+
+크롬 콘솔에서 Ctrl+V 안될 때:
+allow pasting
+
+======================================================================
+[중요 - 예전 명칭은 더 이상 사용하지 않음]
+======================================================================
+
+사용하지 말 것:
+~/kiwoom-server
+kiwwm-server
+sy-quant-core
+/home/ubuntu/.pm2/logs/kiwwm-server-*.log
+/home/ubuntu/.pm2/logs/sy-quant-core-*.log
+
+현재:
+한국 폴더 : /home/ubuntu/sy-quant-kr
+한국 PM2  : sy-quant-kr-server
+한국 포트 : 3000

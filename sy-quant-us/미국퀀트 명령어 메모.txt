@@ -1,0 +1,481 @@
+SY QUANT US - 자주 사용하는 명령어 / 분석 메모
+기준: 2026-08-31 현재 구조
+
+======================================================================
+[현재 미국 서버 핵심]
+======================================================================
+
+SSH / PuTTY
+host : ubuntu@sytrader.duckdns.org
+키   : 바탕화면 oracle.ppk
+
+서버 폴더
+cd /home/ubuntu/sy-quant-us
+
+PM2 이름
+sy-quant-us-server
+
+포트
+3001
+
+모드
+PAPER
+
+실행 파일
+/home/ubuntu/sy-quant-us/server.js
+
+현재 개발 상태
+US-CORE : 관찰/가상검증 단계
+실제 주문 : OFF
+MASTER 신규매수 : OFF
+CORE buyEnabled : OFF
+
+======================================================================
+[자주 사용하는 입력어]
+======================================================================
+
+cd /home/ubuntu/sy-quant-us
+
+pm2 list
+pm2 describe sy-quant-us-server | grep -Ei "status|script path|cwd"
+pm2 logs sy-quant-us-server --lines 50
+pm2 logs sy-quant-us-server --lines 100
+pm2 logs sy-quant-us-server --err --lines 50 --nostream
+
+node --check server.js
+node --check us-core-strategy.js
+node --check us-core-market-client.js
+node --check us-core-virtual-tracker.js
+node --check us-core-history-store.js
+node --check us-core-daily-summary.js
+node --check us-core-exit-simulator.js
+node --check us-core-data-safety-patch.js
+node --check us-core-diagnostics.js
+
+pm2 restart sy-quant-us-server --update-env
+pm2 save
+
+======================================================================
+[US 서버 정상 여부 한 번에 확인]
+======================================================================
+
+cd /home/ubuntu/sy-quant-us
+
+echo "===== PM2 ====="
+pm2 list
+
+echo ""
+echo "===== US SERVER STATUS ====="
+curl -s http://127.0.0.1:3001/api/status | python3 -m json.tool
+
+echo ""
+echo "===== US PORTFOLIO ====="
+curl -s http://127.0.0.1:3001/api/portfolio-summary | python3 -m json.tool
+
+echo ""
+echo "===== US STRATEGY SETTINGS ====="
+curl -s http://127.0.0.1:3001/api/strategy-settings | python3 -m json.tool
+
+echo ""
+echo "===== CORE BUY SAFETY ====="
+curl -s http://127.0.0.1:3001/api/strategy-buy-check/CORE | python3 -m json.tool
+
+echo ""
+echo "===== CORE STATUS ====="
+curl -s http://127.0.0.1:3001/api/us-core/status | python3 -m json.tool
+
+echo ""
+echo "===== RECENT ERROR ====="
+pm2 logs sy-quant-us-server --err --lines 50 --nostream
+
+======================================================================
+[US-CORE 장중 확인]
+현재 서머타임 기준:
+미국 정규장 09:30 ET = 한국 22:30
+US-CORE 관찰 09:40~12:00 ET = 한국 약 22:40~01:00
+======================================================================
+
+echo "===== CORE STATUS ====="
+curl -s http://127.0.0.1:3001/api/us-core/status | python3 -m json.tool
+
+echo ""
+echo "===== VIRTUAL TRADES ====="
+curl -s http://127.0.0.1:3001/api/us-core/virtual-trades | python3 -m json.tool
+
+echo ""
+echo "===== CORE LOG ====="
+pm2 logs sy-quant-us-server --lines 150 --nostream \
+  | grep -E "US-CORE|READY|WATCH|가상진입|이력|일일요약|오류"
+
+======================================================================
+[US API 사전진단]
+후보/가상진입 상태를 쓰지 않는 읽기 전용 진단
+======================================================================
+
+cd /home/ubuntu/sy-quant-us
+node -r ./us-core-data-safety-patch us-core-diagnostics.js
+
+정상 목표:
+status: PASS
+passCount: 6
+warnCount: 0
+failCount: 0
+
+======================================================================
+[US-CORE 매도법 비교]
+실제 매도 아님. 5분 가격표본 기반 시뮬레이션.
+======================================================================
+
+cd /home/ubuntu/sy-quant-us
+node us-core-exit-simulator.js
+
+======================================================================
+[장 종료 후 US 분석파일 만들기]
+맨 위 DATE만 미국 거래일로 변경.
+======================================================================
+
+DATE=2026-08-31
+DAY=${DATE//-/}
+
+US_DIR=/home/ubuntu/sy-quant-us
+US_OUT=/home/ubuntu/.pm2/logs/sy-quant-us-server-out.log
+US_ERR=/home/ubuntu/.pm2/logs/sy-quant-us-server-error.log
+
+echo "미국 분석일: $DATE"
+
+# ============================================================
+# 1. US-CORE 관찰 / 후보 / 오류
+# ============================================================
+{
+  echo "===== US-CORE SERVER LOG ====="
+  grep "${DATE}T" "$US_OUT" 2>/dev/null \
+    | grep -E 'US-CORE|READY|WATCH|OBSERVE|가상진입|가상추적|이력|일일요약|데이터보정|오류' \
+    || true
+
+  echo ""
+  echo "===== US-CORE ERROR LOG ====="
+  grep "${DATE}T" "$US_ERR" 2>/dev/null \
+    | grep -Ei 'US-CORE|CORE|error|fail|timeout|오류|실패' \
+    || true
+
+  echo ""
+  echo "===== US-CORE STATUS ====="
+  curl -fsS http://127.0.0.1:3001/api/us-core/status \
+    | python3 -m json.tool \
+    || echo "US-CORE status 조회 실패"
+
+  echo ""
+  echo "===== US-CORE HISTORY ====="
+  curl -fsS "http://127.0.0.1:3001/api/us-core/history?date=${DATE}" \
+    | python3 -m json.tool \
+    || echo "US-CORE history 조회 실패"
+
+} > ~/syquant-us-core-${DAY}-analysis.txt
+
+# ============================================================
+# 2. US-CORE 가상진입 / 장마감요약 / 매도법 비교
+# ============================================================
+{
+  echo "===== US-CORE VIRTUAL TRADES ====="
+  curl -fsS http://127.0.0.1:3001/api/us-core/virtual-trades \
+    | python3 -m json.tool \
+    || echo "virtual trades 조회 실패"
+
+  echo ""
+  echo "===== US-CORE DAILY SUMMARY ====="
+  curl -fsS "http://127.0.0.1:3001/api/us-core/daily-summary?date=${DATE}" \
+    | python3 -m json.tool \
+    || echo "daily summary 조회 실패"
+
+  echo ""
+  echo "===== US-CORE DAILY SUMMARY TXT ====="
+  TXT="$US_DIR/us-core-reports/us-core-summary-${DAY}.txt"
+  if [ -f "$TXT" ]; then
+    cat "$TXT"
+  else
+    echo "장마감 FINAL TXT 아직 없음: $TXT"
+  fi
+
+  echo ""
+  echo "===== EXIT SIMULATION ====="
+  node "$US_DIR/us-core-exit-simulator.js" 2>&1
+
+} > ~/syquant-us-core-result-${DAY}-analysis.txt
+
+# ============================================================
+# 3. US MASTER / 안전상태 / 서버상태
+# ============================================================
+{
+  echo "===== US SERVER STATUS ====="
+  curl -fsS http://127.0.0.1:3001/api/status \
+    | python3 -m json.tool \
+    || echo "US status 조회 실패"
+
+  echo ""
+  echo "===== US PORTFOLIO ====="
+  curl -fsS http://127.0.0.1:3001/api/portfolio-summary \
+    | python3 -m json.tool \
+    || echo "US portfolio 조회 실패"
+
+  echo ""
+  echo "===== US STRATEGY SETTINGS ====="
+  curl -fsS http://127.0.0.1:3001/api/strategy-settings \
+    | python3 -m json.tool \
+    || echo "US strategy settings 조회 실패"
+
+  echo ""
+  echo "===== CORE BUY CHECK ====="
+  curl -fsS http://127.0.0.1:3001/api/strategy-buy-check/CORE \
+    | python3 -m json.tool \
+    || echo "CORE buy-check 조회 실패"
+
+  echo ""
+  echo "===== HISTORY RECORDER STATUS ====="
+  curl -fsS http://127.0.0.1:3001/api/us-core/history-status \
+    | python3 -m json.tool \
+    || echo "history status 조회 실패"
+
+  echo ""
+  echo "===== DAILY SUMMARY STATUS ====="
+  curl -fsS http://127.0.0.1:3001/api/us-core/daily-summary-status \
+    | python3 -m json.tool \
+    || echo "daily summary status 조회 실패"
+
+  echo ""
+  echo "===== RECENT US ERRORS ====="
+  tail -n 100 "$US_ERR" 2>/dev/null || true
+
+} > ~/syquant-us-master-${DAY}-analysis.txt
+
+echo ""
+echo "===== 생성 완료 ====="
+ls -lh \
+  ~/syquant-us-core-${DAY}-analysis.txt \
+  ~/syquant-us-core-result-${DAY}-analysis.txt \
+  ~/syquant-us-master-${DAY}-analysis.txt
+
+======================================================================
+[ChatGPT에 미국장 분석시킬 때]
+======================================================================
+
+현재 US는 CORE 관찰 단계이므로 아래 3개를 같이 올리면 됨.
+
+syquant-us-core-YYYYMMDD-analysis.txt
+syquant-us-core-result-YYYYMMDD-analysis.txt
+syquant-us-master-YYYYMMDD-analysis.txt
+
+특히 확인:
+후보수 / READY / WATCH / VWAP / RVOL / 당일위치 / 추세 / QQQ
+READY→가상진입 누락 / 10·30·60분 성과 / MFE·MAE / 장마감 / 매도법 비교
+
+======================================================================
+[US-CORE 날짜별 이력]
+======================================================================
+
+DATE=2026-08-31
+curl -s "http://127.0.0.1:3001/api/us-core/history?date=${DATE}" | python3 -m json.tool
+ls -lh /home/ubuntu/sy-quant-us/us-core-history/
+
+======================================================================
+[US-CORE 장마감 자동요약]
+======================================================================
+
+curl -s http://127.0.0.1:3001/api/us-core/daily-summary-status | python3 -m json.tool
+
+DATE=2026-08-31
+curl -s "http://127.0.0.1:3001/api/us-core/daily-summary?date=${DATE}" | python3 -m json.tool
+
+ls -lh /home/ubuntu/sy-quant-us/us-core-reports/
+cat /home/ubuntu/sy-quant-us/us-core-reports/us-core-summary-20260831.txt
+
+자동 FINAL 생성: 16:20 ET
+
+======================================================================
+[US-CORE 가상진입]
+======================================================================
+
+curl -s http://127.0.0.1:3001/api/us-core/virtual-trades | python3 -m json.tool
+ls -lh /home/ubuntu/sy-quant-us/us-core-virtual-trades.json
+
+======================================================================
+[CORE 신규매수 차단 확인 - 중요]
+======================================================================
+
+curl -s http://127.0.0.1:3001/api/strategy-buy-check/CORE | python3 -m json.tool
+
+현재 검증단계 정상값:
+allowed: false
+masterBuyEnabled: false
+buyEnabled: false
+implemented: false
+
+======================================================================
+[US 전략 설정]
+======================================================================
+
+curl -s http://127.0.0.1:3001/api/strategy-settings | python3 -m json.tool
+
+주의:
+검증 완료 전 MASTER BUY / 전략 BUY 켜지 말 것.
+
+======================================================================
+[미국 종목 현재가]
+======================================================================
+
+NVDA
+curl -s "http://127.0.0.1:3001/api/us/quote?exchange=ND&symbol=NVDA" | python3 -m json.tool
+
+QQQ
+curl -s "http://127.0.0.1:3001/api/us/quote?exchange=ND&symbol=QQQ" | python3 -m json.tool
+
+======================================================================
+[토큰 신규발급]
+======================================================================
+
+cd /home/ubuntu/sy-quant-us
+ls -l token.js
+node token.js
+pm2 restart sy-quant-us-server --update-env
+pm2 save
+sleep 3
+curl -s http://127.0.0.1:3001/api/status | python3 -m json.tool
+
+======================================================================
+[코드 변경 후 서버 재시작]
+======================================================================
+
+cd /home/ubuntu/sy-quant-us
+node --check server.js
+node --check us-core-strategy.js
+node --check us-core-market-client.js
+node --check us-core-virtual-tracker.js
+node --check us-core-history-store.js
+node --check us-core-daily-summary.js
+node --check us-core-data-safety-patch.js
+pm2 restart sy-quant-us-server --update-env
+pm2 save
+sleep 3
+curl -s http://127.0.0.1:3001/api/status | python3 -m json.tool
+curl -s http://127.0.0.1:3001/api/strategy-buy-check/CORE | python3 -m json.tool
+pm2 logs sy-quant-us-server --err --lines 30 --nostream
+
+======================================================================
+[US 로그]
+======================================================================
+
+실시간
+pm2 logs sy-quant-us-server --lines 50
+
+최근 100줄
+pm2 logs sy-quant-us-server --lines 100 --nostream
+
+CORE 관련만
+pm2 logs sy-quant-us-server --lines 200 --nostream \
+| grep -E "US-CORE|READY|WATCH|가상진입|가상추적|이력|일일요약|오류"
+
+오류만
+pm2 logs sy-quant-us-server --err --lines 100 --nostream
+
+======================================================================
+[PM2 두 서버 같이 확인]
+======================================================================
+
+pm2 list
+
+정상 구조:
+sy-quant-kr-server  online
+sy-quant-us-server  online
+
+포트 확인:
+ss -ltnp | grep -E ':(3000|3001)\b' || true
+
+======================================================================
+[Crontab]
+======================================================================
+
+확인 : crontab -l
+수정 : crontab -e
+
+US-CORE 후보관찰, 가상추적, 이력저장, 장마감요약은
+sy-quant-us-server 내부 타이머에서 동작하므로 별도 cron 불필요.
+
+US 경로 : /home/ubuntu/sy-quant-us
+US PM2  : sy-quant-us-server
+US 포트 : 3001
+
+======================================================================
+[US 관찰데이터 초기화 - 주의]
+======================================================================
+
+현재 관찰자료는 전략 검증용이므로 함부로 삭제하지 않는 것이 좋음.
+
+주요 데이터:
+us-core-virtual-trades.json
+us-core-history/
+us-core-reports/
+
+초기화가 꼭 필요하면 먼저 백업.
+현재는 별도 reset API를 기준명령으로 사용하지 않음.
+
+======================================================================
+[서버시간 확인]
+======================================================================
+
+date
+TZ=America/New_York date
+
+======================================================================
+[WinSCP]
+======================================================================
+
+host : ubuntu@sytrader.duckdns.org
+키   : 바탕화면 oracle.ppk
+
+US 서버 폴더:
+/home/ubuntu/sy-quant-us
+
+공개 웹 폴더:
+/var/www/html
+
+US 공개 대시보드 파일 예:
+/var/www/html/us-performance.html
+/var/www/html/us-performance.js
+/var/www/html/us-performance-candidate-details.js
+
+======================================================================
+[현재 US 핵심 파일]
+======================================================================
+
+cd /home/ubuntu/sy-quant-us
+ls -lh \
+  server.js \
+  kiwoom-us-client.js \
+  portfolio-manager.js \
+  strategy-settings-store.js \
+  market-calendar.js \
+  us-core-market-client.js \
+  us-core-strategy.js \
+  us-core-virtual-tracker.js \
+  us-core-history-store.js \
+  us-core-daily-summary.js \
+  us-core-exit-simulator.js \
+  us-core-data-safety-patch.js \
+  us-core-diagnostics.js
+
+======================================================================
+[중요 - 한국/미국 혼동 금지]
+======================================================================
+
+한국:
+폴더 /home/ubuntu/sy-quant-kr
+PM2  sy-quant-kr-server
+PORT 3000
+
+미국:
+폴더 /home/ubuntu/sy-quant-us
+PM2  sy-quant-us-server
+PORT 3001
+MODE PAPER
+
+미국 작업 중 한국 PM2를 재시작하지 말 것.
+한국 작업 중 미국 PM2를 재시작하지 말 것.

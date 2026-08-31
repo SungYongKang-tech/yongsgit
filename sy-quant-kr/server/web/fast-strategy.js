@@ -2,16 +2,14 @@ const fs = require("fs");
 const path = require("path");
 
 const API_BASE = process.env.SY_QUANT_API_BASE || "http://127.0.0.1:3000";
-
-// SY Quant MASTER 단일계좌 공통 자금관리
 const portfolioManager = require("./portfolio-manager");
+
 const STATE_FILE = path.join(__dirname, "paper-state-fast.json");
 const HOT_CANDIDATES_FILE = path.join(__dirname, "hot-candidates.json");
 const HOT_HISTORY_FILE = path.join(__dirname, "hot-candidates-history.json");
 const OPEN_MARKET_FILE = path.join(__dirname, "open-market.json");
 
-const STRATEGY_VERSION = "1.3.3-MASTER";
-
+const STRATEGY_VERSION = "1.3.4-MASTER";
 const FAST_MASTER_POSITION_RATIO = 0.10;
 
 const SETTINGS = {
@@ -19,10 +17,14 @@ const SETTINGS = {
   initialCapital: 50000000,
   positionRatio: 0.20,
   maxHoldingCount: 5,
-  maxDailyBuyCount: 5,
-  // 장초 5개 슬롯을 너무 빨리 소진하지 않도록 09:10 전에는 4회까지만 허용한다.
-  earlyReservedSlotUntil: "09:10",
-  earlyMaxDailyBuyCount: 4,
+  maxDailyBuyCount: 7,
+
+  // FAST 신규매수 슬롯을 장 초반에 모두 소진하지 않도록 단계적으로 연다.
+  // 09:00~09:05 누적 3회 / 09:05~09:20 누적 5회 / 09:20 이후 누적 7회.
+  openingReservedSlotUntil: "09:05",
+  openingMaxDailyBuyCount: 3,
+  earlyReservedSlotUntil: "09:20",
+  earlyMaxDailyBuyCount: 5,
 
   buyStartTime: "09:00",
   buyEndTime: "10:30",
@@ -37,6 +39,10 @@ const SETTINGS = {
   candidateMaxAgeMs: 20 * 60 * 1000,
   candidateMaxCount: 50,
   candidateRealtimeCheckCount: 5,
+  // 매수슬롯이 닫혀 있어도 누락된 시가/고가/저가 자료는 소량 보강한다.
+  candidateDataOnlyRealtimeCheckCount: 2,
+  dataOnlyRealtimeBatchCooldownMs: 15 * 1000,
+  dataOnlyRealtimeRefreshMaxAgeMs: 60 * 1000,
   realtimeEnrichCooldownMs: 12 * 1000,
   sampleWindowMs: 150 * 1000,
   minSampleCount: 3,
@@ -57,17 +63,28 @@ const SETTINGS = {
   minSourceCount: 2,
   minSectorPeerCount: 3,
 
-  marketDataRequired: true,
-  absoluteMarketBlockScore: 15,
-  extremeWeakMarketScore: 20,
+  // FAST는 약한 시장에서도 독립적으로 강한 종목을 잡는 전략이므로
+  // 시장온도는 일반 매수 차단이 아니라 소폭 점수보정과 6·7번째 진입 강화에만 주로 사용한다.
+  marketDataRequired: false,
+  absoluteMarketBlockScore: 5,
+  extremeWeakMarketScore: 8,
   extremeWeakMinVolumeRatio: 180,
-  weakMarketScore: 25,
+  weakMarketScore: 15,
+  marketAdjustmentWeakScore: 40,
+  marketAdjustmentStrongScore: 65,
+  lateBuyWeakMarketScore: 40,
+  sixthBuyMinFastScore: 78,
+  sixthBuyMinHotScore: 60,
+  sixthBuyMinDayPositionRate: 72,
+  seventhBuyMinFastScore: 82,
+  seventhBuyMinHotScore: 65,
+  seventhBuyMinDayPositionRate: 75,
   weakMinSampleCount: 4,
   weakMinOpenMomentumScore: 55,
   weakMinHotScore: 70,
   weakMinPersistence: 0.75,
 
-  // 초약세장에서도 개별주가 장 초반부터 독립적으로 치고 나갈 때의 전용 경로다.
+  // 초약세장에서도 개별주가 장 초반부터 독립적으로 치고 나갈 때의 전용 경로.
   earlyBreakoutFirstMinChangeRate: 1.5,
   earlyBreakoutFirstMaxChangeRate: 7.0,
   earlyBreakoutMinChangeRate: 1.5,
@@ -84,7 +101,7 @@ const SETTINGS = {
   earlyBreakoutMinTradeAmount: 300000000,
   earlyBreakoutMinSourceCount: 2,
 
-  // 이미 7%를 넘겨 발견된 종목은 거래량 절대값·교차소스가 강한 경우에만 제한 허용한다.
+  // 첫 포착이 늦었지만 강한 추세가 계속되는 종목용 경로.
   lateContinuationFirstMinChangeRate: 7.0,
   lateContinuationFirstMaxChangeRate: 15.0,
   lateContinuationMinChangeRate: 7.0,
@@ -100,15 +117,10 @@ const SETTINGS = {
   lateContinuationMinTradeAmount: 2000000000,
   lateContinuationMinSourceCount: 3,
 
-  // 신규매수는 신선한 시세만 사용하고, 보유매도는 위험관리 우선으로
-  // 서버의 fast-sell 5초 비상 캐시까지 허용한다.
-  buyMaxQuoteAgeMs: 3 * 1000,
-  sellMaxQuoteAgeMs: 5 * 1000,
-  buyPriceRequestTimeoutMs: 5 * 1000,
-  // 서버 가격큐 대기 + 키움 조회시간까지 감안해 매도는 더 오래 기다린다.
-  sellPriceRequestTimeoutMs: 12 * 1000,
-  // 매도 현재가 조회가 일시 실패하면 짧게 1회만 재시도한다.
-  // 첫 요청 실패 뒤 오래 기다리며 다른 FAST 보유종목 점검을 막지 않도록 250ms만 둔다.
+  buyMaxQuoteAgeMs: 3000,
+  sellMaxQuoteAgeMs: 5000,
+  buyPriceRequestTimeoutMs: 5000,
+  sellPriceRequestTimeoutMs: 12000,
   sellPriceRetryCount: 1,
   sellPriceRetryDelayMs: 250,
 
@@ -125,24 +137,6 @@ const SETTINGS = {
   weakMaxHoldingMinutes: 60,
   weakMaxHoldingPeakRate: 2.0
 };
-
-function getFastRuntimeSettings(masterState = null) {
-  try {
-    const state = masterState || portfolioManager.loadMasterState();
-    portfolioManager.ensureMasterState(state);
-    const runtime = portfolioManager.getStrategyRuntimeSettings(state, "FAST");
-    if (runtime) return runtime;
-  } catch (error) {
-    console.warn(`[FAST 런타임설정 조회 실패] ${error.message}`);
-  }
-  return {
-    buyEnabled: SETTINGS.enabled !== false,
-    positionRatio: FAST_MASTER_POSITION_RATIO,
-    maxHoldingCount: SETTINGS.maxHoldingCount,
-    maxDailyBuyCount: SETTINGS.maxDailyBuyCount,
-    maxExposureRate: 1
-  };
-}
 
 function nowText() {
   return new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
@@ -164,16 +158,53 @@ function getCurrentHHMM() {
   return `${hour}:${minute}`;
 }
 
-function getEffectiveDailyBuyLimit(hhmm = getCurrentHHMM(), masterState = null) {
-  const runtime = getFastRuntimeSettings(masterState);
-  const maxDailyBuyCount = Number(runtime.maxDailyBuyCount || 0);
-  if (hhmm < SETTINGS.earlyReservedSlotUntil) {
-    return Math.min(
-      maxDailyBuyCount,
-      SETTINGS.earlyMaxDailyBuyCount
-    );
+function getEffectiveDailyBuyLimit(hhmm = getCurrentHHMM()) {
+  if (hhmm < SETTINGS.openingReservedSlotUntil) {
+    return Math.min(SETTINGS.maxDailyBuyCount, SETTINGS.openingMaxDailyBuyCount);
   }
-  return maxDailyBuyCount;
+  if (hhmm < SETTINGS.earlyReservedSlotUntil) {
+    return Math.min(SETTINGS.maxDailyBuyCount, SETTINGS.earlyMaxDailyBuyCount);
+  }
+  return SETTINGS.maxDailyBuyCount;
+}
+
+function getFastMarketScoreAdjustment(marketData = {}) {
+  if (!marketData.available) return 0;
+  const score = toNumber(marketData.score);
+  if (score >= SETTINGS.marketAdjustmentStrongScore) return 2;
+  if (score >= 55) return 1;
+  if (score >= 35) return 0;
+  if (score >= 20) return -1;
+  return -2;
+}
+
+function getLateBuyMarketGuard(nextBuyNumber, evaluation, marketData = {}) {
+  if (nextBuyNumber <= 5) return { pass: true, reason: null };
+  if (!marketData.available || toNumber(marketData.score) >= SETTINGS.lateBuyWeakMarketScore) {
+    return { pass: true, reason: null };
+  }
+
+  const isSeventh = nextBuyNumber >= 7;
+  const minFastScore = isSeventh ? SETTINGS.seventhBuyMinFastScore : SETTINGS.sixthBuyMinFastScore;
+  const minHotScore = isSeventh ? SETTINGS.seventhBuyMinHotScore : SETTINGS.sixthBuyMinHotScore;
+  const minDayPosition = isSeventh
+    ? SETTINGS.seventhBuyMinDayPositionRate
+    : SETTINGS.sixthBuyMinDayPositionRate;
+
+  const failed = [];
+  if (toNumber(evaluation.fastScore) < minFastScore) {
+    failed.push(`FAST ${toNumber(evaluation.fastScore).toFixed(1)}/${minFastScore}`);
+  }
+  if (toNumber(evaluation.hotScore) < minHotScore) {
+    failed.push(`HOT ${toNumber(evaluation.hotScore).toFixed(1)}/${minHotScore}`);
+  }
+  if (toNumber(evaluation.dayPosition) < minDayPosition) {
+    failed.push(`당일위치 ${toNumber(evaluation.dayPosition).toFixed(1)}/${minDayPosition}%`);
+  }
+
+  return failed.length
+    ? { pass: false, reason: `약세장 ${nextBuyNumber}번째 진입강화 / ${failed.join(" · ")}` }
+    : { pass: true, reason: null };
 }
 
 function isKoreanWeekday() {
@@ -224,23 +255,17 @@ function writeJsonAtomic(filePath, value) {
   fs.renameSync(tempPath, filePath);
 }
 
-
 function getFastMasterSnapshot() {
   const masterState = portfolioManager.loadMasterState();
   portfolioManager.ensureMasterState(masterState);
-
   return {
     masterState,
-    ...portfolioManager.getStrategyAccountSnapshot(
-      masterState,
-      "FAST"
-    )
+    ...portfolioManager.getStrategyAccountSnapshot(masterState, "FAST")
   };
 }
 
 function applyMasterAccountToFastState(state) {
   const snapshot = getFastMasterSnapshot();
-
   state.accountMode = "MASTER_SHARED";
   state.initialCapital = snapshot.initialCapital;
   state.totalCash = snapshot.totalCash;
@@ -248,39 +273,23 @@ function applyMasterAccountToFastState(state) {
   state.tradeLogs = snapshot.tradeLogs;
   state.masterTotalAsset = snapshot.totalAsset;
   state.masterStrategyExposure = snapshot.strategyExposure;
-
   return state;
 }
 
 function persistFastHoldingMarksToMaster(state) {
-  if (!Array.isArray(state?.holdings)) {
-    return {
-      ok: true,
-      updated: 0
-    };
-  }
-
-  return portfolioManager.updateStrategyHoldingMarks(
-    "FAST",
-    state.holdings
-  );
+  if (!Array.isArray(state?.holdings)) return { ok: true, updated: 0 };
+  return portfolioManager.updateStrategyHoldingMarks("FAST", state.holdings);
 }
 
 function makeFastLocalStateForSave(state) {
-  const localState = JSON.parse(
-    JSON.stringify(state || {})
-  );
-
+  const localState = JSON.parse(JSON.stringify(state || {}));
   localState.accountMode = "MASTER_SHARED";
-
-  // 돈/보유/거래는 MASTER paper-state-core.json이 유일한 원본.
   delete localState.initialCapital;
   delete localState.totalCash;
   delete localState.holdings;
   delete localState.tradeLogs;
   delete localState.masterTotalAsset;
   delete localState.masterStrategyExposure;
-
   return localState;
 }
 
@@ -306,21 +315,15 @@ function createInitialState() {
 
 function normalizeState(state = {}) {
   if (!Array.isArray(state.candidates)) state.candidates = [];
-  if (!state.dailyStats || typeof state.dailyStats !== "object") {
-    state.dailyStats = {};
-  }
-
+  if (!state.dailyStats || typeof state.dailyStats !== "object") state.dailyStats = {};
   state.strategy = "FAST";
   state.strategyVersion = STRATEGY_VERSION;
   state.accountMode = "MASTER_SHARED";
-
   if (state.candidateDate !== todayKey()) {
     state.candidateDate = todayKey();
     state.candidates = [];
   }
-
   applyMasterAccountToFastState(state);
-
   return state;
 }
 
@@ -331,52 +334,31 @@ function loadFastState() {
     saveFastState(initial);
     return initial;
   }
-
-  return normalizeState(
-    readJson(
-      STATE_FILE,
-      createInitialState()
-    ) || createInitialState()
-  );
+  return normalizeState(readJson(STATE_FILE, createInitialState()) || createInitialState());
 }
 
 function saveFastState(state) {
   state.updatedAt = nowText();
-
-  // FAST 보유의 현재가/최고가/수익률 등 위험관리 값을 MASTER에 반영.
   persistFastHoldingMarksToMaster(state);
-
-  // FAST 파일에는 후보·관찰·dailyStats만 저장.
-  writeJsonAtomic(
-    STATE_FILE,
-    makeFastLocalStateForSave(state)
-  );
-
+  writeJsonAtomic(STATE_FILE, makeFastLocalStateForSave(state));
   return state;
 }
 
 function resetFastState() {
-  // FAST 로컬 후보/통계만 초기화한다.
-  // MASTER 현금/보유/거래는 최종 통합 리셋 API가 별도로 담당한다.
   const state = createInitialState();
   normalizeState(state);
-
   state.candidates = [];
   state.dailyStats = {};
   state.candidateDate = todayKey();
   state.lastRunAt = null;
   state.lastRunAtMs = 0;
   state.lastRunReason = "FAST 로컬상태 초기화";
-
   saveFastState(state);
   return state;
 }
 
 function getDailyStats(state, date = todayKey()) {
-  if (
-    !state.dailyStats[date] ||
-    typeof state.dailyStats[date] !== "object"
-  ) {
+  if (!state.dailyStats[date] || typeof state.dailyStats[date] !== "object") {
     state.dailyStats[date] = {
       date,
       buyCount: 0,
@@ -392,15 +374,8 @@ function getDailyStats(state, date = todayKey()) {
       positionRatio: FAST_MASTER_POSITION_RATIO
     };
   }
-
   const daily = state.dailyStats[date];
-
-  if (
-    !daily.boughtCodes ||
-    typeof daily.boughtCodes !== "object"
-  ) {
-    daily.boughtCodes = {};
-  }
+  if (!daily.boughtCodes || typeof daily.boughtCodes !== "object") daily.boughtCodes = {};
 
   if (
     !Number.isFinite(Number(daily.allocationBaseAsset)) ||
@@ -408,48 +383,50 @@ function getDailyStats(state, date = todayKey()) {
     !Number.isFinite(Number(daily.positionAmount)) ||
     Number(daily.positionAmount) <= 0
   ) {
-    const masterState =
-      portfolioManager.loadMasterState();
-
-    const baseAsset = Math.max(
-      0,
-      Math.floor(
-        portfolioManager.getEquity(masterState)
-      )
-    );
-
+    const masterState = portfolioManager.loadMasterState();
+    const baseAsset = Math.max(0, Math.floor(portfolioManager.getEquity(masterState)));
     daily.allocationBaseAsset = baseAsset;
+    daily.positionRatio = FAST_MASTER_POSITION_RATIO;
+    daily.positionAmount = Math.floor(baseAsset * FAST_MASTER_POSITION_RATIO);
     daily.allocationFixedAt = nowText();
   }
-
-  const runtime = getFastRuntimeSettings();
-  daily.positionRatio = Number(runtime.positionRatio || 0);
-  daily.positionAmount = Math.floor(
-    toNumber(daily.allocationBaseAsset) * daily.positionRatio
-  );
-
   return daily;
 }
 
-function getMarketData() {
-  const raw = readJson(OPEN_MARKET_FILE, {}) || {};
-  const date = String(raw.date || raw.checkedDate || raw.updatedDate || "").slice(0, 10);
+function normalizeFastMarketData(raw = {}, source = "UNKNOWN") {
+  const date = String(
+    raw.checkedDate || raw.date || raw.updatedDate || raw.dailyRiskDate || ""
+  ).slice(0, 10);
   if (date && date !== todayKey()) {
-    return { available: false, score: 0, type: "STALE", reason: "전일 시장자료" };
+    return { available: false, score: 0, type: "STALE", reason: "전일 시장자료", source };
   }
   const score = toNumber(
-    raw.marketScore ??
-    raw.finalMarketScore ??
-    raw.score ??
-    raw.totalScore ??
-    0
+    raw.marketScore ?? raw.finalMarketScore ?? raw.score ?? raw.totalScore ?? 0
   );
   return {
     available: score > 0,
     score,
     type: String(raw.marketType || raw.type || raw.level || "UNKNOWN"),
-    reason: raw.reason || raw.summary || null
+    reason: raw.reason || raw.summary || null,
+    checkedAt: raw.checkedAt || raw.updatedAt || null,
+    source
   };
+}
+
+function getMarketData() {
+  // 장중에는 MASTER의 최신 시장온도를 우선 사용한다.
+  try {
+    const masterState = portfolioManager.loadMasterState();
+    const masterMarket = masterState?.marketTemperature;
+    if (masterMarket && typeof masterMarket === "object") {
+      const normalized = normalizeFastMarketData(masterMarket, "MASTER_MARKET_TEMPERATURE");
+      if (normalized.available) return normalized;
+    }
+  } catch (error) {
+    console.warn(`[FAST 시장온도] MASTER 자료 읽기 실패 / ${error.message}`);
+  }
+  // MASTER 온도가 아직 준비되지 않은 장초에만 장전자료 fallback.
+  return normalizeFastMarketData(readJson(OPEN_MARKET_FILE, {}) || {}, "OPEN_MARKET_FALLBACK");
 }
 
 function isExcludedStock(item = {}) {
@@ -492,17 +469,14 @@ function calculateRealtimeDiscoverScore(item, currentPrice) {
   const open = Math.abs(toNumber(item.open || item.openPrice || item.raw?.open_pric));
   const dayPosition = calculateDayPosition(item, currentPrice);
   let score = 0;
-
   if (changeRate >= 0.3 && changeRate <= 5) score += 4;
   else if (changeRate > 5 && changeRate <= 9) score += 2;
   else if (changeRate > 9 && changeRate <= 15) score += 1;
   else if (changeRate < -2.5) score -= 2;
-
   if (volume >= 1000000) score += 4;
   else if (volume >= 500000) score += 3;
   else if (volume >= 100000) score += 2;
   else if (volume >= 50000) score += 1;
-
   if (open > 0 && currentPrice > open) score += 2;
   if (dayPosition >= 40 && dayPosition <= 85) score += 2;
   else if (dayPosition > 85 && dayPosition <= 96) score += 1;
@@ -514,12 +488,7 @@ function loadHotInputs() {
   const hot = readJson(HOT_CANDIDATES_FILE, {}) || {};
   const history = readJson(HOT_HISTORY_FILE, {}) || {};
   const hotAgeMs = Date.now() - toNumber(hot.updatedAtMs);
-
-  if (
-    hot.date !== todayKey() ||
-    hotAgeMs < 0 ||
-    hotAgeMs > SETTINGS.hotFileMaxAgeMs
-  ) {
+  if (hot.date !== todayKey() || hotAgeMs < 0 || hotAgeMs > SETTINGS.hotFileMaxAgeMs) {
     return { rows: [], hotAgeMs, reason: `HOT 자료 대기 ${Math.max(0, Math.round(hotAgeMs / 1000))}초` };
   }
 
@@ -543,9 +512,7 @@ function loadHotInputs() {
     });
   }
 
-  const detected = history.date === todayKey() && history.detected
-    ? history.detected
-    : {};
+  const detected = history.date === todayKey() && history.detected ? history.detected : {};
   const rows = Array.from(rowMap.values()).map(row => {
     const record = detected[row.code] || {};
     return {
@@ -565,6 +532,58 @@ function loadHotInputs() {
   return { rows, hotAgeMs, hotUpdatedAtMs: toNumber(hot.updatedAtMs), reason: null };
 }
 
+function mergeFastCandidateSnapshot(previous = {}, incoming = {}) {
+  const previousRaw = previous.raw && typeof previous.raw === "object" ? previous.raw : {};
+  const incomingRaw = incoming.raw && typeof incoming.raw === "object" ? incoming.raw : {};
+  const merged = { ...previous, ...incoming, raw: { ...previousRaw, ...incomingRaw } };
+
+  const preservePositive = (field, rawField) => {
+    const incomingValue = Math.abs(toNumber(incoming[field] || incomingRaw[rawField]));
+    const previousValue = Math.abs(toNumber(previous[field] || previousRaw[rawField]));
+    if (incomingValue > 0) merged[field] = incomingValue;
+    else if (previousValue > 0) merged[field] = previousValue;
+  };
+  preservePositive("open", "open_pric");
+  preservePositive("high", "high_pric");
+  preservePositive("low", "low_pric");
+
+  const previousEnriched = previous._fastRealtimeEnriched === true;
+  const incomingEnriched = incoming._fastRealtimeEnriched === true;
+  if (previousEnriched || incomingEnriched) {
+    merged._fastRealtimeEnriched = true;
+    merged._fastRealtimeEnrichedAtMs = Math.max(
+      toNumber(previous._fastRealtimeEnrichedAtMs),
+      toNumber(incoming._fastRealtimeEnrichedAtMs)
+    );
+  }
+
+  const currentPrice = Math.abs(toNumber(merged.currentPrice || merged.price));
+  const high = Math.abs(toNumber(merged.high || merged.raw?.high_pric));
+  const low = Math.abs(toNumber(merged.low || merged.raw?.low_pric));
+  if (currentPrice > 0 && high > low) {
+    merged.dayPosition = calculateDayPosition(merged, currentPrice);
+    if (merged._fastRealtimeEnriched === true) {
+      merged.hotScore = Number(calculateRealtimeHotScore(merged, currentPrice).toFixed(1));
+      merged.discoverScore = calculateRealtimeDiscoverScore(merged, currentPrice);
+    }
+  }
+  return merged;
+}
+
+function hasMissingRealtimeQuoteFields(snapshot = {}) {
+  const currentPrice = Math.abs(toNumber(snapshot.currentPrice || snapshot.price));
+  const open = Math.abs(toNumber(snapshot.open || snapshot.openPrice || snapshot.raw?.open_pric));
+  const high = Math.abs(toNumber(snapshot.high || snapshot.highPrice || snapshot.raw?.high_pric));
+  const low = Math.abs(toNumber(snapshot.low || snapshot.lowPrice || snapshot.raw?.low_pric));
+  return currentPrice <= 0 || open <= 0 || high <= 0 || low <= 0 || high <= low;
+}
+
+function needsDataOnlyRealtimeRefresh(snapshot = {}) {
+  if (hasMissingRealtimeQuoteFields(snapshot)) return true;
+  const enrichedAtMs = toNumber(snapshot._fastRealtimeEnrichedAtMs);
+  return enrichedAtMs > 0 && Date.now() - enrichedAtMs >= SETTINGS.dataOnlyRealtimeRefreshMaxAgeMs;
+}
+
 function makeSample(item, observedAtMs) {
   return {
     observedAtMs,
@@ -581,7 +600,6 @@ function updateCandidateObservation(state, item, sourceObservedAtMs) {
   const nowMs = Date.now();
   const code = normalizeCode(item.code);
   let candidate = state.candidates.find(row => row.code === code);
-
   if (!candidate) {
     candidate = {
       code,
@@ -599,20 +617,15 @@ function updateCandidateObservation(state, item, sourceObservedAtMs) {
     };
     state.candidates.push(candidate);
   }
-
   candidate.name = item.name || candidate.name || code;
   candidate.lastSeenAt = nowText();
   candidate.lastSeenAtMs = nowMs;
-  candidate.snapshot = { ...item, code };
+  candidate.snapshot = mergeFastCandidateSnapshot(candidate.snapshot, { ...item, code });
 
-  if (
-    sourceObservedAtMs > 0 &&
-    sourceObservedAtMs > toNumber(candidate.lastSourceObservedAtMs)
-  ) {
-    candidate.samples.push(makeSample(item, sourceObservedAtMs));
+  if (sourceObservedAtMs > 0 && sourceObservedAtMs > toNumber(candidate.lastSourceObservedAtMs)) {
+    candidate.samples.push(makeSample(candidate.snapshot, sourceObservedAtMs));
     candidate.lastSourceObservedAtMs = sourceObservedAtMs;
   }
-
   candidate.samples = candidate.samples
     .filter(sample => nowMs - toNumber(sample.observedAtMs) <= SETTINGS.sampleWindowMs)
     .slice(-20);
@@ -640,16 +653,14 @@ function calculatePersistence(samples = []) {
   };
 }
 
-function evaluateCandidate(candidate, snapshot, marketData) {
+function evaluateCandidate(candidate, snapshot, marketData = {}) {
   const currentPrice = Math.abs(toNumber(snapshot.currentPrice || snapshot.price));
   const changeRate = toNumber(snapshot.changeRate);
   const firstChangeRate = toNumber(candidate.firstChangeRate ?? snapshot.firstChangeRate ?? changeRate);
   const volumeRatio = toNumber(snapshot.tradeVolumeRatio);
   const dayPosition = calculateDayPosition(snapshot, currentPrice);
   const openPrice = Math.abs(toNumber(snapshot.open || snapshot.openPrice || snapshot.raw?.open_pric));
-  const openPositionRate = openPrice > 0
-    ? ((currentPrice - openPrice) / openPrice) * 100
-    : 0;
+  const openPositionRate = openPrice > 0 ? ((currentPrice - openPrice) / openPrice) * 100 : 0;
   const absoluteVolume = Math.abs(toNumber(snapshot.volume || snapshot.raw?.trde_qty));
   const tradeAmount = Math.max(
     Math.abs(toNumber(snapshot.tradeAmount || snapshot.tradeValue)),
@@ -671,7 +682,7 @@ function evaluateCandidate(candidate, snapshot, marketData) {
     ["excluded", !isExcludedStock(snapshot), "제외종목"],
     ["price", currentPrice > 0, "현재가 없음"],
     ["marketData", !SETTINGS.marketDataRequired || marketData.available, "당일 시장자료 없음"],
-    ["marketAbsolute", !marketData.available || marketData.score >= SETTINGS.absoluteMarketBlockScore, `시장절대차단 ${marketData.score.toFixed(1)}점`],
+    ["marketAbsolute", !marketData.available || toNumber(marketData.score) >= SETTINGS.absoluteMarketBlockScore, `시장절대차단 ${toNumber(marketData.score).toFixed(1)}점`],
     ["firstChange", firstChangeRate >= SETTINGS.firstMinChangeRate && firstChangeRate <= SETTINGS.firstMaxChangeRate, `최초상승 ${firstChangeRate.toFixed(2)}%`],
     ["currentChange", changeRate >= SETTINGS.minChangeRate && changeRate <= SETTINGS.maxChangeRate, `현재상승 ${changeRate.toFixed(2)}%`],
     ["volume", volumeRatio >= minVolumeRatio, `거래량 ${volumeRatio.toFixed(1)}% / 기준 ${minVolumeRatio}%`],
@@ -688,7 +699,7 @@ function evaluateCandidate(candidate, snapshot, marketData) {
     ["broadConfirmation", broadConfirmation, `교차확인 순위 ${sourceCount}·섹터 ${sectorPeerCount}`]
   ];
 
-  if (marketData.available && marketData.score < SETTINGS.weakMarketScore) {
+  if (marketData.available && toNumber(marketData.score) < SETTINGS.weakMarketScore) {
     standardChecks.push(
       ["weakSamples", persistence.sampleCount >= SETTINGS.weakMinSampleCount, `약세장 관찰 ${persistence.sampleCount}/${SETTINGS.weakMinSampleCount}회`],
       ["weakMomentum", momentumScore >= SETTINGS.weakMinOpenMomentumScore, `약세장 지속 ${momentumScore.toFixed(1)}점`],
@@ -701,8 +712,8 @@ function evaluateCandidate(candidate, snapshot, marketData) {
 
   if (
     marketData.available &&
-    marketData.score >= SETTINGS.absoluteMarketBlockScore &&
-    marketData.score < SETTINGS.extremeWeakMarketScore
+    toNumber(marketData.score) >= SETTINGS.absoluteMarketBlockScore &&
+    toNumber(marketData.score) < SETTINGS.extremeWeakMarketScore
   ) {
     standardChecks.push([
       "extremeWeakVolume",
@@ -715,12 +726,13 @@ function evaluateCandidate(candidate, snapshot, marketData) {
     ["excluded", !isExcludedStock(snapshot), "제외종목"],
     ["price", currentPrice > 0, "현재가 없음"],
     ["marketData", !SETTINGS.marketDataRequired || marketData.available, "당일 시장자료 없음"],
-    ["marketAbsolute", !marketData.available || marketData.score >= SETTINGS.absoluteMarketBlockScore, `시장절대차단 ${marketData.score.toFixed(1)}점`]
+    ["marketAbsolute", !marketData.available || toNumber(marketData.score) >= SETTINGS.absoluteMarketBlockScore, `시장절대차단 ${toNumber(marketData.score).toFixed(1)}점`]
   ];
+
   const weakBreakoutTrackEnabled = (
     marketData.available &&
-    marketData.score >= SETTINGS.absoluteMarketBlockScore &&
-    marketData.score < SETTINGS.weakMarketScore
+    toNumber(marketData.score) >= SETTINGS.absoluteMarketBlockScore &&
+    toNumber(marketData.score) < SETTINGS.weakMarketScore
   );
   const earlyBreakoutActive = weakBreakoutTrackEnabled && (
     firstChangeRate >= SETTINGS.earlyBreakoutFirstMinChangeRate &&
@@ -782,19 +794,21 @@ function evaluateCandidate(candidate, snapshot, marketData) {
   }));
   const selectedTrack = (
     evaluatedTracks.find(track => track.failedChecks.length === 0) ||
-    evaluatedTracks.sort((a, b) => a.failedChecks.length - b.failedChecks.length)[0]
+    evaluatedTracks.slice().sort((a, b) => a.failedChecks.length - b.failedChecks.length)[0]
   );
   const failedChecks = selectedTrack.failedChecks;
   const failed = failedChecks[0] || null;
   const failedKeys = failedChecks.map(([key]) => key);
   const failedReasons = failedChecks.map(([, , reason]) => reason);
+  const marketScoreAdjustment = getFastMarketScoreAdjustment(marketData);
   const fastScore = clamp(
     hotScore * 0.35 +
     momentumScore * 0.35 +
     persistence.pricePersistence * 15 +
     persistence.volumePersistence * 10 +
     Math.min(10, sourceCount * 4) +
-    Math.min(5, sectorPeerCount),
+    Math.min(5, sectorPeerCount) +
+    marketScoreAdjustment,
     0,
     100
   );
@@ -807,9 +821,7 @@ function evaluateCandidate(candidate, snapshot, marketData) {
     failedCount: failedChecks.length,
     reason: failed ? failed[2] : `FAST ${selectedTrack.name} 조건 통과`,
     secondaryReason: failedReasons.slice(1, 4).join(" · ") || null,
-    diagnosticReason: failed
-      ? failedReasons.slice(0, 4).join(" · ")
-      : `FAST ${selectedTrack.name} 조건 통과`,
+    diagnosticReason: failed ? failedReasons.slice(0, 4).join(" · ") : `FAST ${selectedTrack.name} 조건 통과`,
     currentPrice,
     changeRate,
     firstChangeRate,
@@ -827,9 +839,11 @@ function evaluateCandidate(candidate, snapshot, marketData) {
     volumePersistence: persistence.volumePersistence,
     priceRiseRate: persistence.priceRiseRate,
     fastScore,
-    marketScore: marketData.score,
-    marketType: marketData.type,
-    weakMarket: marketData.available && marketData.score < SETTINGS.weakMarketScore,
+    marketScoreAdjustment,
+    marketScore: toNumber(marketData.score),
+    marketType: marketData.type || "UNKNOWN",
+    marketSource: marketData.source || null,
+    weakMarket: marketData.available && toNumber(marketData.score) < SETTINGS.lateBuyWeakMarketScore,
     entryTrack: selectedTrack.name,
     availableTracks: evaluatedTracks.map(track => ({
       name: track.name,
@@ -845,7 +859,7 @@ function getCandidateStatus(evaluation) {
 }
 
 function applyCandidateEvaluation(candidate, snapshot, evaluation) {
-  candidate.snapshot = { ...snapshot, code: candidate.code };
+  candidate.snapshot = mergeFastCandidateSnapshot(candidate.snapshot, { ...snapshot, code: candidate.code });
   candidate.evaluation = evaluation;
   candidate.fastScore = Number(evaluation.fastScore.toFixed(1));
   candidate.status = getCandidateStatus(evaluation);
@@ -866,35 +880,39 @@ const REALTIME_DERIVED_FAILURE_KEYS = new Set([
 ]);
 
 function canRealtimeRecheck(candidate, evaluation) {
-  if (!evaluation || evaluation.failedKeys.includes("marketData")) return false;
+  if (!evaluation) return false;
+  if (evaluation.failedKeys.includes("excluded")) return false;
+  const lastCheckAtMs = toNumber(candidate.lastRealtimeCheckAtMs);
+  const cooldownReady = !lastCheckAtMs || Date.now() - lastCheckAtMs >= SETTINGS.realtimeEnrichCooldownMs;
+  if (!cooldownReady) return false;
+
+  if (hasMissingRealtimeQuoteFields(candidate.snapshot || {})) return true;
+  if (needsDataOnlyRealtimeRefresh(candidate.snapshot || {})) return true;
+  if (evaluation.failedKeys.includes("marketData")) return false;
   if (evaluation.failedKeys.includes("marketAbsolute")) return false;
   if (evaluation.pass) return true;
   if (!evaluation.failedKeys.length) return false;
-  if (!evaluation.failedKeys.every(key => REALTIME_DERIVED_FAILURE_KEYS.has(key))) return false;
-  const lastCheckAtMs = toNumber(candidate.lastRealtimeCheckAtMs);
-  return !lastCheckAtMs || Date.now() - lastCheckAtMs >= SETTINGS.realtimeEnrichCooldownMs;
+  return evaluation.failedKeys.every(key => REALTIME_DERIVED_FAILURE_KEYS.has(key));
 }
 
 function ingestCandidates(state, marketData) {
   const hot = loadHotInputs();
   if (!hot.rows.length) return { evaluations: [], reason: hot.reason || "HOT 후보 없음" };
-
   const sourceObservedAtMs = toNumber(hot.hotUpdatedAtMs || Date.now());
   const evaluations = [];
   for (const item of hot.rows) {
     if (!normalizeCode(item.code)) continue;
     const candidate = updateCandidateObservation(state, item, sourceObservedAtMs);
-    const evaluation = evaluateCandidate(candidate, item, marketData);
-    applyCandidateEvaluation(candidate, item, evaluation);
-    evaluations.push({ candidate, snapshot: item, evaluation });
+    const evaluationSnapshot = candidate.snapshot || item;
+    const evaluation = evaluateCandidate(candidate, evaluationSnapshot, marketData);
+    applyCandidateEvaluation(candidate, evaluationSnapshot, evaluation);
+    evaluations.push({ candidate, snapshot: candidate.snapshot || evaluationSnapshot, evaluation });
   }
-
   const nowMs = Date.now();
   state.candidates = state.candidates
     .filter(candidate => nowMs - toNumber(candidate.lastSeenAtMs) <= SETTINGS.candidateMaxAgeMs)
     .sort((a, b) => toNumber(b.fastScore) - toNumber(a.fastScore))
     .slice(0, SETTINGS.candidateMaxCount);
-
   evaluations.sort((a, b) => b.evaluation.fastScore - a.evaluation.fastScore);
   return { evaluations, reason: null };
 }
@@ -923,16 +941,9 @@ async function fetchJson(url, timeoutMs = SETTINGS.buyPriceRequestTimeoutMs) {
 async function getFastPrice(code, source = "fast") {
   const normalizedSource = String(source || "").toLowerCase();
   const isSellRequest = normalizedSource === "fast-sell";
-  const timeoutMs = isSellRequest
-    ? SETTINGS.sellPriceRequestTimeoutMs
-    : SETTINGS.buyPriceRequestTimeoutMs;
-  const maxQuoteAgeMs = isSellRequest
-    ? SETTINGS.sellMaxQuoteAgeMs
-    : SETTINGS.buyMaxQuoteAgeMs;
-  const maxAttempts = isSellRequest
-    ? 1 + Math.max(0, toNumber(SETTINGS.sellPriceRetryCount))
-    : 1;
-
+  const timeoutMs = isSellRequest ? SETTINGS.sellPriceRequestTimeoutMs : SETTINGS.buyPriceRequestTimeoutMs;
+  const maxQuoteAgeMs = isSellRequest ? SETTINGS.sellMaxQuoteAgeMs : SETTINGS.buyMaxQuoteAgeMs;
+  const maxAttempts = isSellRequest ? 1 + Math.max(0, toNumber(SETTINGS.sellPriceRetryCount)) : 1;
   let lastError = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -941,28 +952,17 @@ async function getFastPrice(code, source = "fast") {
         `${API_BASE}/api/price?code=${encodeURIComponent(code)}&source=${encodeURIComponent(source)}`,
         timeoutMs
       );
-      const currentPrice = Math.abs(
-        toNumber(data.currentPrice || data.price || data.raw?.cur_prc)
-      );
+      const currentPrice = Math.abs(toNumber(data.currentPrice || data.price || data.raw?.cur_prc));
       const observedAtMs = toNumber(data.quoteObservedAtMs || data.cachedAtMs);
-      const quoteAgeMs = observedAtMs > 0
-        ? Math.max(0, Date.now() - observedAtMs)
-        : 0;
-
+      const quoteAgeMs = observedAtMs > 0 ? Math.max(0, Date.now() - observedAtMs) : 0;
       if (!currentPrice) throw new Error("현재가 없음");
       if (observedAtMs > 0 && quoteAgeMs > maxQuoteAgeMs) {
-        throw new Error(
-          `시세 오래됨 ${Math.round(quoteAgeMs / 1000)}초 / ` +
-          `허용 ${Math.round(maxQuoteAgeMs / 1000)}초`
-        );
+        throw new Error(`시세 오래됨 ${Math.round(quoteAgeMs / 1000)}초 / 허용 ${Math.round(maxQuoteAgeMs / 1000)}초`);
       }
-
       return { ...data, currentPrice, quoteAgeMs };
     } catch (error) {
       lastError = error;
-
       if (attempt >= maxAttempts) break;
-
       console.warn(
         `[FAST 매도시세 재시도] ${normalizeCode(code) || code} / ` +
         `${attempt}/${maxAttempts - 1} / ${error.message}`
@@ -970,7 +970,6 @@ async function getFastPrice(code, source = "fast") {
       await sleep(SETTINGS.sellPriceRetryDelayMs);
     }
   }
-
   throw lastError || new Error("FAST 현재가 조회 실패");
 }
 
@@ -989,6 +988,7 @@ function buildRealtimeSnapshot(snapshot, priceData) {
     quoteObservedAtMs: toNumber(priceData.quoteObservedAtMs || Date.now()),
     quoteAgeMs: toNumber(priceData.quoteAgeMs),
     _fastRealtimeEnriched: true,
+    _fastRealtimeEnrichedAtMs: Date.now(),
     raw: { ...(snapshot.raw || {}), ...raw }
   };
   merged.dayPosition = calculateDayPosition(merged, currentPrice);
@@ -1004,124 +1004,54 @@ function wasBoughtToday(state, code) {
 function paperBuy(state, candidate, snapshot, evaluation) {
   const daily = getDailyStats(state);
   const code = normalizeCode(candidate.code);
-
   if (!evaluation.pass) return false;
 
   applyMasterAccountToFastState(state);
-
-  const masterState =
-    portfolioManager.loadMasterState();
-
+  const masterState = portfolioManager.loadMasterState();
   portfolioManager.ensureMasterState(masterState);
-
-  const strategyCheck =
-    portfolioManager.canStrategyTrade(
-      masterState,
-      "FAST"
-    );
-
+  const strategyCheck = portfolioManager.canStrategyTrade(masterState, "FAST");
   if (!strategyCheck.ok) {
     candidate.status = "WATCH";
-    candidate.reason =
-      `MASTER / ${strategyCheck.reason}`;
+    candidate.reason = `MASTER / ${strategyCheck.reason}`;
     return false;
   }
 
-  const duplicate =
-    portfolioManager.findHoldingByCode(
-      masterState,
-      code
-    );
-
+  const duplicate = portfolioManager.findHoldingByCode(masterState, code);
   if (duplicate) {
-    const owner =
-      duplicate.ownerStrategy ||
-      duplicate.strategyGroup ||
-      duplicate.strategy ||
-      "UNKNOWN";
-
+    const owner = duplicate.ownerStrategy || duplicate.strategyGroup || duplicate.strategy || "UNKNOWN";
     candidate.status = "WATCH";
-    candidate.reason =
-      `MASTER 동일종목 보유중 / ${owner}`;
+    candidate.reason = `MASTER 동일종목 보유중 / ${owner}`;
     return false;
   }
 
   if (wasBoughtToday(state, code)) return false;
-  const runtime = getFastRuntimeSettings(masterState);
-  if (!runtime.buyEnabled) {
-    candidate.status = "WATCH";
-    candidate.reason = "MASTER / FAST 신규매수 금지";
-    return false;
-  }
-  if (state.holdings.length >= Number(runtime.maxHoldingCount || 0)) return false;
+  if (state.holdings.length >= SETTINGS.maxHoldingCount) return false;
+  if (toNumber(daily.buyCount) >= SETTINGS.maxDailyBuyCount) return false;
 
-  const hhmm = getCurrentHHMM();
-  const effectiveDailyBuyLimit = getEffectiveDailyBuyLimit(hhmm, masterState);
-  if (toNumber(daily.buyCount) >= effectiveDailyBuyLimit) {
-    candidate.status = "WATCH";
-    candidate.reason = hhmm < SETTINGS.earlyReservedSlotUntil
-      ? `FAST 5번째 슬롯 예약 / ${SETTINGS.earlyReservedSlotUntil} 이후 재평가`
-      : `FAST 하루 매수한도 ${runtime.maxDailyBuyCount}회`;
-    return false;
-  }
-
-  const price =
-    Math.abs(toNumber(evaluation.currentPrice));
-
+  const price = Math.abs(toNumber(evaluation.currentPrice));
   if (!price) return false;
+  const dailyPositionAmount = Math.max(0, toNumber(daily.positionAmount));
+  const availability = portfolioManager.getAvailableCash(masterState, { strategy: "FAST" });
+  const targetAmount = Math.min(dailyPositionAmount, toNumber(availability.availableCash));
+  const qty = Math.floor(targetAmount / price);
 
-  const dailyPositionAmount =
-    Math.max(
-      0,
-      toNumber(daily.positionAmount)
-    );
-
-  const availability =
-    portfolioManager.getAvailableCash(
-      masterState,
-      { strategy: "FAST" }
-    );
-
-  const targetAmount = Math.min(
-    dailyPositionAmount,
-    toNumber(availability.availableCash)
-  );
-
-  const qty = Math.floor(
-    targetAmount / price
-  );
-
-  // 기존 FAST 규칙 유지:
-  // 목표금액의 95% 미만밖에 살 수 없으면 신규매수를 포기한다.
-  if (
-    qty <= 0 ||
-    targetAmount < dailyPositionAmount * 0.95
-  ) {
+  if (qty <= 0 || targetAmount < dailyPositionAmount * 0.95) {
     candidate.status = "WATCH";
-    candidate.reason =
-      `MASTER 가용현금 부족 / ` +
-      `${toNumber(availability.availableCash).toLocaleString("ko-KR")}원`;
+    candidate.reason = `MASTER 가용현금 부족 / ${toNumber(availability.availableCash).toLocaleString("ko-KR")}원`;
     return false;
   }
 
   const timestampMs = Date.now();
-
   const result = portfolioManager.executeBuy({
     strategy: "FAST",
     code,
-    name:
-      candidate.name ||
-      snapshot.name ||
-      code,
+    name: candidate.name || snapshot.name || code,
     price,
     requestedAmount: targetAmount,
     timestampMs,
     buyAt: nowText(),
     holding: {
-      name:
-        candidate.name ||
-        snapshot.name ||
-        code,
+      name: candidate.name || snapshot.name || code,
       highestPrice: price,
       firstChangeRate: evaluation.firstChangeRate,
       buyChangeRate: evaluation.changeRate,
@@ -1131,86 +1061,58 @@ function paperBuy(state, candidate, snapshot, evaluation) {
       marketScore: evaluation.marketScore,
       maxProfitRate: 0,
       profitRate: 0,
-      entryTrack:
-        evaluation.entryTrack || "STANDARD",
-      reason:
-        `FAST ${evaluation.entryTrack || "STANDARD"} 재검증 통과`
+      entryTrack: evaluation.entryTrack || "STANDARD",
+      reason: `FAST ${evaluation.entryTrack || "STANDARD"} 재검증 통과`
     },
     logType: "FAST_BUY",
-    tradeLog: {
-      evaluation
-    }
+    tradeLog: { evaluation }
   });
 
   if (!result.ok) {
     candidate.status = "WATCH";
-    candidate.reason =
-      `MASTER / ${result.reason || "매수승인 실패"}`;
+    candidate.reason = `MASTER / ${result.reason || "매수승인 실패"}`;
     applyMasterAccountToFastState(state);
     return false;
   }
 
   applyMasterAccountToFastState(state);
-
-  daily.buyCount =
-    toNumber(daily.buyCount) + 1;
-
-  daily.boughtCodes[code] =
-    result.holding?.name ||
-    candidate.name ||
-    code;
-
+  daily.buyCount = toNumber(daily.buyCount) + 1;
+  daily.boughtCodes[code] = result.holding?.name || candidate.name || code;
   candidate.status = "BOUGHT";
-  candidate.reason =
-    `FAST ${evaluation.entryTrack || "STANDARD"} ` +
-    `매수 ${price.toLocaleString()}원`;
+  candidate.reason = `FAST ${evaluation.entryTrack || "STANDARD"} 매수 ${price.toLocaleString()}원`;
 
   console.log(
-    `[FAST MASTER BUY] ` +
-    `${result.holding?.name || candidate.name || code}(${code}) / ` +
-    `${price.toLocaleString()}원 / ` +
-    `${toNumber(result.qty).toLocaleString()}주 / ` +
-    `${toNumber(result.buyAmount).toLocaleString()}원 / ` +
-    `상승 ${evaluation.changeRate.toFixed(2)}% / ` +
+    `[FAST MASTER BUY] ${result.holding?.name || candidate.name || code}(${code}) / ` +
+    `${price.toLocaleString()}원 / ${toNumber(result.qty).toLocaleString()}주 / ` +
+    `${toNumber(result.buyAmount).toLocaleString()}원 / 상승 ${evaluation.changeRate.toFixed(2)}% / ` +
     `FAST ${evaluation.fastScore.toFixed(1)}점`
   );
-
   return true;
 }
 
 function paperSell(state, holding, price, type, reason) {
   const sellPrice = Math.abs(toNumber(price));
-
-  if (!holding || !sellPrice) {
-    return false;
-  }
+  if (!holding || !sellPrice) return false;
 
   persistFastHoldingMarksToMaster(state);
-
   const result = portfolioManager.executeSell({
     strategy: "FAST",
-    positionId:
-      holding.positionId || null,
+    positionId: holding.positionId || null,
     code: holding.code,
     price: sellPrice,
     logType: type,
     reason,
     tradeLog: {
-      maxProfitRate:
-        toNumber(holding.maxProfitRate),
-      drawdownFromHigh:
-        toNumber(holding.drawdownFromHigh),
-      fastScore:
-        toNumber(holding.fastScore),
-      entryTrack:
-        holding.entryTrack || "STANDARD"
+      maxProfitRate: toNumber(holding.maxProfitRate),
+      drawdownFromHigh: toNumber(holding.drawdownFromHigh),
+      fastScore: toNumber(holding.fastScore),
+      entryTrack: holding.entryTrack || "STANDARD"
     }
   });
 
   if (!result.ok) {
     console.log(
-      `[FAST MASTER SELL 실패] ` +
-      `${holding.name}(${holding.code}) / ` +
+      `[FAST MASTER SELL 실패] ${holding.name}(${holding.code}) / ` +
       `${result.reason || "알 수 없는 오류"}`
     );
     applyMasterAccountToFastState(state);
@@ -1218,37 +1120,18 @@ function paperSell(state, holding, price, type, reason) {
   }
 
   applyMasterAccountToFastState(state);
-
-  const profit =
-    toNumber(result.profit);
-
-  const profitRate =
-    toNumber(result.profitRate);
-
+  const profit = toNumber(result.profit);
+  const profitRate = toNumber(result.profitRate);
   const daily = getDailyStats(state);
-
-  daily.sellCount =
-    toNumber(daily.sellCount) + 1;
-
-  daily.realizedProfit =
-    toNumber(daily.realizedProfit) + profit;
-
-  if (profit > 0) {
-    daily.winCount =
-      toNumber(daily.winCount) + 1;
-  } else if (profit < 0) {
-    daily.lossCount =
-      toNumber(daily.lossCount) + 1;
-  }
+  daily.sellCount = toNumber(daily.sellCount) + 1;
+  daily.realizedProfit = toNumber(daily.realizedProfit) + profit;
+  if (profit > 0) daily.winCount = toNumber(daily.winCount) + 1;
+  else if (profit < 0) daily.lossCount = toNumber(daily.lossCount) + 1;
 
   console.log(
-    `[FAST MASTER SELL] ` +
-    `${holding.name}(${holding.code}) / ` +
-    `${sellPrice.toLocaleString()}원 / ` +
-    `${profitRate >= 0 ? "+" : ""}${profitRate.toFixed(2)}% / ` +
-    `${reason}`
+    `[FAST MASTER SELL] ${holding.name}(${holding.code}) / ${sellPrice.toLocaleString()}원 / ` +
+    `${profitRate >= 0 ? "+" : ""}${profitRate.toFixed(2)}% / ${reason}`
   );
-
   return true;
 }
 
@@ -1258,7 +1141,8 @@ function getSellDecision(holding, price, hhmm = getCurrentHHMM()) {
   const profitRate = buyPrice > 0 ? ((price - buyPrice) / buyPrice) * 100 : 0;
   const maxProfitRate = buyPrice > 0 ? ((highestPrice - buyPrice) / buyPrice) * 100 : 0;
   const drawdownRate = highestPrice > 0 ? ((price - highestPrice) / highestPrice) * 100 : 0;
-  const holdingMinutes = Math.max(0, (Date.now() - toNumber(holding.buyAtMs)) / 60000);
+  const holdingTimeMs = toNumber(holding.buyAtMs || holding.buyTimeMs || holding.timestampMs);
+  const holdingMinutes = Math.max(0, (Date.now() - holdingTimeMs) / 60000);
 
   if (profitRate <= SETTINGS.stopLossRate) {
     return { sell: true, type: "FAST_STOP_LOSS", reason: `초기손절 ${profitRate.toFixed(2)}%`, profitRate, maxProfitRate, drawdownRate };
@@ -1305,7 +1189,6 @@ function getSellDecision(holding, price, hhmm = getCurrentHHMM()) {
 async function checkHoldings(state) {
   const hhmm = getCurrentHHMM();
   if (hhmm < SETTINGS.sellStartTime || hhmm > SETTINGS.sellEndTime) return;
-
   for (const holding of [...state.holdings]) {
     try {
       const priceData = await getFastPrice(holding.code, "fast-sell");
@@ -1329,9 +1212,7 @@ async function checkHoldings(state) {
       holding.lastPriceError = error.message;
       holding.lastPriceErrorAt = nowText();
       holding.lastPriceErrorAtMs = Date.now();
-      console.warn(
-        `[FAST 보유조회 실패] ${holding.name} / 연속 ${holding.priceFailCount}회 / ${error.message}`
-      );
+      console.warn(`[FAST 보유조회 실패] ${holding.name} / 연속 ${holding.priceFailCount}회 / ${error.message}`);
       if (holding.priceFailCount === 3 || holding.priceFailCount % 5 === 0) {
         console.error(
           `[FAST 시세위험] ${holding.name}(${holding.code}) / ` +
@@ -1348,31 +1229,56 @@ async function tryFastBuys(state, evaluations, marketData) {
   const daily = getDailyStats(state);
   const hhmm = getCurrentHHMM();
   const effectiveDailyBuyLimit = getEffectiveDailyBuyLimit(hhmm);
+  const initialBuyCapacity = (
+    state.holdings.length < SETTINGS.maxHoldingCount &&
+    toNumber(daily.buyCount) < effectiveDailyBuyLimit
+  );
 
-  if (state.holdings.length >= Number(getFastRuntimeSettings().maxHoldingCount || 0)) return;
-  if (toNumber(daily.buyCount) >= effectiveDailyBuyLimit) {
-    if (
-      hhmm < SETTINGS.earlyReservedSlotUntil &&
-      toNumber(daily.buyCount) >= SETTINGS.earlyMaxDailyBuyCount
-    ) {
-      const nowMs = Date.now();
-      if (nowMs - toNumber(daily.lastReservedSlotLogAtMs) >= 60 * 1000) {
-        daily.lastReservedSlotLogAtMs = nowMs;
-        console.log(
-          `[FAST 슬롯예약] ${hhmm} / ` +
-          `09:10 전 ${SETTINGS.earlyMaxDailyBuyCount}회 사용 완료 / ` +
-          `5번째 매수는 ${SETTINGS.earlyReservedSlotUntil} 이후 허용`
-        );
-      }
+  if (!initialBuyCapacity) {
+    const nowMs = Date.now();
+    if (nowMs - toNumber(daily.lastDataOnlyRealtimeBatchAtMs) < SETTINGS.dataOnlyRealtimeBatchCooldownMs) {
+      return;
     }
-    return;
+    daily.lastDataOnlyRealtimeBatchAtMs = nowMs;
+    if (nowMs - toNumber(daily.lastReservedSlotLogAtMs) >= 60 * 1000) {
+      daily.lastReservedSlotLogAtMs = nowMs;
+      let nextText = "오늘 FAST 신규매수 종료";
+      if (toNumber(daily.buyCount) >= SETTINGS.maxDailyBuyCount) {
+        nextText = `${SETTINGS.maxDailyBuyCount}회 일일한도 사용 완료`;
+      } else if (hhmm < SETTINGS.openingReservedSlotUntil) {
+        nextText = `${SETTINGS.openingReservedSlotUntil} 이후 최대 ${SETTINGS.earlyMaxDailyBuyCount}회`;
+      } else if (hhmm < SETTINGS.earlyReservedSlotUntil) {
+        nextText = `${SETTINGS.earlyReservedSlotUntil} 이후 최대 ${SETTINGS.maxDailyBuyCount}회`;
+      } else if (state.holdings.length >= SETTINGS.maxHoldingCount) {
+        nextText = `동시보유 ${SETTINGS.maxHoldingCount}종목 한도`;
+      }
+      console.log(
+        `[FAST 슬롯예약] ${hhmm} / 현재 ${toNumber(daily.buyCount)}/${effectiveDailyBuyLimit}회 / ${nextText} / ` +
+        `누락 시세자료 보강은 계속`
+      );
+    }
   }
 
-  const targets = evaluations
+  let candidatePool = evaluations
     .filter(row => canRealtimeRecheck(row.candidate, row.evaluation))
     .filter(row => !state.holdings.some(item => item.code === row.candidate.code))
     .filter(row => !wasBoughtToday(state, row.candidate.code))
-    .slice(0, SETTINGS.candidateRealtimeCheckCount);
+    .sort((a, b) => {
+      const missingDiff = Number(hasMissingRealtimeQuoteFields(b.snapshot)) - Number(hasMissingRealtimeQuoteFields(a.snapshot));
+      if (missingDiff) return missingDiff;
+      const ageDiff = toNumber(a.snapshot?._fastRealtimeEnrichedAtMs) - toNumber(b.snapshot?._fastRealtimeEnrichedAtMs);
+      if (ageDiff) return ageDiff;
+      return toNumber(b.evaluation.fastScore) - toNumber(a.evaluation.fastScore);
+    });
+
+  if (!initialBuyCapacity) {
+    candidatePool = candidatePool.filter(row => needsDataOnlyRealtimeRefresh(row.snapshot));
+  }
+
+  const realtimeCheckCount = initialBuyCapacity
+    ? SETTINGS.candidateRealtimeCheckCount
+    : SETTINGS.candidateDataOnlyRealtimeCheckCount;
+  const targets = candidatePool.slice(0, realtimeCheckCount);
 
   for (const target of targets) {
     try {
@@ -1383,8 +1289,27 @@ async function tryFastBuys(state, evaluations, marketData) {
       const realtimeEvaluation = evaluateCandidate(target.candidate, realtimeSnapshot, marketData);
       applyCandidateEvaluation(target.candidate, realtimeSnapshot, realtimeEvaluation);
 
-      if (realtimeEvaluation.pass) {
-        paperBuy(state, target.candidate, realtimeSnapshot, realtimeEvaluation);
+      const currentLimit = getEffectiveDailyBuyLimit(getCurrentHHMM());
+      const buyCapacity = (
+        state.holdings.length < SETTINGS.maxHoldingCount &&
+        toNumber(daily.buyCount) < currentLimit
+      );
+
+      if (realtimeEvaluation.pass && buyCapacity) {
+        const nextBuyNumber = toNumber(daily.buyCount) + 1;
+        const lateGuard = getLateBuyMarketGuard(nextBuyNumber, realtimeEvaluation, marketData);
+        if (lateGuard.pass) {
+          paperBuy(state, target.candidate, realtimeSnapshot, realtimeEvaluation);
+        } else {
+          target.candidate.status = "WATCH";
+          target.candidate.reason = lateGuard.reason;
+          target.candidate.diagnosticReason = lateGuard.reason;
+          console.log(`[FAST 후반진입 보류] ${target.candidate.name}(${target.candidate.code}) / ${lateGuard.reason}`);
+        }
+      } else if (realtimeEvaluation.pass && !buyCapacity) {
+        target.candidate.status = "READY";
+        target.candidate.reason = `FAST 조건 통과 / 시세보강 완료 / 매수슬롯 ${toNumber(daily.buyCount)}/${currentLimit}`;
+        target.candidate.diagnosticReason = target.candidate.reason;
       }
     } catch (error) {
       target.candidate.status = "WATCH";
@@ -1392,72 +1317,31 @@ async function tryFastBuys(state, evaluations, marketData) {
       target.candidate.diagnosticReason = target.candidate.reason;
       console.warn(`[FAST 후보조회 실패] ${target.candidate.name} / ${error.message}`);
     }
-
-    if (
-      state.holdings.length >= Number(getFastRuntimeSettings().maxHoldingCount || 0) ||
-      toNumber(daily.buyCount) >= getEffectiveDailyBuyLimit(getCurrentHHMM())
-    ) break;
+    // 슬롯을 모두 사용해도 데이터 보강은 중단하지 않는다.
     await sleep(120);
   }
 }
 
 function calculatePortfolio(state) {
   const snapshot = getFastMasterSnapshot();
-
-  const fastHoldings =
-    Array.isArray(state?.holdings)
-      ? state.holdings
-      : snapshot.holdings;
-
+  const fastHoldings = Array.isArray(state?.holdings) ? state.holdings : snapshot.holdings;
   const holdingsValue = fastHoldings.reduce(
-    (sum, holding) =>
-      sum +
-      toNumber(
-        holding.currentPrice ||
-        holding.buyPrice
-      ) *
-      toNumber(holding.qty),
+    (sum, holding) => sum + toNumber(holding.currentPrice || holding.buyPrice) * toNumber(holding.qty),
     0
   );
-
   const unrealizedProfit = fastHoldings.reduce(
-    (sum, holding) =>
-      sum +
-      (
-        toNumber(
-          holding.currentPrice ||
-          holding.buyPrice
-        ) -
-        toNumber(holding.buyPrice)
-      ) *
-      toNumber(holding.qty),
+    (sum, holding) => sum +
+      (toNumber(holding.currentPrice || holding.buyPrice) - toNumber(holding.buyPrice)) * toNumber(holding.qty),
     0
   );
-
-  const fastLogs =
-    portfolioManager.getStrategyTradeLogs(
-      snapshot.masterState,
-      "FAST"
-    );
-
+  const fastLogs = portfolioManager.getStrategyTradeLogs(snapshot.masterState, "FAST");
   const realizedProfit = fastLogs.reduce(
-    (sum, log) =>
-      sum +
-      (
-        String(log.type || "").includes("SELL")
-          ? toNumber(log.profit)
-          : 0
-      ),
+    (sum, log) => sum + (String(log.type || "").includes("SELL") ? toNumber(log.profit) : 0),
     0
   );
-
   return {
-    totalAsset:
-      portfolioManager.getEquity(
-        snapshot.masterState
-      ),
-    cash:
-      toNumber(snapshot.masterState.totalCash),
+    totalAsset: portfolioManager.getEquity(snapshot.masterState),
+    cash: toNumber(snapshot.masterState.totalCash),
     holdingsValue,
     strategyHoldingsValue: holdingsValue,
     strategyExposure: snapshot.strategyExposure,
@@ -1470,8 +1354,7 @@ function getFastSummary(stateInput = null) {
   const state = stateInput || loadFastState();
   const daily = getDailyStats(state);
   const portfolio = calculatePortfolio(state);
-  const candidates = [...state.candidates]
-    .sort((a, b) => toNumber(b.fastScore) - toNumber(a.fastScore));
+  const candidates = [...state.candidates].sort((a, b) => toNumber(b.fastScore) - toNumber(a.fastScore));
   return {
     strategy: "FAST",
     strategyVersion: STRATEGY_VERSION,
@@ -1482,10 +1365,12 @@ function getFastSummary(stateInput = null) {
     allocationDate: daily.date,
     allocationFixedAt: daily.allocationFixedAt || null,
     allocationBaseAsset: toNumber(daily.allocationBaseAsset),
-    positionRatio: getFastRuntimeSettings().positionRatio,
+    positionRatio: FAST_MASTER_POSITION_RATIO,
     positionAmount: toNumber(daily.positionAmount),
-    maxHoldingCount: getFastRuntimeSettings().maxHoldingCount,
-    maxDailyBuyCount: getFastRuntimeSettings().maxDailyBuyCount,
+    maxHoldingCount: SETTINGS.maxHoldingCount,
+    maxDailyBuyCount: SETTINGS.maxDailyBuyCount,
+    openingReservedSlotUntil: SETTINGS.openingReservedSlotUntil,
+    openingMaxDailyBuyCount: SETTINGS.openingMaxDailyBuyCount,
     earlyReservedSlotUntil: SETTINGS.earlyReservedSlotUntil,
     earlyMaxDailyBuyCount: SETTINGS.earlyMaxDailyBuyCount,
     effectiveDailyBuyLimit: getEffectiveDailyBuyLimit(),
@@ -1527,7 +1412,6 @@ async function runFastOnce() {
     }
 
     await checkHoldings(state);
-
     let runReason = "보유종목 위험점검";
     if (hhmm >= SETTINGS.buyStartTime && hhmm <= SETTINGS.buyEndTime) {
       const marketData = getMarketData();
@@ -1564,12 +1448,8 @@ async function runFastOnce() {
 
 function getNextLoopMs() {
   const hhmm = getCurrentHHMM();
-  if (hhmm >= SETTINGS.buyStartTime && hhmm <= SETTINGS.buyEndTime) {
-    return SETTINGS.buyLoopMs;
-  }
-  if (hhmm >= SETTINGS.sellStartTime && hhmm <= SETTINGS.sellEndTime) {
-    return SETTINGS.sellOnlyLoopMs;
-  }
+  if (hhmm >= SETTINGS.buyStartTime && hhmm <= SETTINGS.buyEndTime) return SETTINGS.buyLoopMs;
+  if (hhmm >= SETTINGS.sellStartTime && hhmm <= SETTINGS.sellEndTime) return SETTINGS.sellOnlyLoopMs;
   return SETTINGS.idleLoopMs;
 }
 
@@ -1596,9 +1476,10 @@ function startFastStrategy() {
   started = true;
   console.log(
     `[FAST] V${STRATEGY_VERSION} 시작 / MASTER 단일계좌 / ` +
-    `종목당 당일 MASTER 기준자산 ${(getFastRuntimeSettings().positionRatio * 100).toFixed(0)}% / 최대 ${getFastRuntimeSettings().maxHoldingCount}종목 / ` +
+    `종목당 당일 MASTER 기준자산 ${(FAST_MASTER_POSITION_RATIO * 100).toFixed(0)}% / 최대 ${SETTINGS.maxHoldingCount}종목 / ` +
     `매수 ${SETTINGS.buyStartTime}~${SETTINGS.buyEndTime} / ` +
-    `${SETTINGS.earlyReservedSlotUntil} 전 최대 ${SETTINGS.earlyMaxDailyBuyCount}회`
+    `${SETTINGS.openingReservedSlotUntil} 전 ${SETTINGS.openingMaxDailyBuyCount}회 / ` +
+    `${SETTINGS.earlyReservedSlotUntil} 전 ${SETTINGS.earlyMaxDailyBuyCount}회 / 이후 ${SETTINGS.maxDailyBuyCount}회`
   );
   void fastLoop();
 }
@@ -1613,6 +1494,11 @@ module.exports = {
     SETTINGS,
     getDailyStats,
     getEffectiveDailyBuyLimit,
+    getFastMarketScoreAdjustment,
+    getLateBuyMarketGuard,
+    hasMissingRealtimeQuoteFields,
+    needsDataOnlyRealtimeRefresh,
+    mergeFastCandidateSnapshot,
     paperBuy,
     calculatePersistence,
     evaluateCandidate,
