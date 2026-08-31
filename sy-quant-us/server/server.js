@@ -7,6 +7,13 @@ const express = require('express');
 const cors = require('cors');
 const kiwoom = require('./kiwoom-us-client');
 const portfolioManager = require('./portfolio-manager');
+const strategySettings = require('./strategy-settings-store');
+const activityStore = require('./us-dashboard-activity-store');
+require('./us-core-data-safety-patch');
+const usCore = require('./us-core-strategy');
+const virtualTracker = require('./us-core-virtual-tracker');
+const coreHistory = require('./us-core-history-store');
+const coreDailySummary = require('./us-core-daily-summary');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -25,10 +32,7 @@ app.use(express.json());
 
 function sendError(res, err) {
   console.error('[SY Quant US API]', err.message);
-  res.status(500).json({
-    ok: false,
-    error: err.message
-  });
+  res.status(500).json({ ok: false, error: err.message });
 }
 
 function buildUsStrategyDashboardSummary(portfolio = {}) {
@@ -36,6 +40,36 @@ function buildUsStrategyDashboardSummary(portfolio = {}) {
   const totalProfitLoss = Number(portfolio.totalProfitLoss || 0);
   const totalReturnRate = Number(portfolio.totalReturnRate || 0);
   const unrealizedProfitLoss = Number(portfolio.unrealizedProfitLoss || 0);
+  const settings = strategySettings.getSettings();
+  const activity = activityStore.getDashboardActivity();
+  const coreStatus = usCore.getCoreStatus();
+
+  const strategies = Object.values(settings.strategies).map(item => {
+    const realizedProfit = Number(activity.realizedByStrategy?.[item.id] || 0);
+    const observerStatus = item.id === 'CORE' && !item.implemented
+      ? '관찰중 · BUY OFF'
+      : null;
+    return {
+      id: item.id,
+      label: item.label,
+      icon: item.icon,
+      status: observerStatus || (item.implemented
+        ? (item.buyEnabled ? 'BUY ON' : 'BUY OFF')
+        : '준비중 · BUY OFF'),
+      implemented: Boolean(item.implemented),
+      buyEnabled: Boolean(item.buyEnabled),
+      observerOnly: item.id === 'CORE' ? Boolean(coreStatus.observerOnly) : false,
+      singleBuyRate: Number(item.singleBuyRate || 0),
+      strategyMaxInvestmentRate: Number(item.strategyMaxInvestmentRate || item.allocationRate || 0),
+      allocationRate: Number(item.strategyMaxInvestmentRate || item.allocationRate || 0),
+      maxHoldings: Number(item.maxHoldings || 0),
+      dailyMaxNewBuys: Number(item.dailyMaxNewBuys || 0),
+      netProfit: realizedProfit,
+      profitRate: 0,
+      realizedProfit,
+      unrealizedProfit: 0
+    };
+  });
 
   return {
     ok: true,
@@ -55,14 +89,44 @@ function buildUsStrategyDashboardSummary(portfolio = {}) {
       unrealizedProfit: unrealizedProfitLoss,
       holdingCount: Number(portfolio.holdingCount || 0)
     },
-    strategies: [],
-    details: {
-      holdings: Array.isArray(portfolio.holdings) ? portfolio.holdings : []
+    strategyControl: {
+      masterBuyEnabled: Boolean(settings.masterBuyEnabled),
+      masterMaxInvestmentRate: Number(settings.masterMaxInvestmentRate || 0),
+      minimumCashRate: Number(settings.minimumCashRate || 0),
+      allocationTotal: Number(settings.allocationTotal || 0),
+      unallocatedRate: Number(settings.unallocatedRate || 0),
+      implementedCount: Number(settings.implementedCount || 0),
+      buyEnabledCount: Number(settings.buyEnabledCount || 0)
     },
-    calculationNote: 'US 전략은 아직 준비 중입니다. 현재는 USD 계좌 전체 성과를 표시합니다.',
+    strategies,
+    recent7Days: activity.recent7Days,
+    details: {
+      holdings: Array.isArray(portfolio.holdings) ? portfolio.holdings : [],
+      candidates: Array.isArray(activity.candidates) ? activity.candidates : [],
+      sellHistory: Array.isArray(activity.sellHistory) ? activity.sellHistory : []
+    },
+    observers: {
+      CORE: {
+        observerOnly: true,
+        orderSubmissionEnabled: false,
+        implemented: false,
+        session: coreStatus.session,
+        lastScan: coreStatus.lastScan,
+        virtualTracker: virtualTracker.getStatus(),
+        historyRecorder: coreHistory.getStatus(),
+        dailySummary: coreDailySummary.getStatus()
+      }
+    },
+    calculationNote: settings.masterBuyEnabled
+      ? '전체 신규매수 ON · 전략별 매수허용과 운전한도는 설정에서 관리합니다.'
+      : '전체 신규매수 OFF · US-CORE는 후보 관찰·가상성과 추적·일일 이력·장마감 요약만 수행하고 주문은 하지 않습니다.',
     updatedAt: portfolio.time || new Date().toISOString()
   };
 }
+
+app.get('/strategy-settings', (req, res) => {
+  res.sendFile(path.join(__dirname, 'web', 'strategy-settings.html'));
+});
 
 app.get('/api/status', (req, res) => {
   res.json({
@@ -74,6 +138,127 @@ app.get('/api/status', (req, res) => {
     cwd: process.cwd(),
     time: new Date().toISOString()
   });
+});
+
+app.get('/api/strategy-settings', (req, res) => {
+  try {
+    res.json({ ok: true, mode: MODE, settings: strategySettings.getSettings() });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.put('/api/strategy-settings', (req, res) => {
+  try {
+    const settings = strategySettings.updateSettings(req.body || {});
+    console.log(
+      '[US 전략설정 저장]',
+      `MASTER=${settings.masterBuyEnabled ? 'ON' : 'OFF'}`,
+      `MASTER_MAX=${settings.masterMaxInvestmentRate}%`,
+      `MIN_CASH=${settings.minimumCashRate}%`,
+      Object.values(settings.strategies)
+        .map(item => `${item.id}:1종목${item.singleBuyRate}%/전략${item.strategyMaxInvestmentRate}%/${item.maxHoldings}종목/일${item.dailyMaxNewBuys}회/${item.buyEnabled ? 'BUY_ON' : 'BUY_OFF'}`)
+        .join(' | ')
+    );
+    res.json({ ok: true, mode: MODE, settings });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+app.get('/api/strategy-buy-check/:strategyId', (req, res) => {
+  try {
+    const result = strategySettings.isBuyAllowed(req.params.strategyId);
+    res.json({
+      ok: true,
+      strategyId: String(req.params.strategyId || '').toUpperCase(),
+      allowed: result.allowed,
+      reason: result.reason,
+      masterBuyEnabled: Boolean(result.settings?.masterBuyEnabled),
+      strategy: result.strategy
+    });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/dashboard-activity', (req, res) => {
+  try {
+    res.json({ ok: true, mode: MODE, activity: activityStore.getDashboardActivity() });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-core/status', (req, res) => {
+  try {
+    res.json(usCore.getCoreStatus());
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-core/virtual-trades', (req, res) => {
+  try {
+    res.json(virtualTracker.getStatus({ includePositions: true }));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-core/history', (req, res) => {
+  try {
+    const date = String(req.query.date || '').trim();
+    res.json(coreHistory.getHistory(date));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-core/history-status', (req, res) => {
+  try {
+    res.json(coreHistory.getStatus());
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-core/daily-summary', (req, res) => {
+  try {
+    const date = String(req.query.date || '').trim();
+    res.json(coreDailySummary.getSummary(date, { preview: true }));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-core/daily-summary-status', (req, res) => {
+  try {
+    res.json(coreDailySummary.getStatus());
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.post('/api/us-core/scan', async (req, res) => {
+  try {
+    const force = req.body?.force === true || String(req.query.force || '') === '1';
+    const result = await usCore.runCoreScan({ force });
+    res.status(result.ok === false && result.status === 'ERROR' ? 500 : 200).json(result);
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-core/analyze', async (req, res) => {
+  try {
+    const exchange = String(req.query.exchange || '').toUpperCase();
+    const symbol = String(req.query.symbol || '').toUpperCase();
+    const result = await usCore.analyzeSymbol({ exchange, symbol });
+    res.json(result);
+  } catch (err) {
+    sendError(res, err);
+  }
 });
 
 app.get('/api/portfolio-summary', async (req, res) => {
@@ -99,7 +284,6 @@ app.get('/api/us/quote', async (req, res) => {
     const exchange = String(req.query.exchange || '').toUpperCase();
     const symbol = String(req.query.symbol || '').toUpperCase();
     const data = await kiwoom.getQuote(exchange, symbol);
-
     res.json({
       ok: true,
       mode: MODE,
@@ -124,7 +308,6 @@ app.get('/api/us/quote', async (req, res) => {
 app.get('/api/us/deposit', async (req, res) => {
   try {
     const usd = await kiwoom.getUsdDeposit();
-
     res.json({
       ok: true,
       mode: MODE,
@@ -144,7 +327,6 @@ app.get('/api/us/holdings', async (req, res) => {
     const exchange = String(req.query.exchange || '').toUpperCase();
     const symbol = String(req.query.symbol || '').toUpperCase();
     const result = await kiwoom.getHoldings({ exchange, symbol });
-
     res.json({
       ok: true,
       mode: MODE,
@@ -159,5 +341,18 @@ app.get('/api/us/holdings', async (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
+  const settings = strategySettings.getSettings();
   console.log('SY Quant US PAPER server listening on port ' + PORT);
+  console.log(
+    '[US 전략설정]',
+    `MASTER=${settings.masterBuyEnabled ? 'ON' : 'OFF'}`,
+    `MASTER_MAX=${settings.masterMaxInvestmentRate}%`,
+    `MIN_CASH=${settings.minimumCashRate}%`,
+    `구현전략=${settings.implementedCount}개`,
+    '미구현 전략 BUY는 서버에서 강제 OFF'
+  );
+  usCore.startCoreObserver();
+  virtualTracker.startVirtualTracker();
+  coreHistory.startHistoryRecorder();
+  coreDailySummary.startDailySummary();
 });
