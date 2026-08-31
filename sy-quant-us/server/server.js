@@ -13,6 +13,7 @@ require('./us-core-data-safety-patch');
 const usCore = require('./us-core-strategy');
 const virtualTracker = require('./us-core-virtual-tracker');
 const coreHistory = require('./us-core-history-store');
+const coreDailySummary = require('./us-core-daily-summary');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -112,12 +113,13 @@ function buildUsStrategyDashboardSummary(portfolio = {}) {
         session: coreStatus.session,
         lastScan: coreStatus.lastScan,
         virtualTracker: virtualTracker.getStatus(),
-        historyRecorder: coreHistory.getStatus()
+        historyRecorder: coreHistory.getStatus(),
+        dailySummary: coreDailySummary.getStatus()
       }
     },
     calculationNote: settings.masterBuyEnabled
       ? '전체 신규매수 ON · 전략별 매수허용과 운전한도는 설정에서 관리합니다.'
-      : '전체 신규매수 OFF · US-CORE는 후보 관찰·가상성과 추적·일일 이력 저장만 수행하고 주문은 하지 않습니다.',
+      : '전체 신규매수 OFF · US-CORE는 후보 관찰·가상성과 추적·일일 이력·장마감 요약만 수행하고 주문은 하지 않습니다.',
     updatedAt: portfolio.time || new Date().toISOString()
   };
 }
@@ -216,6 +218,23 @@ app.get('/api/us-core/history', (req, res) => {
 app.get('/api/us-core/history-status', (req, res) => {
   try {
     res.json(coreHistory.getStatus());
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-core/daily-summary', (req, res) => {
+  try {
+    const date = String(req.query.date || '').trim();
+    res.json(coreDailySummary.getSummary(date, { preview: true }));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-core/daily-summary-status', (req, res) => {
+  try {
+    res.json(coreDailySummary.getStatus());
   } catch (err) {
     sendError(res, err);
   }
@@ -335,4 +354,5 @@ app.listen(PORT, '0.0.0.0', () => {
   usCore.startCoreObserver();
   virtualTracker.startVirtualTracker();
   coreHistory.startHistoryRecorder();
+  coreDailySummary.startDailySummary();
 });
