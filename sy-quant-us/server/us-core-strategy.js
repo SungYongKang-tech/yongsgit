@@ -3,11 +3,12 @@
 const marketClient = require('./us-core-market-client');
 const kiwoom = require('./kiwoom-us-client');
 const activityStore = require('./us-dashboard-activity-store');
+const paperAutoTrader = require('./us-paper-auto-trader');
 const { marketTodayKey, isUsTradingDay } = require('./market-calendar');
 
 const CORE_CONFIG = Object.freeze({
-  observerOnly: true,
-  orderSubmissionEnabled: false,
+  observerOnly: false,
+  orderSubmissionEnabled: true,
   autoScanEnabled: true,
   coreStartEt: '09:40',
   coreEndEt: '12:00',
@@ -39,7 +40,7 @@ let scanTimer = null;
 let lastScan = {
   ok: true,
   strategy: 'CORE',
-  observerOnly: true,
+  observerOnly: false,
   status: 'WAITING',
   reason: '아직 US-CORE 후보 스캔을 실행하지 않았습니다.',
   updatedAt: null,
@@ -452,7 +453,7 @@ async function analyzeCandidate(snapshot, qqq, session) {
     `QQQ ${qqq.changeRate >= 0 ? '+' : ''}${round(qqq.changeRate)}%`
   ];
   if (blocks.length) reasonParts.push(blocks.slice(0, 2).join('/'));
-  reasonParts.push('관찰전용·주문OFF');
+  reasonParts.push('PAPER 자동주문 연결');
 
   return {
     strategy: 'CORE',
@@ -499,7 +500,7 @@ async function runCoreScan({ force = false } = {}) {
       ...lastScan,
       ok: true,
       strategy: 'CORE',
-      observerOnly: true,
+      observerOnly: false,
       status: 'WAITING',
       reason: session.tradingDay
         ? `US-CORE 관찰시간 대기 (${CORE_CONFIG.coreStartEt}~${CORE_CONFIG.coreEndEt} ET)`
@@ -539,14 +540,16 @@ async function runCoreScan({ force = false } = {}) {
       candidates.slice(0, CORE_CONFIG.candidateStoreCount)
     );
 
+    await paperAutoTrader.processReadyCandidates('CORE', stored);
+
     lastScan = {
       ok: true,
       strategy: 'CORE',
-      observerOnly: true,
-      orderSubmissionEnabled: false,
-      implemented: false,
+      observerOnly: false,
+      orderSubmissionEnabled: true,
+      implemented: true,
       status: 'OBSERVING',
-      reason: '후보 탐색·점수화만 수행합니다. 주문 코드는 연결되어 있지 않습니다.',
+      reason: '후보 탐색·점수화만 수행합니다. READY 후보는 설정 허용 시 PAPER 자동주문으로 연결합니다.',
       session,
       market: qqq,
       discoveredCount: snapshots.length,
@@ -564,16 +567,16 @@ async function runCoreScan({ force = false } = {}) {
       '[US-CORE 관찰]',
       `후보 ${lastScan.candidateCount} / READY ${lastScan.readyCount} / WATCH ${lastScan.watchCount}`,
       `QQQ ${qqq.changeRate >= 0 ? '+' : ''}${qqq.changeRate}%`,
-      '주문OFF'
+      'PAPER AUTO'
     );
     return lastScan;
   } catch (err) {
     lastScan = {
       ok: false,
       strategy: 'CORE',
-      observerOnly: true,
-      orderSubmissionEnabled: false,
-      implemented: false,
+      observerOnly: false,
+      orderSubmissionEnabled: true,
+      implemented: true,
       status: 'ERROR',
       reason: err.message,
       session,
@@ -613,8 +616,8 @@ async function analyzeSymbol({ exchange, symbol } = {}) {
 
   return {
     ok: true,
-    observerOnly: true,
-    orderSubmissionEnabled: false,
+    observerOnly: false,
+    orderSubmissionEnabled: true,
     session,
     market: qqq,
     analysis: await analyzeCandidate(snapshot, qqq, session)
@@ -625,9 +628,9 @@ function getCoreStatus() {
   return {
     ok: true,
     strategy: 'CORE',
-    observerOnly: true,
-    orderSubmissionEnabled: false,
-    implemented: false,
+    observerOnly: false,
+    orderSubmissionEnabled: true,
+    implemented: true,
     scanRunning,
     config: CORE_CONFIG,
     session: getSessionState(),
@@ -650,7 +653,7 @@ function startCoreObserver() {
   console.log(
     '[US-CORE]',
     `관찰모드 시작 ${CORE_CONFIG.coreStartEt}~${CORE_CONFIG.coreEndEt} ET /`,
-    '주문 기능 없음 / implemented=false'
+    'PAPER 자동주문 연결 / implemented=true'
   );
   return scanTimer;
 }
