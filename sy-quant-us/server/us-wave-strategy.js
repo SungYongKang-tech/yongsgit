@@ -2,12 +2,13 @@
 
 const marketClient = require('./us-core-market-client');
 const activityStore = require('./us-dashboard-activity-store');
+const paperAutoTrader = require('./us-paper-auto-trader');
 const { marketTodayKey, isUsTradingDay } = require('./market-calendar');
 
 const WAVE_CONFIG = Object.freeze({
-  observerOnly: true,
-  orderSubmissionEnabled: false,
-  implemented: false,
+  observerOnly: false,
+  orderSubmissionEnabled: true,
+  implemented: true,
 
   waveStartEt: '11:00',
   waveEndEt: '15:30',
@@ -42,8 +43,8 @@ let scanTimer = null;
 let lastScan = {
   ok: true,
   strategy: 'WAVE',
-  observerOnly: true,
-  implemented: false,
+  observerOnly: false,
+  implemented: true,
   status: 'WAITING',
   reason: '아직 US-WAVE 후보 스캔을 실행하지 않았습니다.',
   updatedAt: null,
@@ -370,7 +371,7 @@ async function analyzeCandidate(s,q,session){
     `당일위치 ${round(m.dayPositionRate,0)}%`,
     `QQQ ${q.changeRate>=0?'+':''}${q.changeRate}%`,
     blocks.length?blocks.slice(0,2).join('/'):null,
-    '관찰전용·주문OFF'
+    'PAPER 자동주문 연결'
   ].filter(Boolean).join(' · ');
 
   return {
@@ -454,14 +455,16 @@ async function runWaveScan({force=false}={}){
       candidates.slice(0,WAVE_CONFIG.candidateStoreCount)
     );
 
+    await paperAutoTrader.processReadyCandidates('WAVE', stored);
+
     lastScan={
       ok:true,
       strategy:'WAVE',
-      observerOnly:true,
-      orderSubmissionEnabled:false,
-      implemented:false,
+      observerOnly: false,
+      orderSubmissionEnabled: true,
+      implemented: true,
       status:'OBSERVING',
-      reason:'일봉 추세·20일 고점권·거래량 확장 후보를 관찰합니다. 실제 주문은 연결되어 있지 않습니다.',
+      reason:'일봉 추세·20일 고점권·거래량 확장 후보를 관찰합니다. READY 후보는 설정 허용 시 PAPER 자동주문으로 연결합니다.',
       session,
       market:q,
       discoveredCount:snapshots.length,
@@ -479,16 +482,16 @@ async function runWaveScan({force=false}={}){
       '[US-WAVE 관찰]',
       `후보 ${lastScan.candidateCount} / READY ${lastScan.readyCount} / WATCH ${lastScan.watchCount}`,
       `QQQ ${q.changeRate>=0?'+':''}${q.changeRate}%`,
-      '주문OFF'
+      'PAPER AUTO'
     );
     return lastScan;
   }catch(err){
     lastScan={
       ok:false,
       strategy:'WAVE',
-      observerOnly:true,
-      orderSubmissionEnabled:false,
-      implemented:false,
+      observerOnly: false,
+      orderSubmissionEnabled: true,
+      implemented: true,
       status:'ERROR',
       reason:err.message,
       session,
@@ -507,9 +510,9 @@ function getWaveStatus(){
   return {
     ok:true,
     strategy:'WAVE',
-    observerOnly:true,
-    orderSubmissionEnabled:false,
-    implemented:false,
+    observerOnly: false,
+    orderSubmissionEnabled: true,
+    implemented: true,
     scanRunning,
     config:WAVE_CONFIG,
     session:getSessionState(),
@@ -535,7 +538,7 @@ function startWaveObserver(){
   console.log(
     '[US-WAVE]',
     `관찰모드 시작 ${WAVE_CONFIG.waveStartEt}~${WAVE_CONFIG.waveEndEt} ET /`,
-    '멀티데이 추세전략 / 주문 기능 없음 / implemented=false'
+    '멀티데이 추세전략 / PAPER 자동주문 연결 / implemented=true'
   );
   return scanTimer;
 }
