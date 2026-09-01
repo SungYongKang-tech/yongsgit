@@ -21,12 +21,8 @@ function toNumber(value) {
 }
 
 function assertPaperEnvironment() {
-  if (MODE !== 'PAPER') {
-    throw new Error('SY Quant US order client allows PAPER mode only');
-  }
-  if (BASE_URL !== 'https://mockapi.kiwoom.com') {
-    throw new Error('SY Quant US order client allows Kiwoom mock API only');
-  }
+  if (MODE !== 'PAPER') throw new Error('SY Quant US order client allows PAPER mode only');
+  if (BASE_URL !== 'https://mockapi.kiwoom.com') throw new Error('SY Quant US order client allows Kiwoom mock API only');
 }
 
 function assertOrderEnabled() {
@@ -45,27 +41,27 @@ function validateRiskSettings() {
   }
 }
 
+function normalizeIdentity({ exchange, symbol }) {
+  assertPaperEnvironment();
+  const stexTp = String(exchange || '').toUpperCase().trim();
+  const stkCd = String(symbol || '').toUpperCase().trim();
+
+  if (!EXCHANGES.has(stexTp)) throw new Error('exchange must be NA, ND, or NY');
+  if (!/^[A-Z0-9.-]{1,20}$/.test(stkCd)) throw new Error('symbol format is invalid');
+
+  return { exchange: stexTp, symbol: stkCd };
+}
+
 function normalizeOrder({ exchange, symbol, quantity, orderType = '00', price = null }) {
   assertPaperEnvironment();
   validateRiskSettings();
 
-  const stexTp = String(exchange || '').toUpperCase().trim();
-  const stkCd = String(symbol || '').toUpperCase().trim();
+  const identity = normalizeIdentity({ exchange, symbol });
   const trdeTp = String(orderType || '').trim();
   const qty = Number(quantity);
 
-  if (!EXCHANGES.has(stexTp)) {
-    throw new Error('exchange must be NA, ND, or NY');
-  }
-  if (!/^[A-Z0-9.-]{1,20}$/.test(stkCd)) {
-    throw new Error('symbol format is invalid');
-  }
-  if (!Number.isInteger(qty) || qty <= 0) {
-    throw new Error('quantity must be a positive integer');
-  }
-  if (qty > MAX_ORDER_QTY) {
-    throw new Error('quantity exceeds US_MAX_ORDER_QTY');
-  }
+  if (!Number.isInteger(qty) || qty <= 0) throw new Error('quantity must be a positive integer');
+  if (qty > MAX_ORDER_QTY) throw new Error('quantity exceeds US_MAX_ORDER_QTY');
   if (!ORDER_TYPES.has(trdeTp)) {
     throw new Error('Kiwoom US PAPER trading currently allows limit orders only (orderType 00)');
   }
@@ -75,13 +71,15 @@ function normalizeOrder({ exchange, symbol, quantity, orderType = '00', price = 
     throw new Error('limit price must be a positive number');
   }
 
-  return {
-    exchange: stexTp,
-    symbol: stkCd,
-    quantity: qty,
-    orderType: trdeTp,
-    price: ordUv
-  };
+  return { ...identity, quantity: qty, orderType: trdeTp, price: ordUv };
+}
+
+function normalizeOriginalOrderNo(value) {
+  const orderNo = String(value || '').trim();
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(orderNo)) {
+    throw new Error('origOrderNo is invalid');
+  }
+  return orderNo;
 }
 
 async function previewBuy(input) {
@@ -111,18 +109,13 @@ async function previewBuy(input) {
 
 async function previewSell(input) {
   const order = normalizeOrder(input);
-  const holdings = await kiwoom.getHoldings({
-    exchange: order.exchange,
-    symbol: order.symbol
-  });
+  const holdings = await kiwoom.getHoldings({ exchange: order.exchange, symbol: order.symbol });
 
   const row = holdings.holdings.find(item =>
     item && String(item.stk_cd || '').toUpperCase() === order.symbol
   );
 
-  if (!row) {
-    throw new Error('holding not found for sell order');
-  }
+  if (!row) throw new Error('holding not found for sell order');
 
   const sellableQuantity = toNumber(row.sell_alowq || row.poss_qty);
   if (order.quantity > sellableQuantity) {
@@ -202,6 +195,72 @@ async function submitSell(input) {
   };
 }
 
+async function modifyOrder({ origOrderNo, exchange, symbol, price, stopPrice = '' }) {
+  assertOrderEnabled();
+
+  const identity = normalizeIdentity({ exchange, symbol });
+  const orderNo = normalizeOriginalOrderNo(origOrderNo);
+  const newPrice = Number(price);
+
+  if (!Number.isFinite(newPrice) || newPrice <= 0 || newPrice > 1000000) {
+    throw new Error('modify price must be a positive number');
+  }
+
+  const body = {
+    orig_ord_no: orderNo,
+    stex_tp: identity.exchange,
+    stk_cd: identity.symbol,
+    mdfy_uv: String(newPrice),
+    stop_pric: String(stopPrice || '')
+  };
+
+  const { data } = await kiwoom.requestPage({
+    apiId: 'ust20002',
+    apiPath: '/api/us/ordr',
+    body
+  });
+
+  return {
+    ok: true,
+    action: 'MODIFY',
+    originalOrderNo: orderNo,
+    orderNo: data.ord_no || orderNo,
+    exchange: identity.exchange,
+    symbol: identity.symbol,
+    price: newPrice,
+    raw: data
+  };
+}
+
+async function cancelOrder({ origOrderNo, exchange, symbol }) {
+  assertOrderEnabled();
+
+  const identity = normalizeIdentity({ exchange, symbol });
+  const orderNo = normalizeOriginalOrderNo(origOrderNo);
+
+  const body = {
+    orig_ord_no: orderNo,
+    stex_tp: identity.exchange,
+    stk_cd: identity.symbol
+  };
+
+  const { data } = await kiwoom.requestPage({
+    apiId: 'ust20003',
+    apiPath: '/api/us/ordr',
+    body
+  });
+
+  return {
+    ok: true,
+    action: 'CANCEL',
+    originalOrderNo: orderNo,
+    orderNo: data.ord_no || orderNo,
+    exchange: identity.exchange,
+    symbol: identity.symbol,
+    raw: data
+  };
+}
+
 function getOrderClientStatus() {
   let paperEnvironmentOk = false;
   let environmentError = null;
@@ -224,6 +283,7 @@ function getOrderClientStatus() {
     maxOrderUsd: MAX_ORDER_USD,
     allowedExchanges: [...EXCHANGES],
     allowedOrderTypes: [...ORDER_TYPES],
+    supportedOrderApiIds: ['ust20000', 'ust20001', 'ust20002', 'ust20003'],
     environmentError
   };
 }
@@ -233,6 +293,8 @@ module.exports = {
   previewSell,
   submitBuy,
   submitSell,
+  modifyOrder,
+  cancelOrder,
   normalizeOrder,
   getOrderClientStatus
 };
