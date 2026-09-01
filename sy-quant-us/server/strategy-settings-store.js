@@ -17,8 +17,8 @@ const DEFAULT_SETTINGS = Object.freeze({
       label: 'US-OPEN',
       icon: '🚀',
       singleBuyRate: 20,
-      strategyMaxInvestmentRate: 20,
-      allocationRate: 20,
+      strategyMaxInvestmentRate: 0,
+      allocationRate: 0,
       maxHoldings: 1,
       dailyMaxNewBuys: 1,
       buyEnabled: false,
@@ -29,48 +29,48 @@ const DEFAULT_SETTINGS = Object.freeze({
       label: 'US-CORE',
       icon: '🛡️',
       singleBuyRate: 10,
-      strategyMaxInvestmentRate: 30,
-      allocationRate: 30,
+      strategyMaxInvestmentRate: 25,
+      allocationRate: 25,
       maxHoldings: 3,
       dailyMaxNewBuys: 3,
       buyEnabled: false,
-      implemented: false
+      implemented: true
     },
     VOLUME: {
       id: 'VOLUME',
       label: 'US-VOLUME',
       icon: '📊',
       singleBuyRate: 10,
-      strategyMaxInvestmentRate: 20,
-      allocationRate: 20,
+      strategyMaxInvestmentRate: 25,
+      allocationRate: 25,
       maxHoldings: 2,
       dailyMaxNewBuys: 2,
       buyEnabled: false,
-      implemented: false
+      implemented: true
     },
     WAVE: {
       id: 'WAVE',
       label: 'US-WAVE',
       icon: '🌊',
       singleBuyRate: 10,
-      strategyMaxInvestmentRate: 20,
-      allocationRate: 20,
+      strategyMaxInvestmentRate: 25,
+      allocationRate: 25,
       maxHoldings: 2,
       dailyMaxNewBuys: 2,
       buyEnabled: false,
-      implemented: false
+      implemented: true
     },
     FAST: {
       id: 'FAST',
       label: 'US-FAST',
       icon: '⚡',
       singleBuyRate: 10,
-      strategyMaxInvestmentRate: 10,
-      allocationRate: 10,
+      strategyMaxInvestmentRate: 25,
+      allocationRate: 25,
       maxHoldings: 1,
       dailyMaxNewBuys: 1,
       buyEnabled: false,
-      implemented: false
+      implemented: true
     }
   }
 });
