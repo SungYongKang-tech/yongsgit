@@ -2,6 +2,7 @@
 
 const KR_SUMMARY_URL = '/api/strategy-dashboard-summary';
 const US_SUMMARY_URL = '/us-api/api/strategy-dashboard-summary';
+const US_AUTO_STATUS_URL = '/us-api/api/us/auto-trader/status';
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -96,8 +97,8 @@ function renderStrategies(targetId, rows, currency) {
   }).join('');
 }
 
-function renderMarket(prefix, data, currency) {
-  const overall = data.overall || {};
+function renderMarket(prefix, data, currency, overallOverride = null) {
+  const overall = overallOverride || data.overall || {};
   const money = currency === 'USD' ? formatUsd : formatWon;
   const asset = overall.currentAsset ?? overall.totalAsset ?? 0;
   const profit = overall.netProfit ?? overall.totalProfitLoss ?? 0;
@@ -112,15 +113,35 @@ function renderMarket(prefix, data, currency) {
   if (updated) updated.textContent = `갱신 ${formatTime(data.updatedAt)}`;
 }
 
-async function loadMarket({ prefix, url, currency, label }) {
+async function loadMarket({ prefix, url, currency, label, autoUrl = null }) {
   try {
     setStatus(`${prefix}Status`, '조회 중', true);
-    const response = await fetch(url, { cache: 'no-store' });
-    const data = await response.json();
-    if (!response.ok || data.ok === false) {
-      throw new Error(data.error || data.message || `HTTP ${response.status}`);
+
+    const [summaryResponse, autoResponse] = await Promise.all([
+      fetch(url, { cache: 'no-store' }),
+      autoUrl ? fetch(`${autoUrl}?t=${Date.now()}`, { cache: 'no-store' }) : Promise.resolve(null)
+    ]);
+
+    const data = await summaryResponse.json();
+    if (!summaryResponse.ok || data.ok === false) {
+      throw new Error(data.error || data.message || `HTTP ${summaryResponse.status}`);
     }
-    renderMarket(prefix, data, currency);
+
+    let overallOverride = null;
+
+    if (autoResponse) {
+      const autoData = await autoResponse.json().catch(() => null);
+      if (autoResponse.ok && autoData && autoData.ok !== false) {
+        overallOverride = {
+          currentAsset: toNumber(autoData.totalAsset),
+          totalAsset: toNumber(autoData.totalAsset),
+          netProfit: toNumber(autoData.netProfit),
+          profitRate: toNumber(autoData.profitRate)
+        };
+      }
+    }
+
+    renderMarket(prefix, data, currency, overallOverride);
     setStatus(`${prefix}Status`, '정상', true);
   } catch (error) {
     console.error(`${label} dashboard load error`, error);
@@ -133,7 +154,13 @@ async function loadMarket({ prefix, url, currency, label }) {
 async function loadAll() {
   await Promise.all([
     loadMarket({ prefix: 'kr', url: KR_SUMMARY_URL, currency: 'KRW', label: '한국' }),
-    loadMarket({ prefix: 'us', url: US_SUMMARY_URL, currency: 'USD', label: '미국' })
+    loadMarket({
+      prefix: 'us',
+      url: US_SUMMARY_URL,
+      currency: 'USD',
+      label: '미국',
+      autoUrl: US_AUTO_STATUS_URL
+    })
   ]);
 }
 

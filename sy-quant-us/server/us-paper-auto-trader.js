@@ -371,8 +371,6 @@ async function reconcilePendingOrders() {
               : 0;
             position.sellOrderNo = order.orderNo || '';
 
-            // AUTO 실제 매도 체결을 대시보드 매도내역에도 기록한다.
-            // soldAt까지 비교해 재처리 시 중복 기록을 방지한다.
             try {
               const dashboard = activityStore.getDashboardActivity();
               const alreadyRecorded = (dashboard.sellHistory || []).some(item =>
@@ -560,10 +558,6 @@ async function submitAutoSell(position, reason, quotePrice) {
 }
 
 async function monitorOpenPositions() {
-  // 중요한 원칙:
-  // submitAutoSell()은 최신 state를 다시 읽고 SELL 주문을 저장한다.
-  // 따라서 여기서 처음 읽은 오래된 state를 마지막에 통째로 저장하면
-  // 방금 추가된 SELL 주문을 덮어쓸 수 있다.
   const snapshot = loadState();
   const highestById = new Map();
 
@@ -572,7 +566,11 @@ async function monitorOpenPositions() {
       const q = await currentPrice(position.exchange, position.symbol);
       const price = q.price;
       const highest = Math.max(Number(position.highestPrice || 0), price);
-      highestById.set(position.id, highest);
+      highestById.set(position.id, {
+        highestPrice: highest,
+        currentPrice: price,
+        lastPriceAt: nowIso()
+      });
 
       const entry = Number(position.entryPrice || 0);
       if (entry <= 0) continue;
@@ -595,17 +593,35 @@ async function monitorOpenPositions() {
     }
   }
 
-  // SELL 주문 저장 이후의 최신 state를 다시 읽어 최고가만 병합한다.
-  // 주문/포지션 배열 자체는 절대 snapshot으로 되돌리지 않는다.
   if (highestById.size > 0) {
     const latest = loadState();
     let changed = false;
 
     for (const position of latest.positions.filter(activePosition)) {
       if (!highestById.has(position.id)) continue;
-      const nextHighest = Number(highestById.get(position.id) || 0);
+
+      const market = highestById.get(position.id) || {};
+      const nextHighest = Number(market.highestPrice || 0);
+      const nextPrice = Number(market.currentPrice || 0);
+      const entryPrice = Number(position.entryPrice || 0);
+      const quantity = Number(position.quantity || 0);
+
       if (nextHighest > Number(position.highestPrice || 0)) {
         position.highestPrice = nextHighest;
+        changed = true;
+      }
+
+      if (nextPrice > 0) {
+        position.currentPrice = nextPrice;
+        position.currentValue = round(nextPrice * quantity, 2);
+        position.unrealizedProfit = round(
+          (nextPrice - entryPrice) * quantity,
+          2
+        );
+        position.unrealizedProfitRate = entryPrice > 0
+          ? round((nextPrice - entryPrice) / entryPrice * 100, 2)
+          : 0;
+        position.lastPriceAt = market.lastPriceAt || nowIso();
         changed = true;
       }
     }
@@ -685,6 +701,31 @@ function getStatus() {
   const state = loadState();
   const strategyBudgets = {};
 
+  const closedPositions = state.positions.filter(p => p && p.status === 'CLOSED');
+  const openPositions = state.positions.filter(activePosition);
+
+  const realizedProfit = round(
+    closedPositions.reduce(
+      (sum, p) => sum + Number(p.realizedProfit || 0),
+      0
+    ),
+    2
+  );
+
+  const unrealizedProfit = round(
+    openPositions.reduce(
+      (sum, p) => sum + Number(p.unrealizedProfit || 0),
+      0
+    ),
+    2
+  );
+
+  const netProfit = round(realizedProfit + unrealizedProfit, 2);
+  const totalAsset = round(PAPER_CAPITAL + netProfit, 2);
+  const profitRate = PAPER_CAPITAL > 0
+    ? round(netProfit / PAPER_CAPITAL * 100, 4)
+    : 0;
+
   for (const id of STRATEGIES) {
     const usage = strategyUsage(state, id);
     const budget = strategyBudget(id, settings);
@@ -705,6 +746,11 @@ function getStatus() {
     version: '1.2',
     mode: 'PAPER',
     paperCapital: PAPER_CAPITAL,
+    realizedProfit,
+    unrealizedProfit,
+    netProfit,
+    totalAsset,
+    profitRate,
     globalUsed: globalUsage(state),
     globalRemaining: round(Math.max(0, PAPER_CAPITAL - globalUsage(state)), 2),
     monitorRunning,
@@ -723,7 +769,8 @@ function getStatus() {
     },
     exitRules: EXIT_RULES,
     strategies: strategyBudgets,
-    openPositions: state.positions.filter(activePosition),
+    openPositions,
+    closedPositions,
     pendingOrders: state.orders.filter(activeOrder),
     cancelRequestedOrders: state.orders.filter(o => o.status === 'CANCEL_REQUESTED'),
     updatedAt: state.updatedAt

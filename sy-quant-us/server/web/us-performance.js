@@ -13,7 +13,7 @@ function escapeHtml(value) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
+    .replace(/\"/g, '&quot;')
     .replace(/'/g, '&#039;');
 }
 
@@ -203,12 +203,6 @@ function saveDailyBaseline(value) {
   } catch (_) {}
 }
 
-/*
- * US 서버는 현재 일중 시작자산을 별도 필드로 내려주지 않는다.
- * 그래서 화면은 미국 거래일별 첫 조회 자산을 시작자산으로 보관한다.
- * 서버에서 todayProfit/todayRealizedProfit/todayUnrealizedChange가 생기면
- * 그 값을 최우선으로 사용하도록 만들어 두었다.
- */
 function getTodayPerformance(data = {}) {
   const overall = data.overall || {};
 
@@ -378,8 +372,8 @@ function renderRecent7Days(data = {}) {
           ${(Array.isArray(row.values) ? row.values : [])
             .map(value => `<td class="${profitClass(value)}">${formatUsdCompact(value)}</td>`)
             .join('')}
-        </tr>`
-      ).join('');
+        </tr>
+      `).join('');
     }
   }
 
@@ -450,9 +444,6 @@ function renderStrategies(data = {}) {
       ? (netProfit / initialCapital) * 100
       : toNumber(item.profitRate);
 
-    const strategyMaxRate = toNumber(
-      item.strategyMaxInvestmentRate ?? item.allocationRate
-    );
     const dailyMaxNewBuys = toNumber(
       item.dailyMaxNewBuys ?? item.maxHoldings
     );
@@ -676,27 +667,33 @@ function renderDashboard(data = {}) {
     ['CORE','FAST','VOLUME','WAVE'].includes(normalizeStrategyId(row.id))
   );
 
-  const strategyNetProfit = liveRows.reduce(
-    (sum, row) => sum + toNumber(row.netProfit), 0
-  );
   const strategyUnrealized = liveRows.reduce(
     (sum, row) => sum + toNumber(row.unrealizedProfit), 0
   );
 
-  const paperCapital = toNumber(currentAutoStatus?.paperCapital) || toNumber(overall.initialCapital);
-  const effectiveNetProfit = currentAutoStatus ? strategyNetProfit : toNumber(overall.netProfit);
+  const paperCapital =
+    toNumber(currentAutoStatus?.paperCapital) ||
+    toNumber(overall.initialCapital);
+
+  const effectiveNetProfit = currentAutoStatus
+    ? toNumber(currentAutoStatus.netProfit)
+    : toNumber(overall.netProfit);
+
   const effectiveTotalAsset = currentAutoStatus
-    ? paperCapital + effectiveNetProfit
+    ? toNumber(currentAutoStatus.totalAsset)
     : toNumber(overall.totalAsset);
-  const effectiveProfitRate = paperCapital > 0
-    ? (effectiveNetProfit / paperCapital) * 100
+
+  const effectiveProfitRate = currentAutoStatus
+    ? toNumber(currentAutoStatus.profitRate)
     : toNumber(overall.profitRate);
+
   const effectiveExposure = currentAutoStatus
     ? toNumber(currentAutoStatus.globalUsed)
     : toNumber(overall.totalExposure);
+
   const effectiveUnrealized = currentAutoStatus
-    ? strategyUnrealized
-    : toNumber(overall.unrealizedProfit);
+    ? toNumber(currentAutoStatus.unrealizedProfit)
+    : strategyUnrealized;
 
   setMetric('totalAsset', formatUsd(effectiveTotalAsset));
   setMetric('netProfit', formatUsd(effectiveNetProfit, true), effectiveNetProfit);

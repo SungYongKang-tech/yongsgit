@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'sy-quant-shell-v2';
+const CACHE_NAME = 'sy-quant-shell-v3';
 const STATIC_ASSETS = [
   '/',
   '/sy-quant.js',
