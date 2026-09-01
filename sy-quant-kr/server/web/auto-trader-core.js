@@ -1303,6 +1303,19 @@ cautionDiscoverScoreAdd: 1,
 // CORE 거래량 기준 허용오차. 시장조정 기준보다 최대 3%p 부족해도 통과
 coreVolumeRatioTolerance: 0,
 
+// CORE 약시장 초강력 후보 필터
+// 2026-09-01 역산: 시장 40~50점에서는 발견 9 + 거래량 250%,
+// 40점 미만에서는 발견 10 + 거래량 300%를 요구한다.
+// 약시장에서는 당일위치 85% 초과 추격진입도 차단한다.
+coreWeakMarketFilterEnabled: true,
+coreWeakMarketScoreThreshold: 50,
+coreWeakMarketDiscoverScore: 9,
+coreWeakMarketVolumeRatio: 250,
+coreWeakMarketMaxDayPositionRate: 85,
+coreColdMarketScoreThreshold: 40,
+coreColdMarketDiscoverScore: 10,
+coreColdMarketVolumeRatio: 300,
+
 // 약세 강화값: 전면 차단 대신 우수 후보만 선별
 coldCoreVolumeAdd: 10,
 coldVolumeVolumeAdd: 30,
@@ -7553,6 +7566,69 @@ function judgeCoreBuy(state, item, price) {
 
   const adjustedMinDiscoverScore =
     marketCondition.minDiscoverScore;
+
+  /*
+   * CORE 약시장 초강력 후보 필터
+   *
+   * 기존 시장온도 보정은 그대로 두고, 시장점수가 50 미만일 때만
+   * CORE 신규진입에 추가 품질조건을 적용한다.
+   * VOLUME 및 다른 전략에는 영향이 없다.
+   */
+  if (settings.coreWeakMarketFilterEnabled) {
+    const coreMarketScore = Number(marketCondition.score ?? 50);
+
+    if (
+      coreMarketScore <
+      Number(settings.coreWeakMarketScoreThreshold || 50)
+    ) {
+      const isColdMarket =
+        coreMarketScore <
+        Number(settings.coreColdMarketScoreThreshold || 40);
+
+      const requiredDiscoverScore =
+        isColdMarket
+          ? Number(settings.coreColdMarketDiscoverScore || 10)
+          : Number(settings.coreWeakMarketDiscoverScore || 9);
+
+      const requiredVolumeRatio =
+        isColdMarket
+          ? Number(settings.coreColdMarketVolumeRatio || 300)
+          : Number(settings.coreWeakMarketVolumeRatio || 250);
+
+      const maxDayPosition =
+        Number(settings.coreWeakMarketMaxDayPositionRate || 85);
+
+      if (discoverScore < requiredDiscoverScore) {
+        return {
+          pass: false,
+          reason:
+            `CORE 약시장 초강력 후보 미충족 / 시장 ${coreMarketScore.toFixed(1)}점 / ` +
+            `발견점수 ${discoverScore.toFixed(1)}<${requiredDiscoverScore.toFixed(1)} / ` +
+            `필요 거래량 ${requiredVolumeRatio.toFixed(0)}% / 위치상한 ${maxDayPosition.toFixed(1)}%`
+        };
+      }
+
+      if (volumeRatio < requiredVolumeRatio) {
+        return {
+          pass: false,
+          reason:
+            `CORE 약시장 초강력 후보 미충족 / 시장 ${coreMarketScore.toFixed(1)}점 / ` +
+            `거래량 ${volumeRatio.toFixed(1)}%<${requiredVolumeRatio.toFixed(1)}% / ` +
+            `발견점수 ${discoverScore.toFixed(1)} / 위치상한 ${maxDayPosition.toFixed(1)}%`
+        };
+      }
+
+      if (dayPosition > maxDayPosition) {
+        return {
+          pass: false,
+          reason:
+            `CORE 약시장 고점추격 차단 / 시장 ${coreMarketScore.toFixed(1)}점 / ` +
+            `당일위치 ${dayPosition.toFixed(1)}%>${maxDayPosition.toFixed(1)}% / ` +
+            `발견점수 ${discoverScore.toFixed(1)} / 거래량 ${volumeRatio.toFixed(1)}%`
+        };
+      }
+    }
+  }
 
   /*
    * 시장상태에 따라 조정된

@@ -295,6 +295,39 @@ const runtimeLogOriginalConsole = {};
 
 const RUNTIME_CAPTURE_RX = /OPEN|HOT|CORE|VOLUME|WAVE|FAST|MASTER|PORTFOLIO|READY|TRIGGER|HOLD|PROTECT|REBOUND|COOLDOWN|DISCOVER|시장온도|매수|매도|보유|차단|후보|재평가|점수|관찰|진입|청산|익절|손절|트레일링|스위칭|API|오류|실패|timeout|시간초과/i;
 
+const RUNTIME_ERROR_LEVEL_RX = /\[(?:WARN|ERROR)\]/i;
+
+function splitLegacyRuntimeLine(line) {
+  const raw = String(line || '');
+  return raw.includes('\\n') ? raw.split('\\n') : [raw];
+}
+
+function isRuntimeErrorLevelLine(line) {
+  return RUNTIME_ERROR_LEVEL_RX.test(String(line || ''));
+}
+
+function isForeignStrategyLine(line, strategy) {
+  const text = String(line || '');
+  const target = String(strategy || '').toUpperCase();
+
+  const markers = {
+    OPEN: /\[(?:WAVE|FAST|CORE|VOLUME)(?:\s|\]|_|\/)|\b(?:WAVE|FAST|CORE|VOLUME)_/i,
+    CORE_VOLUME: /\[(?:OPEN|HOT|WAVE|FAST)(?:\s|\]|_)|\b(?:OPEN|HOT|WAVE|FAST)_/i,
+    WAVE: /\[(?:OPEN|HOT|CORE|VOLUME|FAST)(?:\s|\]|_)|\b(?:OPEN|HOT|CORE|VOLUME|FAST)_/i,
+    FAST: /\[(?:OPEN|HOT|CORE|VOLUME|WAVE)(?:\s|\]|_)|\b(?:OPEN|HOT|CORE|VOLUME|WAVE)_/i
+  };
+
+  return markers[target] ? markers[target].test(text) : false;
+}
+
+function runtimeStrategyNameFromRegex(keywordRegex) {
+  if (keywordRegex === LOG_RX.OPEN || keywordRegex === LOG_RX.OPEN_ERR) return 'OPEN';
+  if (keywordRegex === LOG_RX.CORE_VOLUME || keywordRegex === LOG_RX.CORE_VOLUME_ERR) return 'CORE_VOLUME';
+  if (keywordRegex === LOG_RX.WAVE || keywordRegex === LOG_RX.WAVE_ERR) return 'WAVE';
+  if (keywordRegex === LOG_RX.FAST || keywordRegex === LOG_RX.FAST_ERR) return 'FAST';
+  return '';
+}
+
 function kstIsoTimestamp(value = new Date()) {
   try {
     const parts = new Intl.DateTimeFormat('en-CA', {
@@ -394,8 +427,11 @@ function installRuntimeLogCapture() {
   ]);
 }
 
-async function collectRuntimeAnalysisLog(date, keywordRegex, maxRows = 12000) {
+async function collectRuntimeAnalysisLog(date, keywordRegex, maxRows = 12000, options = {}) {
   const filePath = runtimeLogPathForDate(date);
+  const strategyName = String(options.strategyName || runtimeStrategyNameFromRegex(keywordRegex) || '').toUpperCase();
+  const errorOnly = Boolean(options.errorOnly);
+
   if (!fs.existsSync(filePath)) {
     return {
       filePath,
@@ -411,13 +447,19 @@ async function collectRuntimeAnalysisLog(date, keywordRegex, maxRows = 12000) {
     const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
     const rows = [];
 
-    for await (const line of rl) {
-      if (!lineMatchesAnalysisDate(line, date)) continue;
-      if (keywordRegex) {
-        keywordRegex.lastIndex = 0;
-        if (!keywordRegex.test(line)) continue;
+    for await (const physicalLine of rl) {
+      for (const line of splitLegacyRuntimeLine(physicalLine)) {
+        if (!lineMatchesAnalysisDate(line, date)) continue;
+        if (errorOnly && !isRuntimeErrorLevelLine(line)) continue;
+        if (strategyName && isForeignStrategyLine(line, strategyName)) continue;
+
+        if (keywordRegex) {
+          keywordRegex.lastIndex = 0;
+          if (!keywordRegex.test(line)) continue;
+        }
+
+        if (rows.length < maxRows) rows.push(line);
       }
-      if (rows.length < maxRows) rows.push(line);
     }
 
     return {
@@ -658,7 +700,7 @@ function discoverPm2LogFiles(kind = 'out') {
     .filter(filePath => fs.existsSync(filePath));
 }
 
-async function scanLogFile(filePath, date, keywordRegex, maxExplicit = 6000, maxUndated = 250) {
+async function scanLogFile(filePath, date, keywordRegex, maxExplicit = 6000, maxUndated = 250, options = {}) {
   if (!fs.existsSync(filePath)) {
     return {
       filePath,
@@ -696,6 +738,9 @@ async function scanLogFile(filePath, date, keywordRegex, maxExplicit = 6000, max
     if (typeof timer.unref === 'function') timer.unref();
 
     rl.on('line', line => {
+      const strategyName = String(options.strategyName || '').toUpperCase();
+      if (strategyName && isForeignStrategyLine(line, strategyName)) return;
+
       if (keywordRegex) {
         keywordRegex.lastIndex = 0;
         if (!keywordRegex.test(line)) return;
@@ -744,10 +789,10 @@ async function scanLogFile(filePath, date, keywordRegex, maxExplicit = 6000, max
   });
 }
 
-async function collectPm2Logs(kind, date, keywordRegex) {
+async function collectPm2Logs(kind, date, keywordRegex, options = {}) {
   const files = discoverPm2LogFiles(kind);
   const results = await Promise.all(
-    files.map(filePath => scanLogFile(filePath, date, keywordRegex))
+    files.map(filePath => scanLogFile(filePath, date, keywordRegex, 6000, 250, options))
   );
 
   const explicitParts = [];
@@ -1049,10 +1094,10 @@ async function buildFastAnalysis(date) {
   const localState = buildFastLocalStateForDate(date);
 
   const [runtimeLog, runtimeErrLog, outLog, errLog] = await Promise.all([
-    collectRuntimeAnalysisLog(date, LOG_RX.FAST),
-    collectRuntimeAnalysisLog(date, LOG_RX.FAST_ERR),
-    collectPm2Logs('out', date, LOG_RX.FAST),
-    collectPm2Logs('error', date, LOG_RX.FAST_ERR)
+    collectRuntimeAnalysisLog(date, LOG_RX.FAST, 12000, { strategyName: 'FAST' }),
+    collectRuntimeAnalysisLog(date, LOG_RX.FAST_ERR, 12000, { strategyName: 'FAST', errorOnly: true }),
+    collectPm2Logs('out', date, LOG_RX.FAST, { strategyName: 'FAST' }),
+    collectPm2Logs('error', date, LOG_RX.FAST_ERR, { strategyName: 'FAST' })
   ]);
 
   return [
@@ -1118,10 +1163,10 @@ async function buildCoreVolumeAnalysis(date) {
   const volumeTrades = getMasterStrategyTrades('VOLUME', date);
 
   const [runtimeLog, runtimeErrLog, outLog, errLog] = await Promise.all([
-    collectRuntimeAnalysisLog(date, LOG_RX.CORE_VOLUME),
-    collectRuntimeAnalysisLog(date, LOG_RX.CORE_VOLUME_ERR),
-    collectPm2Logs('out', date, LOG_RX.CORE_VOLUME),
-    collectPm2Logs('error', date, LOG_RX.CORE_VOLUME_ERR)
+    collectRuntimeAnalysisLog(date, LOG_RX.CORE_VOLUME, 12000, { strategyName: 'CORE_VOLUME' }),
+    collectRuntimeAnalysisLog(date, LOG_RX.CORE_VOLUME_ERR, 12000, { strategyName: 'CORE_VOLUME', errorOnly: true }),
+    collectPm2Logs('out', date, LOG_RX.CORE_VOLUME, { strategyName: 'CORE_VOLUME' }),
+    collectPm2Logs('error', date, LOG_RX.CORE_VOLUME_ERR, { strategyName: 'CORE_VOLUME' })
   ]);
 
   return [
@@ -1140,10 +1185,10 @@ async function buildOpenAnalysis(date) {
   const trades = getMasterStrategyTrades('OPEN', date);
 
   const [runtimeLog, runtimeErrLog, outLog, errLog] = await Promise.all([
-    collectRuntimeAnalysisLog(date, LOG_RX.OPEN),
-    collectRuntimeAnalysisLog(date, LOG_RX.OPEN_ERR),
-    collectPm2Logs('out', date, LOG_RX.OPEN),
-    collectPm2Logs('error', date, LOG_RX.OPEN_ERR)
+    collectRuntimeAnalysisLog(date, LOG_RX.OPEN, 12000, { strategyName: 'OPEN' }),
+    collectRuntimeAnalysisLog(date, LOG_RX.OPEN_ERR, 12000, { strategyName: 'OPEN', errorOnly: true }),
+    collectPm2Logs('out', date, LOG_RX.OPEN, { strategyName: 'OPEN' }),
+    collectPm2Logs('error', date, LOG_RX.OPEN_ERR, { strategyName: 'OPEN' })
   ]);
 
   const learning = {};
@@ -1169,10 +1214,10 @@ async function buildWaveAnalysis(date) {
   const trades = getMasterStrategyTrades('WAVE', date);
 
   const [runtimeLog, runtimeErrLog, outLog, errLog] = await Promise.all([
-    collectRuntimeAnalysisLog(date, LOG_RX.WAVE),
-    collectRuntimeAnalysisLog(date, LOG_RX.WAVE_ERR),
-    collectPm2Logs('out', date, LOG_RX.WAVE),
-    collectPm2Logs('error', date, LOG_RX.WAVE_ERR)
+    collectRuntimeAnalysisLog(date, LOG_RX.WAVE, 12000, { strategyName: 'WAVE' }),
+    collectRuntimeAnalysisLog(date, LOG_RX.WAVE_ERR, 12000, { strategyName: 'WAVE', errorOnly: true }),
+    collectPm2Logs('out', date, LOG_RX.WAVE, { strategyName: 'WAVE' }),
+    collectPm2Logs('error', date, LOG_RX.WAVE_ERR, { strategyName: 'WAVE' })
   ]);
 
   const localState = readTextIfExists(
@@ -1318,7 +1363,7 @@ async function createPackage(type, date) {
     dateIsolation: {
       masterTrades: '요청 날짜만 포함',
       fastLocalState: 'candidateDate/dailyStats 요청 날짜만 포함',
-      runtimeDatedRows: '분석 모듈이 전 전략 console 로그를 KST 날짜·시간과 함께 일자별 파일에 기록하고 전략별 필터로 분리',
+      runtimeDatedRows: '분석 모듈이 전 전략 console 로그를 KST 날짜·시간과 함께 일자별 파일에 기록하고 전략별 필터·WARN/ERROR 레벨 분리·v9 레거시 줄바꿈 복구 적용',
       pm2ExplicitRows: '기존 PM2 로그 중 줄 자체 날짜가 요청 날짜와 일치할 때만 당일 확정 로그',
       pm2UndatedRows: '별도 REFERENCE ONLY 섹션으로 격리. 당일 거래 판단에 사용하지 않음',
       cumulativePerformance: 'REFERENCE ONLY로 분리'
@@ -1450,7 +1495,7 @@ module.exports = function installKrAnalysisRoutes(app) {
   });
 
   console.log(
-    '[분석자료] KR ZIP 다운로드 API 활성화 /api/analysis/download / 전 전략 날짜확정·전략분리 런타임 로그 v10'
+    '[분석자료] KR ZIP 다운로드 API 활성화 /api/analysis/download / 전 전략 날짜확정·오류분리·레거시복구 런타임 로그 v11'
   );
 };
 
@@ -1466,5 +1511,8 @@ module.exports.__test = {
   buildDailyPerformanceSummary,
   collectRuntimeAnalysisLog,
   runtimeLogPathForDate,
+  splitLegacyRuntimeLine,
+  isRuntimeErrorLevelLine,
+  isForeignStrategyLine,
   createPackage
 };
