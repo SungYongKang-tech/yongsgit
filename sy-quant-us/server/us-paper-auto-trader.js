@@ -20,12 +20,25 @@ const MODIFY_COOLDOWN_MS = Number(process.env.US_MODIFY_COOLDOWN_MS || 20000);
 const MAX_BUY_MODIFY_COUNT = Number(process.env.US_MAX_BUY_MODIFY_COUNT || 3);
 const MAX_SELL_MODIFY_COUNT = Number(process.env.US_MAX_SELL_MODIFY_COUNT || 6);
 
+const STOP_LOSS_REENTRY_COOLDOWN_MS = Number(
+  process.env.US_STOP_LOSS_REENTRY_COOLDOWN_MS || 60 * 60 * 1000
+);
+
 const STRATEGIES = new Set(['CORE', 'FAST', 'VOLUME', 'WAVE']);
 
 const EXIT_RULES = Object.freeze({
   CORE:   { stopLossRate: -1.5, takeProfitRate: 3.0, forceExitEt: '15:50', maxHoldMinutes: 0 },
   FAST:   { stopLossRate: -1.0, takeProfitRate: 2.0, forceExitEt: '15:45', maxHoldMinutes: 90 },
-  VOLUME: { stopLossRate: -1.3, takeProfitRate: 2.5, forceExitEt: '15:45', maxHoldMinutes: 0 },
+  VOLUME: {
+    stopLossRate: -1.3,
+    takeProfitRate: null,
+    protectTriggerRate: 2.0,
+    protectFloorRate: 0.5,
+    trailTriggerRate: 3.0,
+    trailGapRate: 1.2,
+    forceExitEt: '15:45',
+    maxHoldMinutes: 0
+  },
   WAVE:   { stopLossRate: -2.5, takeProfitRate: 5.0, forceExitEt: null, maxHoldMinutes: 0 }
 });
 
@@ -111,6 +124,26 @@ function openOrPendingSymbols(state) {
   const set = new Set();
   for (const p of state.positions.filter(activePosition)) set.add(String(p.symbol || '').toUpperCase());
   for (const o of state.orders.filter(activeOrder)) set.add(String(o.symbol || '').toUpperCase());
+  return set;
+}
+
+function recentStopLossSymbols(state, cooldownMs = STOP_LOSS_REENTRY_COOLDOWN_MS) {
+  const set = new Set();
+  const cutoff = Date.now() - Math.max(0, Number(cooldownMs || 0));
+
+  for (const position of state.positions || []) {
+    if (!position || position.status !== 'CLOSED') continue;
+
+    const reason = String(position.exitReason || '').toUpperCase();
+    if (!reason.startsWith('STOP_LOSS')) continue;
+
+    const closedAtMs = new Date(position.closedAt || 0).getTime();
+    if (!Number.isFinite(closedAtMs) || closedAtMs < cutoff) continue;
+
+    const symbol = String(position.symbol || '').toUpperCase().trim();
+    if (symbol) set.add(symbol);
+  }
+
   return set;
 }
 
@@ -272,20 +305,39 @@ async function processReadyCandidatesUnlocked(strategyId, candidates = []) {
   if (!ready.length) return { ok: true, skipped: true, reason: 'NO_READY' };
 
   const blockedSymbols = openOrPendingSymbols(state);
+  const stopLossCooldownSymbols = recentStopLossSymbols(state);
   const results = [];
   const maxOrders = Math.max(1, Math.min(MAX_AUTO_BUYS_PER_SCAN, remainingSlots, remainingDailyBuys));
+  let submittedCount = 0;
 
   for (const candidate of ready) {
-    if (results.length >= maxOrders) break;
+    if (submittedCount >= maxOrders) break;
     const symbol = String(candidate.symbol || '').toUpperCase();
     if (!symbol || blockedSymbols.has(symbol)) continue;
+
+    if (stopLossCooldownSymbols.has(symbol)) {
+      console.log(
+        `[US-${strategy} AUTO BUY 차단]`,
+        `${symbol} 최근 STOP_LOSS 후 ${Math.round(STOP_LOSS_REENTRY_COOLDOWN_MS / 60000)}분 재진입 금지`
+      );
+      results.push({
+        ok: false,
+        skipped: true,
+        symbol,
+        reason: 'STOP_LOSS_REENTRY_COOLDOWN'
+      });
+      continue;
+    }
 
     try {
       const result = await submitAutoBuy(strategy, candidate, {
         budget, remainingStrategyCash, remainingSlots, perStockBudget
       });
       results.push(result);
-      if (result.ok) blockedSymbols.add(symbol);
+      if (result.ok) {
+        blockedSymbols.add(symbol);
+        submittedCount += 1;
+      }
     } catch (error) {
       console.error(`[US-${strategy} AUTO BUY 오류]`, symbol, error.message);
       results.push({ ok: false, symbol, error: error.message });
@@ -578,10 +630,30 @@ async function monitorOpenPositions() {
       const profitRate = (price - entry) / entry * 100;
       const rules = EXIT_RULES[position.strategy] || EXIT_RULES.CORE;
 
+      const peakProfitRate = (highest - entry) / entry * 100;
+
       let exitReason = null;
-      if (profitRate <= rules.stopLossRate) exitReason = `STOP_LOSS ${round(profitRate, 2)}%`;
-      else if (profitRate >= rules.takeProfitRate) exitReason = `TAKE_PROFIT ${round(profitRate, 2)}%`;
-      else if (rules.maxHoldMinutes > 0 && holdMinutes(position) >= rules.maxHoldMinutes) {
+      if (profitRate <= rules.stopLossRate) {
+        exitReason = `STOP_LOSS ${round(profitRate, 2)}%`;
+      } else if (
+        position.strategy === 'VOLUME' &&
+        peakProfitRate >= Number(rules.trailTriggerRate || 0) &&
+        profitRate <= peakProfitRate - Number(rules.trailGapRate || 0)
+      ) {
+        exitReason = `TRAILING_STOP ${round(profitRate, 2)}% / PEAK ${round(peakProfitRate, 2)}%`;
+      } else if (
+        position.strategy === 'VOLUME' &&
+        peakProfitRate >= Number(rules.protectTriggerRate || 0) &&
+        profitRate <= Number(rules.protectFloorRate || 0)
+      ) {
+        exitReason = `PROFIT_PROTECT ${round(profitRate, 2)}% / PEAK ${round(peakProfitRate, 2)}%`;
+      } else if (
+        Number.isFinite(Number(rules.takeProfitRate)) &&
+        Number(rules.takeProfitRate) > 0 &&
+        profitRate >= Number(rules.takeProfitRate)
+      ) {
+        exitReason = `TAKE_PROFIT ${round(profitRate, 2)}%`;
+      } else if (rules.maxHoldMinutes > 0 && holdMinutes(position) >= rules.maxHoldMinutes) {
         exitReason = `MAX_HOLD ${Math.floor(holdMinutes(position))}m`;
       } else if (rules.forceExitEt && position.tradingDate === nyDateKey() && nyClock() >= rules.forceExitEt) {
         exitReason = `TIME_EXIT ${rules.forceExitEt} ET`;
@@ -685,7 +757,7 @@ function startAutoTrader() {
   if (typeof initial.unref === 'function') initial.unref();
 
   console.log(
-    '[US AUTO TRADER v1.2]',
+    '[US AUTO TRADER v1.4]',
     `PAPER 운용한도 $${PAPER_CAPITAL.toLocaleString('en-US')}`,
     '/ READY BUY',
     '/ 손절·익절 SELL',
@@ -743,7 +815,7 @@ function getStatus() {
 
   return {
     ok: true,
-    version: '1.2',
+    version: '1.4',
     mode: 'PAPER',
     paperCapital: PAPER_CAPITAL,
     realizedProfit,
@@ -758,6 +830,8 @@ function getStatus() {
     maxAutoBuysPerScan: MAX_AUTO_BUYS_PER_SCAN,
     engineSerialization: true,
     stateOverwriteProtection: true,
+    stopLossReentryCooldownMs: STOP_LOSS_REENTRY_COOLDOWN_MS,
+    stopLossReentryCooldownMinutes: round(STOP_LOSS_REENTRY_COOLDOWN_MS / 60000, 0),
     pendingManagement: {
       buyModifyAfterMs: BUY_MODIFY_AFTER_MS,
       sellModifyAfterMs: SELL_MODIFY_AFTER_MS,
@@ -786,5 +860,6 @@ module.exports = {
   monitorOnce,
   startAutoTrader,
   cancelPendingOrderById,
-  getStatus
+  getStatus,
+  recentStopLossSymbols
 };

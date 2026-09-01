@@ -23,6 +23,14 @@ function profitClass(value) {
   return n > 0 ? 'plus' : n < 0 ? 'minus' : '';
 }
 
+function normalizeStrategyId(value) {
+  return String(value || '')
+    .replace(/^US-/i, '')
+    .trim()
+    .toUpperCase();
+}
+
+
 function formatWon(value, signed = false) {
   const n = Math.round(toNumber(value));
   const abs = Math.abs(n).toLocaleString('ko-KR');
@@ -78,7 +86,12 @@ function renderStrategies(targetId, rows, currency) {
   const box = document.getElementById(targetId);
   if (!box) return;
 
-  const list = Array.isArray(rows) ? rows : [];
+  let list = Array.isArray(rows) ? rows : [];
+
+  if (currency === 'USD') {
+    list = list.filter(item => normalizeStrategyId(item.id || item.label) !== 'OPEN');
+  }
+
   if (!list.length) {
     box.innerHTML = '<div class="empty">전략이 아직 준비되지 않았습니다. 전략을 추가하면 전략별 수익이 자동 표시됩니다.</div>';
     return;
