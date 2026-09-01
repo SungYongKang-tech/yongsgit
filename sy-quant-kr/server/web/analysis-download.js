@@ -28,14 +28,16 @@ const PM2_KNOWN_ERR = [
 ];
 
 const LOG_RX = {
-  CORE_VOLUME: /CORE|VOLUME|MASTER|PORTFOLIO|CORE_BUY|CORE_|VOLUME_BUY|VOLUME_|매수|매도|보유|차단|후보|재평가|점수|스위칭|익절|손절|트레일링/i,
-  CORE_VOLUME_ERR: /CORE|VOLUME|MASTER|PORTFOLIO|error|fail|timeout|시간초과|오류|실패|ECONN|fetch failed/i,
-  OPEN: /OPEN|HOT|MASTER|PORTFOLIO|매수|매도|차단|후보|지속|관찰|시장/i,
-  OPEN_ERR: /OPEN|HOT|MASTER|PORTFOLIO|error|fail|timeout|시간초과|API|오류|실패/i,
-  WAVE: /WAVE|READY|TRIGGER|HOLD|PROTECT|REBOUND|COOLDOWN|전일급등|MASTER|PORTFOLIO|매수|매도/i,
-  WAVE_ERR: /WAVE|wave-strategy|MASTER|PORTFOLIO|error|fail|timeout|시간초과|오류|실패/i,
-  FAST: /FAST|MASTER|PORTFOLIO|매수|매도|후보|점수|트리거|관찰|진입|청산|손절|익절|보유/i,
-  FAST_ERR: /FAST|MASTER|PORTFOLIO|error|fail|timeout|시간초과|API|오류|실패/i
+  // 전략별 분석파일에 다른 전략의 일반 후보/매수/매도 로그가 섞이지 않도록
+  // 전략명/전략 전용 태그 중심으로 수집한다. 공통 시장온도는 분석에 필요해 명시적으로 허용한다.
+  CORE_VOLUME: /\bCORE\b|\bVOLUME\b|CORE_|VOLUME_|\[CORE|\[VOLUME|\[BUY\]|\[DISCOVER\]|\[후보재평가|\[후보 강화|\[아까운 후보|\[시장온도\]|\[START LOCK\]|CORE\/VOLUME/i,
+  CORE_VOLUME_ERR: /\bCORE\b|\bVOLUME\b|CORE_|VOLUME_|auto-trader-core|error|fail|timeout|시간초과|오류|실패|ECONN|fetch failed/i,
+  OPEN: /\bOPEN\b|\bHOT\b|OPEN_|HOT_|\[OPEN|\[HOT|\[시장온도\]|open-strategy|hot-scanner/i,
+  OPEN_ERR: /\bOPEN\b|\bHOT\b|OPEN_|HOT_|open-strategy|hot-scanner|error|fail|timeout|시간초과|API|오류|실패/i,
+  WAVE: /\bWAVE\b|WAVE_|\[WAVE|\bREADY\b|\bTRIGGER\b|\bREBOUND\b|\bCOOLDOWN\b|wave-strategy/i,
+  WAVE_ERR: /\bWAVE\b|WAVE_|wave-strategy|error|fail|timeout|시간초과|오류|실패/i,
+  FAST: /\bFAST\b|FAST_|\[FAST|fast-strategy/i,
+  FAST_ERR: /\bFAST\b|FAST_|fast-strategy|error|fail|timeout|시간초과|API|오류|실패/i
 };
 
 /* ---------------- ZIP ---------------- */
@@ -364,7 +366,7 @@ function appendRuntimeAnalysisLog(level, args) {
     const date = dateKeyFromValue(now.getTime(), TZ) || dateKey(TZ);
     const stamp = kstIsoTimestamp(now);
     getRuntimeLogStream(date).write(
-      stamp + ' [' + String(level || 'LOG').toUpperCase() + '] ' + body + '\\n'
+      stamp + ' [' + String(level || 'LOG').toUpperCase() + '] ' + body + '\n'
     );
   } catch (error) {
     runtimeLogWriteFailed = true;
@@ -400,7 +402,7 @@ async function collectRuntimeAnalysisLog(date, keywordRegex, maxRows = 12000) {
       rows: [],
       count: 0,
       exists: false,
-      text: '[분석 전용 날짜확정 런타임 로그 없음]\\n'
+      text: '[분석 전용 날짜확정 런타임 로그 없음]\n'
     };
   }
 
@@ -424,8 +426,8 @@ async function collectRuntimeAnalysisLog(date, keywordRegex, maxRows = 12000) {
       count: rows.length,
       exists: true,
       text: rows.length
-        ? '----- SOURCE: ' + filePath + ' -----\\n' + rows.join('\\n') + '\\n'
-        : '[해당 분석일 전략 관련 날짜확정 런타임 로그 없음]\\n'
+        ? '----- SOURCE: ' + filePath + ' -----\n' + rows.join('\n') + '\n'
+        : '[해당 분석일 전략 관련 날짜확정 런타임 로그 없음]\n'
     };
   } catch (error) {
     return {
@@ -434,7 +436,7 @@ async function collectRuntimeAnalysisLog(date, keywordRegex, maxRows = 12000) {
       count: 0,
       exists: true,
       error: error.message,
-      text: '[분석 전용 날짜확정 런타임 로그 읽기 실패] ' + error.message + '\\n'
+      text: '[분석 전용 날짜확정 런타임 로그 읽기 실패] ' + error.message + '\n'
     };
   }
 }
@@ -446,8 +448,8 @@ function mergeConfirmedLogText(runtimeResult, pm2Result) {
   if (pm2Result?.explicitCount > 0) parts.push(pm2Result.explicitText.trimEnd());
 
   return parts.length
-    ? parts.join('\\n') + '\\n'
-    : '[해당 분석일로 날짜가 확정된 전략 로그 없음]\\n';
+    ? parts.join('\n') + '\n'
+    : '[해당 분석일로 날짜가 확정된 전략 로그 없음]\n';
 }
 
 /* ---------------- MASTER source of truth ---------------- */
@@ -656,7 +658,7 @@ function discoverPm2LogFiles(kind = 'out') {
     .filter(filePath => fs.existsSync(filePath));
 }
 
-async function scanLogFile(filePath, date, keywordRegex, maxExplicit = 6000, maxUndated = 500) {
+async function scanLogFile(filePath, date, keywordRegex, maxExplicit = 6000, maxUndated = 250) {
   if (!fs.existsSync(filePath)) {
     return {
       filePath,
@@ -1046,8 +1048,9 @@ async function buildFastAnalysis(date) {
   const masterTrades = getMasterStrategyTrades('FAST', date);
   const localState = buildFastLocalStateForDate(date);
 
-  const [runtimeLog, outLog, errLog] = await Promise.all([
+  const [runtimeLog, runtimeErrLog, outLog, errLog] = await Promise.all([
     collectRuntimeAnalysisLog(date, LOG_RX.FAST),
+    collectRuntimeAnalysisLog(date, LOG_RX.FAST_ERR),
     collectPm2Logs('out', date, LOG_RX.FAST),
     collectPm2Logs('error', date, LOG_RX.FAST_ERR)
   ]);
@@ -1075,7 +1078,7 @@ async function buildFastAnalysis(date) {
 
     section(
       'FAST : DATE CONFIRMED KR SERVER ERROR',
-      errLog.explicitText
+      mergeConfirmedLogText(runtimeErrLog, errLog)
     ),
 
     section(
@@ -1093,6 +1096,7 @@ async function buildFastAnalysis(date) {
       safeJson({
         date,
         confirmedRuntimeRows: runtimeLog.count,
+        confirmedRuntimeErrorRows: runtimeErrLog.count,
         confirmedOutRows: outLog.explicitCount,
         confirmedErrorRows: errLog.explicitCount,
         undatedOutReferenceRows: outLog.undatedCount,
@@ -1113,8 +1117,9 @@ async function buildCoreVolumeAnalysis(date) {
   const coreTrades = getMasterStrategyTrades('CORE', date);
   const volumeTrades = getMasterStrategyTrades('VOLUME', date);
 
-  const [runtimeLog, outLog, errLog] = await Promise.all([
+  const [runtimeLog, runtimeErrLog, outLog, errLog] = await Promise.all([
     collectRuntimeAnalysisLog(date, LOG_RX.CORE_VOLUME),
+    collectRuntimeAnalysisLog(date, LOG_RX.CORE_VOLUME_ERR),
     collectPm2Logs('out', date, LOG_RX.CORE_VOLUME),
     collectPm2Logs('error', date, LOG_RX.CORE_VOLUME_ERR)
   ]);
@@ -1123,7 +1128,7 @@ async function buildCoreVolumeAnalysis(date) {
     section('CORE / VOLUME : DATE CONFIRMED KR SERVER OUT', mergeConfirmedLogText(runtimeLog, outLog)),
     section('CORE MASTER TRADE LOGS (DATE FILTERED)', safeJson(coreTrades)),
     section('VOLUME MASTER TRADE LOGS (DATE FILTERED)', safeJson(volumeTrades)),
-    section('CORE / VOLUME : DATE CONFIRMED KR SERVER ERROR', errLog.explicitText),
+    section('CORE / VOLUME : DATE CONFIRMED KR SERVER ERROR', mergeConfirmedLogText(runtimeErrLog, errLog)),
     section('CORE / VOLUME : UNDATED PM2 REFERENCE ONLY', outLog.undatedText),
     section('CORE / VOLUME : MASTER SUMMARY', strategySummary(portfolio, ['CORE', 'VOLUME']))
   ].join('');
@@ -1134,8 +1139,9 @@ async function buildOpenAnalysis(date) {
   const portfolio = snapshot.portfolio || {};
   const trades = getMasterStrategyTrades('OPEN', date);
 
-  const [runtimeLog, outLog, errLog] = await Promise.all([
+  const [runtimeLog, runtimeErrLog, outLog, errLog] = await Promise.all([
     collectRuntimeAnalysisLog(date, LOG_RX.OPEN),
+    collectRuntimeAnalysisLog(date, LOG_RX.OPEN_ERR),
     collectPm2Logs('out', date, LOG_RX.OPEN),
     collectPm2Logs('error', date, LOG_RX.OPEN_ERR)
   ]);
@@ -1150,7 +1156,7 @@ async function buildOpenAnalysis(date) {
   return [
     section('OPEN / HOT : DATE CONFIRMED KR SERVER OUT', mergeConfirmedLogText(runtimeLog, outLog)),
     section('OPEN MASTER TRADE LOGS (DATE FILTERED / SOURCE OF TRUTH)', safeJson(trades)),
-    section('OPEN / HOT : DATE CONFIRMED KR SERVER ERROR', errLog.explicitText),
+    section('OPEN / HOT : DATE CONFIRMED KR SERVER ERROR', mergeConfirmedLogText(runtimeErrLog, errLog)),
     section('OPEN / HOT : UNDATED PM2 REFERENCE ONLY', outLog.undatedText),
     section('OPEN LEARNING LOCAL SNAPSHOT', safeJson(learning)),
     section('OPEN MASTER SUMMARY', strategySummary(portfolio, ['OPEN']))
@@ -1162,8 +1168,9 @@ async function buildWaveAnalysis(date) {
   const portfolio = snapshot.portfolio || {};
   const trades = getMasterStrategyTrades('WAVE', date);
 
-  const [runtimeLog, outLog, errLog] = await Promise.all([
+  const [runtimeLog, runtimeErrLog, outLog, errLog] = await Promise.all([
     collectRuntimeAnalysisLog(date, LOG_RX.WAVE),
+    collectRuntimeAnalysisLog(date, LOG_RX.WAVE_ERR),
     collectPm2Logs('out', date, LOG_RX.WAVE),
     collectPm2Logs('error', date, LOG_RX.WAVE_ERR)
   ]);
@@ -1176,7 +1183,7 @@ async function buildWaveAnalysis(date) {
   return [
     section('WAVE : DATE CONFIRMED KR SERVER OUT', mergeConfirmedLogText(runtimeLog, outLog)),
     section('WAVE MASTER TRADE LOGS (DATE FILTERED / SOURCE OF TRUTH)', safeJson(trades)),
-    section('WAVE : DATE CONFIRMED KR SERVER ERROR', errLog.explicitText),
+    section('WAVE : DATE CONFIRMED KR SERVER ERROR', mergeConfirmedLogText(runtimeErrLog, errLog)),
     section('WAVE : UNDATED PM2 REFERENCE ONLY', outLog.undatedText),
     section('WAVE LOCAL STATE (REFERENCE)', localState),
     section('MASTER WAVE SUMMARY', strategySummary(portfolio, ['WAVE']))
@@ -1311,7 +1318,7 @@ async function createPackage(type, date) {
     dateIsolation: {
       masterTrades: '요청 날짜만 포함',
       fastLocalState: 'candidateDate/dailyStats 요청 날짜만 포함',
-      runtimeDatedRows: '분석 모듈이 전 전략 console 로그를 KST 날짜·시간과 함께 일자별 파일에 기록',
+      runtimeDatedRows: '분석 모듈이 전 전략 console 로그를 KST 날짜·시간과 함께 일자별 파일에 기록하고 전략별 필터로 분리',
       pm2ExplicitRows: '기존 PM2 로그 중 줄 자체 날짜가 요청 날짜와 일치할 때만 당일 확정 로그',
       pm2UndatedRows: '별도 REFERENCE ONLY 섹션으로 격리. 당일 거래 판단에 사용하지 않음',
       cumulativePerformance: 'REFERENCE ONLY로 분리'
@@ -1443,7 +1450,7 @@ module.exports = function installKrAnalysisRoutes(app) {
   });
 
   console.log(
-    '[분석자료] KR ZIP 다운로드 API 활성화 /api/analysis/download / 전 전략 날짜확정 런타임 로그 v9'
+    '[분석자료] KR ZIP 다운로드 API 활성화 /api/analysis/download / 전 전략 날짜확정·전략분리 런타임 로그 v10'
   );
 };
 
