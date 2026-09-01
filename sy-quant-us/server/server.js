@@ -14,6 +14,18 @@ const usCore = require('./us-core-strategy');
 const virtualTracker = require('./us-core-virtual-tracker');
 const coreHistory = require('./us-core-history-store');
 const coreDailySummary = require('./us-core-daily-summary');
+const usFast = require('./us-fast-strategy');
+const fastVirtualTracker = require('./us-fast-virtual-tracker');
+const fastHistory = require('./us-fast-history-store');
+const fastDailySummary = require('./us-fast-daily-summary');
+const usVolume = require('./us-volume-strategy');
+const volumeVirtualTracker = require('./us-volume-virtual-tracker');
+const volumeHistory = require('./us-volume-history-store');
+const volumeDailySummary = require('./us-volume-daily-summary');
+const usWave = require('./us-wave-strategy');
+const waveVirtualTracker = require('./us-wave-virtual-tracker');
+const waveHistory = require('./us-wave-history-store');
+const waveDailySummary = require('./us-wave-daily-summary');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -43,10 +55,13 @@ function buildUsStrategyDashboardSummary(portfolio = {}) {
   const settings = strategySettings.getSettings();
   const activity = activityStore.getDashboardActivity();
   const coreStatus = usCore.getCoreStatus();
+  const fastStatus = usFast.getFastStatus();
+  const volumeStatus = usVolume.getVolumeStatus();
+  const waveStatus = usWave.getWaveStatus();
 
   const strategies = Object.values(settings.strategies).map(item => {
     const realizedProfit = Number(activity.realizedByStrategy?.[item.id] || 0);
-    const observerStatus = item.id === 'CORE' && !item.implemented
+    const observerStatus = (item.id === 'CORE' || item.id === 'FAST' || item.id === 'VOLUME' || item.id === 'WAVE') && !item.implemented
       ? '관찰중 · BUY OFF'
       : null;
     return {
@@ -58,7 +73,15 @@ function buildUsStrategyDashboardSummary(portfolio = {}) {
         : '준비중 · BUY OFF'),
       implemented: Boolean(item.implemented),
       buyEnabled: Boolean(item.buyEnabled),
-      observerOnly: item.id === 'CORE' ? Boolean(coreStatus.observerOnly) : false,
+      observerOnly: item.id === 'CORE'
+        ? Boolean(coreStatus.observerOnly)
+        : item.id === 'FAST'
+          ? Boolean(fastStatus.observerOnly)
+          : item.id === 'VOLUME'
+            ? Boolean(volumeStatus.observerOnly)
+            : item.id === 'WAVE'
+              ? Boolean(waveStatus.observerOnly)
+              : false,
       singleBuyRate: Number(item.singleBuyRate || 0),
       strategyMaxInvestmentRate: Number(item.strategyMaxInvestmentRate || item.allocationRate || 0),
       allocationRate: Number(item.strategyMaxInvestmentRate || item.allocationRate || 0),
@@ -115,11 +138,41 @@ function buildUsStrategyDashboardSummary(portfolio = {}) {
         virtualTracker: virtualTracker.getStatus(),
         historyRecorder: coreHistory.getStatus(),
         dailySummary: coreDailySummary.getStatus()
+      },
+      FAST: {
+        observerOnly: true,
+        orderSubmissionEnabled: false,
+        implemented: false,
+        session: fastStatus.session,
+        lastScan: fastStatus.lastScan,
+        virtualTracker: fastVirtualTracker.getStatus(),
+        historyRecorder: fastHistory.getStatus(),
+        dailySummary: fastDailySummary.getStatus()
+      },
+      VOLUME: {
+        observerOnly: true,
+        orderSubmissionEnabled: false,
+        implemented: false,
+        session: volumeStatus.session,
+        lastScan: volumeStatus.lastScan,
+        virtualTracker: volumeVirtualTracker.getStatus(),
+        historyRecorder: volumeHistory.getStatus(),
+        dailySummary: volumeDailySummary.getStatus()
+      },
+      WAVE: {
+        observerOnly: true,
+        orderSubmissionEnabled: false,
+        implemented: false,
+        session: waveStatus.session,
+        lastScan: waveStatus.lastScan,
+        virtualTracker: waveVirtualTracker.getStatus(),
+        historyRecorder: waveHistory.getStatus(),
+        dailySummary: waveDailySummary.getStatus()
       }
     },
     calculationNote: settings.masterBuyEnabled
       ? '전체 신규매수 ON · 전략별 매수허용과 운전한도는 설정에서 관리합니다.'
-      : '전체 신규매수 OFF · US-CORE는 후보 관찰·가상성과 추적·일일 이력·장마감 요약만 수행하고 주문은 하지 않습니다.',
+      : '전체 신규매수 OFF · US-CORE/US-FAST/US-VOLUME/US-WAVE는 후보 관찰·가상성과 추적·일일 이력·장마감 요약만 수행하고 주문은 하지 않습니다.',
     updatedAt: portfolio.time || new Date().toISOString()
   };
 }
@@ -261,6 +314,186 @@ app.get('/api/us-core/analyze', async (req, res) => {
   }
 });
 
+app.get('/api/us-fast/status', (req, res) => {
+  try {
+    res.json(usFast.getFastStatus());
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-fast/virtual-trades', (req, res) => {
+  try {
+    res.json(fastVirtualTracker.getStatus({ includePositions: true }));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-fast/history', (req, res) => {
+  try {
+    const date = String(req.query.date || '').trim();
+    res.json(fastHistory.getHistory(date));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-fast/history-status', (req, res) => {
+  try {
+    res.json(fastHistory.getStatus());
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-fast/daily-summary', (req, res) => {
+  try {
+    const date = String(req.query.date || '').trim();
+    res.json(fastDailySummary.getSummary(date, { preview: true }));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-fast/daily-summary-status', (req, res) => {
+  try {
+    res.json(fastDailySummary.getStatus());
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.post('/api/us-fast/scan', async (req, res) => {
+  try {
+    const force = req.body?.force === true || String(req.query.force || '') === '1';
+    const result = await usFast.runFastScan({ force });
+    res.status(result.ok === false && result.status === 'ERROR' ? 500 : 200).json(result);
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-volume/status', (req, res) => {
+  try {
+    res.json(usVolume.getVolumeStatus());
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-volume/virtual-trades', (req, res) => {
+  try {
+    res.json(volumeVirtualTracker.getStatus({ includePositions: true }));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-volume/history', (req, res) => {
+  try {
+    const date = String(req.query.date || '').trim();
+    res.json(volumeHistory.getHistory(date));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-volume/history-status', (req, res) => {
+  try {
+    res.json(volumeHistory.getStatus());
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-volume/daily-summary', (req, res) => {
+  try {
+    const date = String(req.query.date || '').trim();
+    res.json(volumeDailySummary.getSummary(date, { preview: true }));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-volume/daily-summary-status', (req, res) => {
+  try {
+    res.json(volumeDailySummary.getStatus());
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.post('/api/us-volume/scan', async (req, res) => {
+  try {
+    const force = req.body?.force === true || String(req.query.force || '') === '1';
+    const result = await usVolume.runVolumeScan({ force });
+    res.status(result.ok === false && result.status === 'ERROR' ? 500 : 200).json(result);
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-wave/status', (req, res) => {
+  try {
+    res.json(usWave.getWaveStatus());
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-wave/virtual-trades', (req, res) => {
+  try {
+    res.json(waveVirtualTracker.getStatus({ includePositions: true }));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-wave/history', (req, res) => {
+  try {
+    const date = String(req.query.date || '').trim();
+    res.json(waveHistory.getHistory(date));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-wave/history-status', (req, res) => {
+  try {
+    res.json(waveHistory.getStatus());
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-wave/daily-summary', (req, res) => {
+  try {
+    const date = String(req.query.date || '').trim();
+    res.json(waveDailySummary.getSummary(date, { preview: true }));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us-wave/daily-summary-status', (req, res) => {
+  try {
+    res.json(waveDailySummary.getStatus());
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.post('/api/us-wave/scan', async (req, res) => {
+  try {
+    const force = req.body?.force === true || String(req.query.force || '') === '1';
+    const result = await usWave.runWaveScan({ force });
+    res.status(result.ok === false && result.status === 'ERROR' ? 500 : 200).json(result);
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
 app.get('/api/portfolio-summary', async (req, res) => {
   try {
     const summary = await portfolioManager.getPortfolioSummary();
@@ -351,8 +584,24 @@ app.listen(PORT, '0.0.0.0', () => {
     `구현전략=${settings.implementedCount}개`,
     '미구현 전략 BUY는 서버에서 강제 OFF'
   );
+
   usCore.startCoreObserver();
   virtualTracker.startVirtualTracker();
   coreHistory.startHistoryRecorder();
   coreDailySummary.startDailySummary();
+
+  usFast.startFastObserver();
+  fastVirtualTracker.startVirtualTracker();
+  fastHistory.startHistoryRecorder();
+  fastDailySummary.startDailySummary();
+
+  usVolume.startVolumeObserver();
+  volumeVirtualTracker.startVirtualTracker();
+  volumeHistory.startHistoryRecorder();
+  volumeDailySummary.startDailySummary();
+
+  usWave.startWaveObserver();
+  waveVirtualTracker.startVirtualTracker();
+  waveHistory.startHistoryRecorder();
+  waveDailySummary.startDailySummary();
 });

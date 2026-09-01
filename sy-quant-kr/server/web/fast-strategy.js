@@ -9,7 +9,7 @@ const HOT_CANDIDATES_FILE = path.join(__dirname, "hot-candidates.json");
 const HOT_HISTORY_FILE = path.join(__dirname, "hot-candidates-history.json");
 const OPEN_MARKET_FILE = path.join(__dirname, "open-market.json");
 
-const STRATEGY_VERSION = "1.3.4-MASTER";
+const STRATEGY_VERSION = "1.3.5-MASTER";
 const FAST_MASTER_POSITION_RATIO = 0.10;
 
 const SETTINGS = {
@@ -121,6 +121,12 @@ const SETTINGS = {
   sellMaxQuoteAgeMs: 5000,
   buyPriceRequestTimeoutMs: 5000,
   sellPriceRequestTimeoutMs: 12000,
+
+  // READY 후보가 마지막 현재가 조회 1회 실패 때문에 매수 기회를 놓치지 않도록
+  // 신규매수도 짧게 1회 재시도한다.
+  buyPriceRetryCount: 1,
+  buyPriceRetryDelayMs: 250,
+
   sellPriceRetryCount: 1,
   sellPriceRetryDelayMs: 250,
 
@@ -414,7 +420,6 @@ function normalizeFastMarketData(raw = {}, source = "UNKNOWN") {
 }
 
 function getMarketData() {
-  // 장중에는 MASTER의 최신 시장온도를 우선 사용한다.
   try {
     const masterState = portfolioManager.loadMasterState();
     const masterMarket = masterState?.marketTemperature;
@@ -425,7 +430,6 @@ function getMarketData() {
   } catch (error) {
     console.warn(`[FAST 시장온도] MASTER 자료 읽기 실패 / ${error.message}`);
   }
-  // MASTER 온도가 아직 준비되지 않은 장초에만 장전자료 fallback.
   return normalizeFastMarketData(readJson(OPEN_MARKET_FILE, {}) || {}, "OPEN_MARKET_FALLBACK");
 }
 
@@ -941,9 +945,24 @@ async function fetchJson(url, timeoutMs = SETTINGS.buyPriceRequestTimeoutMs) {
 async function getFastPrice(code, source = "fast") {
   const normalizedSource = String(source || "").toLowerCase();
   const isSellRequest = normalizedSource === "fast-sell";
-  const timeoutMs = isSellRequest ? SETTINGS.sellPriceRequestTimeoutMs : SETTINGS.buyPriceRequestTimeoutMs;
-  const maxQuoteAgeMs = isSellRequest ? SETTINGS.sellMaxQuoteAgeMs : SETTINGS.buyMaxQuoteAgeMs;
-  const maxAttempts = isSellRequest ? 1 + Math.max(0, toNumber(SETTINGS.sellPriceRetryCount)) : 1;
+
+  const timeoutMs = isSellRequest
+    ? SETTINGS.sellPriceRequestTimeoutMs
+    : SETTINGS.buyPriceRequestTimeoutMs;
+
+  const maxQuoteAgeMs = isSellRequest
+    ? SETTINGS.sellMaxQuoteAgeMs
+    : SETTINGS.buyMaxQuoteAgeMs;
+
+  const retryCount = isSellRequest
+    ? Math.max(0, toNumber(SETTINGS.sellPriceRetryCount))
+    : Math.max(0, toNumber(SETTINGS.buyPriceRetryCount));
+
+  const retryDelayMs = isSellRequest
+    ? Math.max(0, toNumber(SETTINGS.sellPriceRetryDelayMs))
+    : Math.max(0, toNumber(SETTINGS.buyPriceRetryDelayMs));
+
+  const maxAttempts = 1 + retryCount;
   let lastError = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -952,24 +971,48 @@ async function getFastPrice(code, source = "fast") {
         `${API_BASE}/api/price?code=${encodeURIComponent(code)}&source=${encodeURIComponent(source)}`,
         timeoutMs
       );
-      const currentPrice = Math.abs(toNumber(data.currentPrice || data.price || data.raw?.cur_prc));
-      const observedAtMs = toNumber(data.quoteObservedAtMs || data.cachedAtMs);
-      const quoteAgeMs = observedAtMs > 0 ? Math.max(0, Date.now() - observedAtMs) : 0;
+
+      const currentPrice = Math.abs(
+        toNumber(data.currentPrice || data.price || data.raw?.cur_prc)
+      );
+
+      const observedAtMs = toNumber(
+        data.quoteObservedAtMs || data.cachedAtMs
+      );
+
+      const quoteAgeMs = observedAtMs > 0
+        ? Math.max(0, Date.now() - observedAtMs)
+        : 0;
+
       if (!currentPrice) throw new Error("현재가 없음");
+
       if (observedAtMs > 0 && quoteAgeMs > maxQuoteAgeMs) {
-        throw new Error(`시세 오래됨 ${Math.round(quoteAgeMs / 1000)}초 / 허용 ${Math.round(maxQuoteAgeMs / 1000)}초`);
+        throw new Error(
+          `시세 오래됨 ${Math.round(quoteAgeMs / 1000)}초 / 허용 ${Math.round(maxQuoteAgeMs / 1000)}초`
+        );
       }
-      return { ...data, currentPrice, quoteAgeMs };
+
+      if (attempt > 1) {
+        console.log(
+          `[FAST ${isSellRequest ? "매도" : "매수"}시세 재시도 성공] ` +
+          `${normalizeCode(code) || code} / ${attempt}/${maxAttempts}`
+        );
+      }
+
+      return { ...data, currentPrice, quoteAgeMs, fastPriceAttempt: attempt };
     } catch (error) {
       lastError = error;
       if (attempt >= maxAttempts) break;
+
       console.warn(
-        `[FAST 매도시세 재시도] ${normalizeCode(code) || code} / ` +
-        `${attempt}/${maxAttempts - 1} / ${error.message}`
+        `[FAST ${isSellRequest ? "매도" : "매수"}시세 재시도] ` +
+        `${normalizeCode(code) || code} / ${attempt}/${retryCount} / ${error.message}`
       );
-      await sleep(SETTINGS.sellPriceRetryDelayMs);
+
+      if (retryDelayMs > 0) await sleep(retryDelayMs);
     }
   }
+
   throw lastError || new Error("FAST 현재가 조회 실패");
 }
 
@@ -1312,12 +1355,15 @@ async function tryFastBuys(state, evaluations, marketData) {
         target.candidate.diagnosticReason = target.candidate.reason;
       }
     } catch (error) {
+      const attempts = 1 + Math.max(0, toNumber(SETTINGS.buyPriceRetryCount));
       target.candidate.status = "WATCH";
-      target.candidate.reason = `실시간 재확인 실패 / ${error.message}`;
+      target.candidate.reason = `실시간 재확인 실패 / 매수시세 ${attempts}회 시도 / ${error.message}`;
       target.candidate.diagnosticReason = target.candidate.reason;
-      console.warn(`[FAST 후보조회 실패] ${target.candidate.name} / ${error.message}`);
+      console.warn(
+        `[FAST 후보조회 실패] ${target.candidate.name}(${target.candidate.code}) / ` +
+        `매수시세 ${attempts}회 시도 후 실패 / ${error.message}`
+      );
     }
-    // 슬롯을 모두 사용해도 데이터 보강은 중단하지 않는다.
     await sleep(120);
   }
 }
@@ -1376,6 +1422,9 @@ function getFastSummary(stateInput = null) {
     effectiveDailyBuyLimit: getEffectiveDailyBuyLimit(),
     buyStartTime: SETTINGS.buyStartTime,
     buyEndTime: SETTINGS.buyEndTime,
+    buyPriceRequestTimeoutMs: SETTINGS.buyPriceRequestTimeoutMs,
+    buyPriceRetryCount: SETTINGS.buyPriceRetryCount,
+    buyPriceRetryDelayMs: SETTINGS.buyPriceRetryDelayMs,
     absoluteMarketBlockScore: SETTINGS.absoluteMarketBlockScore,
     extremeWeakMarketScore: SETTINGS.extremeWeakMarketScore,
     extremeWeakMinVolumeRatio: SETTINGS.extremeWeakMinVolumeRatio,

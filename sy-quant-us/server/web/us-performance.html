@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>SY Quant US 대시보드</title>
+  <style>
+    * { box-sizing:border-box; }
+
+    body {
+      margin:0;
+      padding:12px;
+      font-family:Arial,sans-serif;
+      background:#111827;
+      color:#f9fafb;
+    }
+
+    .wrap {
+      max-width:1180px;
+      margin:0 auto;
+    }
+
+    .header {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:8px;
+      margin-bottom:5px;
+    }
+
+    h1 {
+      margin:0;
+      font-size:28px;
+      font-weight:800;
+      line-height:1.15;
+      white-space:nowrap;
+    }
+
+    .header-actions {
+      display:flex;
+      gap:6px;
+      flex:0 0 auto;
+    }
+
+    .header-btn {
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-height:42px;
+      padding:9px 14px;
+      border-radius:10px;
+      color:#fff;
+      text-decoration:none;
+      font-size:14px;
+      font-weight:900;
+      white-space:nowrap;
+    }
+
+    .analysis-btn {
+      background:#7c3aed;
+      border:1px solid #8b5cf6;
+    }
+
+    .settings-btn {
+      background:#0f766e;
+      border:1px solid #14b8a6;
+    }
+
+    .status-line {
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      flex-wrap:wrap;
+      gap:7px;
+      margin:5px 0 12px;
+      color:#9ca3af;
+      font-size:12px;
+    }
+
+    .status-line span + span::before {
+      content:"·";
+      margin-right:7px;
+      color:#4b5563;
+    }
+
+    .status-ok { color:#86efac; }
+    .status-off { color:#fbbf24; }
+    .status-on { color:#86efac; }
+
+    .plus { color:#fb7185 !important; }
+    .minus { color:#60a5fa !important; }
+
+    /* KR과 같은 상단 6카드 */
+    .master-primary-grid {
+      display:grid;
+      grid-template-columns:repeat(3,minmax(0,1fr));
+      gap:6px;
+    }
+
+    .summary-card {
+      min-height:96px;
+      padding:12px 8px;
+      border:1px solid #334155;
+      border-radius:14px;
+      background:#111c30;
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      text-align:center;
+    }
+
+    .summary-label {
+      margin-bottom:7px;
+      color:#93b4e8;
+      font-size:14px;
+      font-weight:700;
+    }
+
+    .summary-value {
+      font-size:25px;
+      line-height:1.15;
+      font-weight:900;
+      word-break:keep-all;
+    }
+
+    .summary-value.strategy-value {
+      font-size:20px;
+    }
+
+    /* 오늘 성적 */
+    .today-section {
+      margin-top:12px;
+    }
+
+    .section-title {
+      margin:0 0 7px 2px;
+      font-size:21px;
+      font-weight:900;
+    }
+
+    .today-grid {
+      display:grid;
+      grid-template-columns:repeat(4,minmax(0,1fr));
+      gap:6px;
+    }
+
+    .today-card {
+      min-height:78px;
+      padding:10px 7px;
+      border:1px solid #334155;
+      border-radius:13px;
+      background:#111c30;
+      text-align:center;
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+    }
+
+    .today-label {
+      color:#93b4e8;
+      font-size:12px;
+      font-weight:700;
+      margin-bottom:7px;
+    }
+
+    .today-value {
+      font-size:20px;
+      font-weight:900;
+    }
+
+    /* 전략 카드 */
+    .strategy-section {
+      margin-top:12px;
+    }
+
+    .strategy-section-head {
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-end;
+      gap:8px;
+      margin-bottom:8px;
+    }
+
+    .strategy-section-head h2 {
+      margin:0;
+      font-size:21px;
+    }
+
+    .section-note {
+      color:#94a3b8;
+      font-size:11px;
+      text-align:right;
+      line-height:1.45;
+    }
+
+    .strategy-grid {
+      display:grid;
+      grid-template-columns:repeat(3,minmax(0,1fr));
+      gap:9px;
+    }
+
+    .strategy-card {
+      position:relative;
+      min-width:0;
+      padding:12px;
+      border:1px solid #334155;
+      border-top:4px solid #64748b;
+      border-radius:14px;
+      background:#111c30;
+      box-shadow:0 4px 14px rgba(0,0,0,.16);
+    }
+
+    .strategy-card.strategy-open { border-top-color:#f59e0b; }
+    .strategy-card.strategy-core { border-top-color:#3b82f6; }
+    .strategy-card.strategy-volume { border-top-color:#8b5cf6; }
+    .strategy-card.strategy-wave { border-top-color:#14b8a6; }
+    .strategy-card.strategy-fast { border-top-color:#ef4444; }
+
+    .strategy-head {
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:7px;
+    }
+
+    .strategy-name {
+      min-width:0;
+      font-size:17px;
+      font-weight:900;
+    }
+
+    .strategy-status {
+      max-width:125px;
+      padding:5px 8px;
+      border-radius:999px;
+      background:#1e293b;
+      color:#dbeafe;
+      font-size:10px;
+      font-weight:800;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    .strategy-net-label {
+      margin-top:12px;
+      color:#93b4e8;
+      font-size:11px;
+    }
+
+    .strategy-profit {
+      margin-top:3px;
+      font-size:25px;
+      font-weight:950;
+    }
+
+    .strategy-rate-row {
+      display:flex;
+      justify-content:space-between;
+      gap:7px;
+      margin-top:5px;
+      color:#93b4e8;
+      font-size:11px;
+    }
+
+    .strategy-rate-row b {
+      color:#f8fafc;
+      font-size:13px;
+    }
+
+    .strategy-mini-grid {
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:6px;
+      margin-top:10px;
+    }
+
+    .strategy-mini-item {
+      min-width:0;
+      padding:7px;
+      border-radius:9px;
+      background:#0b1220;
+    }
+
+    .strategy-mini-label {
+      color:#64748b;
+      font-size:10px;
+      margin-bottom:4px;
+    }
+
+    .strategy-mini-value {
+      color:#f8fafc;
+      font-size:12px;
+      font-weight:800;
+      line-height:1.35;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    .strategy-sparkline {
+      height:45px;
+      margin-top:8px;
+    }
+
+    .strategy-sparkline svg {
+      width:100%;
+      height:45px;
+      display:block;
+      overflow:visible;
+    }
+
+    .spark-base {
+      stroke:#334155;
+      stroke-width:1;
+      stroke-dasharray:3 3;
+    }
+
+    .spark-line {
+      fill:none;
+      stroke-width:2.5;
+      stroke-linecap:round;
+      stroke-linejoin:round;
+    }
+
+    .strategy-footer {
+      margin-top:5px;
+      color:#64748b;
+      font-size:10px;
+    }
+
+    /* 최근 7거래일: KR처럼 전략 카드 아래 */
+    .recent-card {
+      margin-top:12px;
+      padding:11px;
+      border:1px solid #334155;
+      border-radius:14px;
+      background:#111c30;
+    }
+
+    .recent-title {
+      margin:0 0 8px;
+      font-size:17px;
+      font-weight:900;
+    }
+
+    .table-scroll { overflow-x:auto; }
+
+    .recent-table {
+      width:100%;
+      min-width:650px;
+      border-collapse:collapse;
+      table-layout:fixed;
+    }
+
+    .recent-table th,
+    .recent-table td {
+      padding:8px 7px;
+      border-bottom:1px solid #293548;
+      text-align:right;
+      font-size:12px;
+    }
+
+    .recent-table th {
+      color:#93b4e8;
+      font-size:11px;
+    }
+
+    .recent-table th:first-child,
+    .recent-table td:first-child {
+      width:150px;
+      text-align:left;
+      font-weight:800;
+    }
+
+    .recent-table tbody tr:last-child td { border-bottom:0; }
+
+    .recent-mobile { display:none; }
+
+    /* 하단 상세 */
+    .activity-tabs {
+      display:grid;
+      grid-template-columns:repeat(3,1fr);
+      gap:6px;
+      margin-top:12px;
+    }
+
+    .tab-btn {
+      min-height:44px;
+      border:0;
+      border-radius:11px;
+      background:#374151;
+      color:#d1d5db;
+      font-size:14px;
+      font-weight:900;
+      cursor:pointer;
+    }
+
+    .tab-btn.active {
+      background:#2563eb;
+      color:#fff;
+    }
+
+    .activity-panel {
+      display:grid;
+      gap:8px;
+      margin-top:8px;
+    }
+
+    .empty {
+      padding:20px;
+      border:1px solid #1e293b;
+      border-radius:12px;
+      background:#111c30;
+      color:#94a3b8;
+      text-align:center;
+    }
+
+    .holding-card,
+    .activity-card {
+      display:grid;
+      grid-template-columns:minmax(150px,1.4fr) repeat(5,minmax(90px,.8fr));
+      gap:7px;
+      align-items:center;
+      padding:11px;
+      border:1px solid #334155;
+      border-radius:13px;
+      background:#111c30;
+    }
+
+    .activity-card.candidate {
+      grid-template-columns:minmax(150px,1.4fr) repeat(4,minmax(90px,.8fr));
+    }
+
+    .holding-name {
+      font-size:16px;
+      font-weight:900;
+    }
+
+    .holding-sub {
+      margin-top:3px;
+      color:#94a3b8;
+      font-size:11px;
+    }
+
+    .metric { text-align:right; }
+
+    .metric span {
+      display:block;
+      margin-bottom:3px;
+      color:#94a3b8;
+      font-size:11px;
+    }
+
+    .metric b { font-size:14px; }
+
+    .footer-note {
+      margin:14px 0 4px;
+      color:#64748b;
+      text-align:center;
+      font-size:11px;
+    }
+
+    @media(max-width:760px) {
+      body { padding:5px; }
+      h1 { font-size:25px; }
+
+      .header-btn {
+        min-height:40px;
+        padding:7px 9px;
+        font-size:12px;
+      }
+
+      .status-line {
+        margin:4px 0 8px;
+        font-size:11px;
+      }
+
+      .master-primary-grid {
+        grid-template-columns:repeat(2,minmax(0,1fr));
+        gap:4px;
+      }
+
+      .summary-card {
+        min-height:76px;
+        padding:7px 4px;
+        border-radius:10px;
+      }
+
+      .summary-label {
+        margin-bottom:4px;
+        font-size:13px;
+      }
+
+      .summary-value {
+        font-size:20px;
+      }
+
+      .summary-value.strategy-value {
+        font-size:15px;
+      }
+
+      .today-section { margin-top:8px; }
+      .section-title { font-size:19px; margin-bottom:5px; }
+
+      .today-grid {
+        grid-template-columns:repeat(2,minmax(0,1fr));
+        gap:4px;
+      }
+
+      .today-card {
+        min-height:69px;
+        padding:7px 4px;
+      }
+
+      .today-label { font-size:12px; margin-bottom:4px; }
+      .today-value { font-size:18px; }
+
+      .strategy-section { margin-top:8px; }
+
+      .strategy-section-head {
+        align-items:flex-start;
+        flex-direction:column;
+        gap:3px;
+        margin-bottom:6px;
+      }
+
+      .strategy-section-head h2 { font-size:20px; }
+      .section-note { text-align:left; font-size:12px; }
+
+      .strategy-grid {
+        grid-template-columns:repeat(2,minmax(0,1fr));
+        gap:5px;
+      }
+
+      .strategy-card {
+        padding:7px;
+        border-radius:10px;
+      }
+
+      .strategy-name { font-size:15px; }
+      .strategy-status { max-width:90px; font-size:9px; padding:4px 6px; }
+      .strategy-net-label { margin-top:7px; font-size:11px; }
+      .strategy-profit { font-size:20px; }
+      .strategy-rate-row { font-size:10px; }
+      .strategy-rate-row b { font-size:12px; }
+      .strategy-mini-grid { gap:4px; margin-top:6px; }
+      .strategy-mini-item { padding:5px; }
+      .strategy-mini-label { font-size:9px; }
+      .strategy-mini-value { font-size:11px; }
+      .strategy-sparkline,
+      .strategy-sparkline svg { height:40px; }
+      .strategy-footer { font-size:9px; }
+
+      .recent-card {
+        margin-top:8px;
+        padding:7px;
+      }
+
+      .recent-title { font-size:16px; }
+
+      .recent-desktop { display:none; }
+      .recent-mobile { display:block; }
+
+      .recent-mobile-table {
+        width:100%;
+        table-layout:fixed;
+        border-collapse:collapse;
+        font-size:11px;
+      }
+
+      .recent-mobile-table th,
+      .recent-mobile-table td {
+        padding:7px 1px;
+        border-bottom:1px solid #293548;
+        text-align:center;
+        white-space:nowrap;
+      }
+
+      .recent-mobile-table th {
+        color:#94a3b8;
+        font-size:10px;
+      }
+
+      .recent-mobile-table th:first-child,
+      .recent-mobile-table td:first-child {
+        width:46px;
+        color:#cbd5e1;
+      }
+
+      .flow-open { color:#fbbf24; }
+      .flow-core { color:#93c5fd; }
+      .flow-volume { color:#c4b5fd; }
+      .flow-wave { color:#5eead4; }
+      .flow-fast { color:#fca5a5; }
+
+      .activity-tabs { gap:4px; margin-top:8px; }
+      .tab-btn { min-height:40px; font-size:12px; }
+
+      .holding-card,
+      .activity-card,
+      .activity-card.candidate,
+      .activity-card.sell {
+        grid-template-columns:repeat(2,1fr);
+        gap:7px;
+        padding:8px;
+      }
+
+      .holding-card>div:first-child,
+      .activity-card>div:first-child {
+        grid-column:1/-1;
+      }
+
+      .metric { text-align:left; }
+    }
+
+    @media(max-width:420px) {
+      .header {
+        align-items:center;
+        gap:5px;
+      }
+
+      h1 { font-size:21px; }
+
+      .header-actions { gap:4px; }
+
+      .header-btn {
+        padding:7px 7px;
+        font-size:11px;
+      }
+    }
+
+    @media(max-width:370px) {
+      h1 { font-size:19px; }
+      .header-btn { padding:6px 5px; font-size:10px; }
+      .strategy-grid { grid-template-columns:1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header class="header">
+      <h1>🇺🇸 SY Quant US</h1>
+      <div class="header-actions">
+        <a class="header-btn analysis-btn" href="/analysis.html">📦 분석자료</a>
+        <a class="header-btn settings-btn" href="/us-api/strategy-settings">⚙️ 전략설정</a>
+      </div>
+    </header>
+
+    <div class="status-line">
+      <span>서버 정상</span>
+      <span id="apiStatus">API 확인 중</span>
+      <span>PAPER</span>
+      <span>USD</span>
+      <span id="masterBuyStatus">전체 매수 OFF</span>
+      <span id="updatedAt">갱신 대기</span>
+    </div>
+
+    <!-- KR과 같은 상단 6개 -->
+    <section class="master-primary-grid" aria-label="US 계좌 요약">
+      <article class="summary-card">
+        <div class="summary-label">총자산</div>
+        <div id="totalAsset" class="summary-value">-</div>
+      </article>
+      <article class="summary-card">
+        <div class="summary-label">누적손익</div>
+        <div id="netProfit" class="summary-value">-</div>
+      </article>
+      <article class="summary-card">
+        <div class="summary-label">누적수익률</div>
+        <div id="profitRate" class="summary-value">-</div>
+      </article>
+      <article class="summary-card">
+        <div class="summary-label">현재 투자전략</div>
+        <div id="currentStrategy" class="summary-value strategy-value">-</div>
+      </article>
+      <article class="summary-card">
+        <div class="summary-label">현재 투자금액</div>
+        <div id="totalExposure" class="summary-value">-</div>
+      </article>
+      <article class="summary-card">
+        <div class="summary-label">보유손익</div>
+        <div id="unrealizedProfit" class="summary-value">-</div>
+      </article>
+    </section>
+
+    <!-- KR과 같은 오늘 성적 -->
+    <section class="today-section">
+      <h2 class="section-title">오늘 성적</h2>
+      <div class="today-grid">
+        <article class="today-card">
+          <div class="today-label">오늘 총손익</div>
+          <div id="todayProfit" class="today-value">-</div>
+        </article>
+        <article class="today-card">
+          <div class="today-label">오늘 확정손익</div>
+          <div id="todayRealized" class="today-value">-</div>
+        </article>
+        <article class="today-card">
+          <div class="today-label">오늘 보유손익 변화</div>
+          <div id="todayHoldingChange" class="today-value">-</div>
+        </article>
+        <article class="today-card">
+          <div class="today-label">오늘 수익률</div>
+          <div id="todayProfitRate" class="today-value">-</div>
+        </article>
+      </div>
+    </section>
+
+    <!-- KR처럼 전략 카드 먼저 -->
+    <section class="strategy-section">
+      <div class="strategy-section-head">
+        <h2>전략별 수익</h2>
+        <div id="strategyNote" class="section-note">전략자료 확인 중</div>
+      </div>
+      <div id="strategyGrid" class="strategy-grid">
+        <div class="empty">전략자료를 불러오는 중입니다.</div>
+      </div>
+    </section>
+
+    <!-- 최근 7거래일은 전략 카드 아래 -->
+    <section class="recent-card" aria-label="최근 7거래일 전략별 실현손익">
+      <div class="recent-title">최근 7거래일 전략별 실현손익</div>
+
+      <div class="recent-desktop table-scroll">
+        <table class="recent-table">
+          <thead id="recentHead"></thead>
+          <tbody id="recentBody"></tbody>
+        </table>
+      </div>
+
+      <div class="recent-mobile">
+        <table class="recent-mobile-table">
+          <thead id="recentMobileHead"></thead>
+          <tbody id="recentMobileBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="activity-tabs" aria-label="US 운전 상세">
+      <button class="tab-btn active" type="button" data-tab="holdings">
+        전체 보유 <span id="holdingsTabCount">0</span>
+      </button>
+      <button class="tab-btn" type="button" data-tab="candidates">
+        후보 현황 <span id="candidatesTabCount">0</span>
+      </button>
+      <button class="tab-btn" type="button" data-tab="sells">
+        매도 내역 <span id="sellsTabCount">0</span>
+      </button>
+    </section>
+
+    <section id="activityPanel" class="activity-panel">
+      <div class="empty">자료를 불러오는 중입니다.</div>
+    </section>
+
+    <div class="footer-note">30초 자동 갱신 · SY Quant US PAPER</div>
+  </main>
+
+  <script src="/us-performance.js?v=20260831-kr-layout-v1"></script>
+</body>
+</html>

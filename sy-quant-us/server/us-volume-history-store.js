@@ -1,0 +1,16 @@
+'use strict';
+const fs=require('fs'),path=require('path');
+const usVolume=require('./us-volume-strategy');
+const { marketTodayKey }=require('./market-calendar');
+const HISTORY_DIR=path.join(__dirname,'us-volume-history'),POLL_MS=15000;
+let timer=null,lastRecordedScanAt=null,lastCheckAt=null,lastError=null;
+function ensure(){fs.mkdirSync(HISTORY_DIR,{recursive:true});}
+function fp(d){return path.join(HISTORY_DIR,`us-volume-history-${String(d).replace(/-/g,'')}.json`);}
+function readDay(d){if(!fs.existsSync(fp(d)))return {version:1,strategy:'VOLUME',market:'US',observerOnly:true,actualOrderEnabled:false,tradingDate:d,scans:[],updatedAt:null};return JSON.parse(fs.readFileSync(fp(d),'utf8'));}
+function writeDay(day){ensure();const f=fp(day.tradingDate),t=`${f}.${process.pid}.${Date.now()}.tmp`;fs.writeFileSync(t,JSON.stringify(day,null,2),'utf8');fs.renameSync(t,f);}
+function summarize(day){const map=new Map();for(const scan of day.scans||[])for(const c of scan.candidates||[]){const k=`${c.exchange}:${c.symbol}`,p=map.get(k)||{exchange:c.exchange,symbol:c.symbol,name:c.name,firstSeenAt:scan.scanAt,lastSeenAt:scan.scanAt,scanCount:0,readyCount:0,watchCount:0,maxScore:0,latestStatus:c.status,latestScore:c.score};p.lastSeenAt=scan.scanAt;p.scanCount++;p.readyCount+=c.status==='READY'?1:0;p.watchCount+=c.status==='WATCH'?1:0;p.maxScore=Math.max(p.maxScore,Number(c.score)||0);p.latestStatus=c.status;p.latestScore=c.score;map.set(k,p);}return {tradingDate:day.tradingDate,scanCount:(day.scans||[]).length,uniqueCandidateCount:map.size,candidates:[...map.values()].sort((a,b)=>b.maxScore-a.maxScore),updatedAt:day.updatedAt};}
+function poll(){lastCheckAt=new Date().toISOString();try{const st=usVolume.getVolumeStatus(),s=st.lastScan;if(!s||s.status!=='OBSERVING'||!s.updatedAt||s.updatedAt===lastRecordedScanAt)return;const d=s.session?.date||marketTodayKey('US'),day=readDay(d);day.scans.push({scanAt:s.updatedAt,tradingDate:d,clockEt:s.session?.clockEt,discoveredCount:s.discoveredCount,analyzedCount:s.analyzedCount,candidateCount:s.candidateCount,readyCount:s.readyCount,watchCount:s.watchCount,market:s.market,candidates:s.candidates,errors:s.errors||[],elapsedMs:s.elapsedMs,observerOnly:true,actualOrderEnabled:false});day.updatedAt=s.updatedAt;writeDay(day);lastRecordedScanAt=s.updatedAt;lastError=null;console.log('[US-VOLUME 이력]',`${d} ${s.session?.clockEt||''} 후보 ${s.candidateCount} / READY ${s.readyCount} / WATCH ${s.watchCount} 저장완료`);}catch(e){lastError=e.message;console.error('[US-VOLUME 이력 오류]',e.message);}}
+function getHistory(date){const d=/^\d{4}-\d{2}-\d{2}$/.test(String(date||''))?String(date):marketTodayKey('US'),day=readDay(d);return {ok:true,strategy:'VOLUME',observerOnly:true,actualOrderEnabled:false,file:fp(d),summary:summarize(day),day};}
+function getStatus(){return {ok:true,strategy:'VOLUME',historyEnabled:true,actualOrderEnabled:false,polling:Boolean(timer),pollIntervalMs:POLL_MS,historyDir:HISTORY_DIR,lastRecordedScanAt,lastCheckAt,lastError};}
+function startHistoryRecorder(){if(timer)return timer;ensure();timer=setInterval(poll,POLL_MS);if(timer.unref)timer.unref();console.log('[US-VOLUME 이력] 날짜별 후보 전체기록 시작 / 실제주문 영향 없음');return timer;}
+module.exports={startHistoryRecorder,getHistory,getStatus,poll};

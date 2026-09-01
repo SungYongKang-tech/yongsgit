@@ -25,6 +25,16 @@ const PROFILES = Object.freeze([
     trailGapRate: 0.7
   },
   {
+    id: 'CORE_TEST',
+    label: 'CORE 테스트',
+    stopLossRate: -1.2,
+    takeProfitRate: null,
+    breakEvenTriggerRate: 1.0,
+    protectRate: 0.1,
+    trailTriggerRate: 1.5,
+    trailGapRate: 0.6
+  },
+  {
     id: 'BALANCED',
     label: '균형',
     stopLossRate: -1.2,

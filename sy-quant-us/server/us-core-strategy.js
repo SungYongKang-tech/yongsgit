@@ -30,6 +30,10 @@ const CORE_CONFIG = Object.freeze({
   dailyAverageLookback: 10
 });
 
+const INVALID_SYMBOLS = new Set([
+  'PSQL'
+]);
+
 let scanRunning = false;
 let scanTimer = null;
 let lastScan = {
@@ -328,6 +332,7 @@ function mergeDiscoveryRows(volumeRows = [], changeRows = []) {
     const symbol = String(row.symbol || '').toUpperCase().trim();
     const exchange = marketClient.normalizeExchange(row.exchange);
     if (!symbol || !exchange) return;
+    if (INVALID_SYMBOLS.has(symbol)) return;
     const key = `${exchange}:${symbol}`;
     const previous = map.get(key) || {
       exchange,
@@ -420,6 +425,13 @@ async function analyzeCandidate(snapshot, qqq, session) {
   if (openChangeRate > CORE_CONFIG.maxChangeRate) blocks.push('상승 과열');
   if (dayPositionRate < CORE_CONFIG.minDayPositionRate) blocks.push('당일 위치 낮음');
   if (dayPositionRate > CORE_CONFIG.maxDayPositionRate) blocks.push('고점 추격');
+  if (
+    openChangeRate >= 6.0 &&
+    dayPositionRate >= 92 &&
+    vwapGapRate >= 1.5
+  ) {
+    blocks.push('과열 추격');
+  }
   if (vwapGapRate < CORE_CONFIG.minVwapGapRate) blocks.push('VWAP 아래');
   if (rvol > 0 && rvol < CORE_CONFIG.minRvol) blocks.push('RVOL 부족');
   if (minuteMetrics.trendPersistence < CORE_CONFIG.minTrendPersistence) blocks.push('단기 추세 약함');

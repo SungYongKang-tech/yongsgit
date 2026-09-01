@@ -1709,43 +1709,14 @@ function saveState(state) {
           latest
         );
 
-        const latestHoldingCount =
-          Number(latest.holdings?.length || 0);
-
-        const mergedHoldingCount =
-          Number(stateToSave.holdings?.length || 0);
-
-        const latestTradeLogCount =
-          Number(latest.tradeLogs?.length || 0);
-
-        const mergedTradeLogCount =
-          Number(stateToSave.tradeLogs?.length || 0);
-
-        const latestCash =
-          Number(latest.totalCash || 0);
-
-        const mergedCash =
-          Number(stateToSave.totalCash || 0);
-
-        // 병합 자체는 항상 수행하되, 단순 현재가·체크시각·보조상태 갱신처럼
-        // 거래 결과에 영향이 없는 변경은 로그를 남기지 않는다.
-        // 보유 수, 거래로그 수, 현금 중 하나라도 실제로 바뀐 경우에만
-        // 운영자가 확인할 가치가 있는 병합으로 보고 출력한다.
-        const shouldLogStateMerge =
-          latestHoldingCount !== mergedHoldingCount ||
-          latestTradeLogCount !== mergedTradeLogCount ||
-          latestCash !== mergedCash;
-
-        if (shouldLogStateMerge) {
-          console.log(
-            `[STATE 병합저장] 디스크 최신 변경 보존 / ` +
-            `보유 ${latestHoldingCount}→${mergedHoldingCount}개 / ` +
-            `거래로그 ${latestTradeLogCount}→${mergedTradeLogCount}건 / ` +
-            `현금 ${Math.round(latestCash).toLocaleString("ko-KR")}→` +
-            `${Math.round(mergedCash).toLocaleString("ko-KR")}원 / ` +
-            `writer ${process.pid}`
-          );
-        }
+        console.log(
+          `[STATE 병합저장] 디스크 최신 변경 보존 / ` +
+          `보유 ${Number(latest.holdings?.length || 0)}→` +
+          `${Number(stateToSave.holdings?.length || 0)}개 / ` +
+          `거래로그 ${Number(latest.tradeLogs?.length || 0)}→` +
+          `${Number(stateToSave.tradeLogs?.length || 0)}건 / ` +
+          `writer ${process.pid}`
+        );
       }
     }
 
