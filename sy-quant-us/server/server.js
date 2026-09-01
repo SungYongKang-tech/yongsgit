@@ -6,6 +6,7 @@ require('dotenv').config({ path: path.join(__dirname, '.env'), quiet: true });
 const express = require('express');
 const cors = require('cors');
 const kiwoom = require('./kiwoom-us-client');
+const usOrder = require('./kiwoom-us-order-client');
 const portfolioManager = require('./portfolio-manager');
 const strategySettings = require('./strategy-settings-store');
 const activityStore = require('./us-dashboard-activity-store');
@@ -45,6 +46,29 @@ app.use(express.json());
 function sendError(res, err) {
   console.error('[SY Quant US API]', err.message);
   res.status(500).json({ ok: false, error: err.message });
+}
+
+
+function normalizePaperOrderInput(body = {}) {
+  return {
+    exchange: String(body.exchange || '').toUpperCase().trim(),
+    symbol: String(body.symbol || '').toUpperCase().trim(),
+    quantity: Number(body.quantity),
+    price: Number(body.price),
+    orderType: String(body.orderType || '00').trim()
+  };
+}
+
+function requirePaperTestAcknowledgement(req) {
+  const value = String(
+    req.body?.confirm ||
+    req.headers['x-syquant-paper-order-confirm'] ||
+    ''
+  ).trim().toUpperCase();
+
+  if (value !== 'PAPER') {
+    throw new Error('실제 모의주문 제출에는 confirm="PAPER"가 필요합니다.');
+  }
 }
 
 function buildUsStrategyDashboardSummary(portfolio = {}) {
@@ -494,6 +518,97 @@ app.post('/api/us-wave/scan', async (req, res) => {
   }
 });
 
+
+// -----------------------------------------------------------------------------
+// US PAPER 수동 주문 테스트 API
+// - 전략 자동매매와 완전히 분리된 수동 테스트 경로
+// - preview는 주문을 제출하지 않음
+// - 실제 제출은 US_ORDER_ENABLED=true + confirm="PAPER" 둘 다 필요
+// -----------------------------------------------------------------------------
+
+app.post('/api/us/paper-order/preview-buy', async (req, res) => {
+  try {
+    const input = normalizePaperOrderInput(req.body || {});
+    const result = await usOrder.previewBuy(input);
+    res.json({ ok: true, mode: MODE, submitted: false, testOnly: true, result });
+  } catch (err) {
+    res.status(400).json({ ok: false, submitted: false, error: err.message });
+  }
+});
+
+app.post('/api/us/paper-order/preview-sell', async (req, res) => {
+  try {
+    const input = normalizePaperOrderInput(req.body || {});
+    const result = await usOrder.previewSell(input);
+    res.json({ ok: true, mode: MODE, submitted: false, testOnly: true, result });
+  } catch (err) {
+    res.status(400).json({ ok: false, submitted: false, error: err.message });
+  }
+});
+
+app.post('/api/us/paper-order/buy', async (req, res) => {
+  try {
+    requirePaperTestAcknowledgement(req);
+    const input = normalizePaperOrderInput(req.body || {});
+    const result = await usOrder.submitBuy(input);
+
+    console.log(
+      '[US PAPER TEST BUY]',
+      `${input.exchange}:${input.symbol}`,
+      `${input.quantity}주`,
+      `@${input.price}`,
+      `orderNo=${result.orderNo || '-'}`
+    );
+
+    res.json({ ok: true, mode: MODE, submitted: true, testOnly: true, result });
+  } catch (err) {
+    console.error('[US PAPER TEST BUY 실패]', err.message);
+    res.status(400).json({ ok: false, submitted: false, error: err.message });
+  }
+});
+
+app.post('/api/us/paper-order/sell', async (req, res) => {
+  try {
+    requirePaperTestAcknowledgement(req);
+    const input = normalizePaperOrderInput(req.body || {});
+    const result = await usOrder.submitSell(input);
+
+    console.log(
+      '[US PAPER TEST SELL]',
+      `${input.exchange}:${input.symbol}`,
+      `${input.quantity}주`,
+      `@${input.price}`,
+      `orderNo=${result.orderNo || '-'}`
+    );
+
+    res.json({ ok: true, mode: MODE, submitted: true, testOnly: true, result });
+  } catch (err) {
+    console.error('[US PAPER TEST SELL 실패]', err.message);
+    res.status(400).json({ ok: false, submitted: false, error: err.message });
+  }
+});
+
+app.get('/api/us/paper-order/status', (req, res) => {
+  const clientStatus = typeof usOrder.getOrderClientStatus === 'function'
+    ? usOrder.getOrderClientStatus()
+    : null;
+
+  res.json({
+    ok: true,
+    mode: MODE,
+    paperOnly: MODE === 'PAPER',
+    orderClient: clientStatus,
+    endpoints: {
+      previewBuy: 'POST /api/us/paper-order/preview-buy',
+      previewSell: 'POST /api/us/paper-order/preview-sell',
+      buy: 'POST /api/us/paper-order/buy',
+      sell: 'POST /api/us/paper-order/sell'
+    },
+    submitRequirement: 'US_ORDER_ENABLED=true and confirm="PAPER"',
+    note: '현재 수동 PAPER 주문 테스트 전용이며 전략 자동매매와 연결되지 않았습니다.'
+  });
+});
+
 app.get('/api/portfolio-summary', async (req, res) => {
   try {
     const summary = await portfolioManager.getPortfolioSummary();
@@ -576,6 +691,7 @@ app.get('/api/us/holdings', async (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   const settings = strategySettings.getSettings();
   console.log('SY Quant US PAPER server listening on port ' + PORT);
+  console.log('[US PAPER 주문 테스트 API] preview/BUY/SELL 활성화 · 제출은 US_ORDER_ENABLED=true + confirm=PAPER 필요');
   console.log(
     '[US 전략설정]',
     `MASTER=${settings.masterBuyEnabled ? 'ON' : 'OFF'}`,

@@ -202,10 +202,37 @@ async function submitSell(input) {
   };
 }
 
+function getOrderClientStatus() {
+  let paperEnvironmentOk = false;
+  let environmentError = null;
+
+  try {
+    assertPaperEnvironment();
+    validateRiskSettings();
+    paperEnvironmentOk = true;
+  } catch (error) {
+    environmentError = error.message;
+  }
+
+  return {
+    ok: paperEnvironmentOk,
+    mode: MODE,
+    baseUrl: BASE_URL,
+    paperEnvironmentOk,
+    orderEnabled: ORDER_ENABLED,
+    maxOrderQty: MAX_ORDER_QTY,
+    maxOrderUsd: MAX_ORDER_USD,
+    allowedExchanges: [...EXCHANGES],
+    allowedOrderTypes: [...ORDER_TYPES],
+    environmentError
+  };
+}
+
 module.exports = {
   previewBuy,
   previewSell,
   submitBuy,
   submitSell,
-  normalizeOrder
+  normalizeOrder,
+  getOrderClientStatus
 };

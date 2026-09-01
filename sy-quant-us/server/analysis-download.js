@@ -7,6 +7,13 @@ const readline = require('readline');
 const zlib = require('zlib');
 const { execFile } = require('child_process');
 
+let portfolioManager = null;
+try {
+  portfolioManager = require('./portfolio-manager');
+} catch (error) {
+  console.warn('[US 분석자료] portfolio-manager 로드 실패 / 현재 보유현황 교차검증 비활성', error.message);
+}
+
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256);
   for (let n = 0; n < 256; n++) {
@@ -47,8 +54,16 @@ function buildZip(entries = []) {
 
   for (const file of files) {
     const nameBuffer = Buffer.from(file.name, 'utf8');
-    const compressed = zlib.deflateRawSync(file.data, { level: 6 });
-    const useDeflate = compressed.length < file.data.length;
+
+    // 분석 로그가 아주 커져도 메인 스레드를 과도하게 오래 점유하지 않도록 큰 파일은 STORE 방식 사용.
+    const ZIP_DEFLATE_MAX_BYTES = 512 * 1024;
+    let compressed = null;
+    let useDeflate = false;
+    if (file.data.length <= ZIP_DEFLATE_MAX_BYTES) {
+      compressed = zlib.deflateRawSync(file.data, { level: 3 });
+      useDeflate = compressed.length < file.data.length;
+    }
+
     const payload = useDeflate ? compressed : file.data;
     const method = useDeflate ? 8 : 0;
     const crc = crc32(file.data);
@@ -106,13 +121,41 @@ function buildZip(entries = []) {
 }
 
 function dateKey(timeZone) {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(new Date());
+  const get = type => parts.find(p => p.type === type)?.value || '';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
+function dateKeyFromValue(value, timeZone) {
+  if (value === null || value === undefined || value === '') return '';
+
+  const direct = String(value).trim();
+  const directDate = direct.match(/^(\d{4}-\d{2}-\d{2})$/);
+  if (directDate) return directDate[1];
+
+  let date = null;
+  if (typeof value === 'number' || /^\d{10,13}$/.test(direct)) {
+    let ms = Number(value);
+    if (String(Math.trunc(ms)).length <= 10) ms *= 1000;
+    date = new Date(ms);
+  } else {
+    date = new Date(value);
+  }
+
+  if (!date || Number.isNaN(date.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(date);
   const get = type => parts.find(p => p.type === type)?.value || '';
   return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
 function timeHHMM(timeZone) {
-  const parts = new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date());
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  }).formatToParts(new Date());
   const get = type => parts.find(p => p.type === type)?.value || '00';
   return `${get('hour')}:${get('minute')}`;
 }
@@ -123,18 +166,28 @@ function validateDate(value, fallback) {
   return date;
 }
 
-function safeJson(value) { return JSON.stringify(value, null, 2); }
+function safeJson(value) {
+  return JSON.stringify(value, null, 2);
+}
 
 function getJson(port, pathname, timeoutMs = 12000) {
   return new Promise(resolve => {
-    const req = http.get({ hostname: '127.0.0.1', port, path: pathname, timeout: timeoutMs, headers: { Accept: 'application/json' } }, res => {
+    const req = http.get({
+      hostname: '127.0.0.1',
+      port,
+      path: pathname,
+      timeout: timeoutMs,
+      headers: { Accept: 'application/json' }
+    }, res => {
       let text = '';
       res.setEncoding('utf8');
       res.on('data', chunk => { text += chunk; });
       res.on('end', () => {
         try {
           const parsed = text ? JSON.parse(text) : {};
-          resolve(res.statusCode >= 400 ? { ok: false, httpStatus: res.statusCode, response: parsed } : parsed);
+          resolve(res.statusCode >= 400
+            ? { ok: false, httpStatus: res.statusCode, response: parsed }
+            : parsed);
         } catch (error) {
           resolve({ ok: false, error: `JSON 파싱 실패: ${error.message}`, raw: text.slice(0, 20000) });
         }
@@ -171,7 +224,11 @@ function addSourceFiles(entries, rootDir, names = []) {
   for (const name of names) {
     const filePath = path.join(rootDir, name);
     if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) continue;
-    entries.push({ name: `source/${name}`, data: fs.readFileSync(filePath), mtime: fs.statSync(filePath).mtime });
+    entries.push({
+      name: `source/${name}`,
+      data: fs.readFileSync(filePath),
+      mtime: fs.statSync(filePath).mtime
+    });
   }
 }
 
@@ -179,8 +236,10 @@ function runNodeScript(scriptPath, args = [], options = {}) {
   return new Promise(resolve => {
     if (!fs.existsSync(scriptPath)) return resolve(`[실행파일 없음] ${scriptPath}\n`);
     execFile(process.execPath, [...(options.nodeArgs || []), scriptPath, ...args], {
-      cwd: options.cwd || path.dirname(scriptPath), timeout: options.timeoutMs || 45000,
-      maxBuffer: options.maxBuffer || 8 * 1024 * 1024, env: process.env
+      cwd: options.cwd || path.dirname(scriptPath),
+      timeout: options.timeoutMs || 45000,
+      maxBuffer: options.maxBuffer || 8 * 1024 * 1024,
+      env: process.env
     }, (error, stdout, stderr) => {
       const rows = [];
       if (stdout) rows.push(stdout.trimEnd());
@@ -201,9 +260,19 @@ function sendZip(res, fileName, buffer) {
 
 const ROOT = __dirname;
 const PORT = 3001;
-const PM2_OUT = '/home/ubuntu/.pm2/logs/sy-quant-us-server-out.log';
-const PM2_ERR = '/home/ubuntu/.pm2/logs/sy-quant-us-server-error.log';
 const TZ = 'America/New_York';
+const PM2_LOG_DIR = '/home/ubuntu/.pm2/logs';
+
+const PM2_KNOWN_OUT = [
+  path.join(PM2_LOG_DIR, 'sy-quant-us-server-out.log'),
+  path.join(PM2_LOG_DIR, 'sy-quant-us-out.log')
+];
+
+const PM2_KNOWN_ERR = [
+  path.join(PM2_LOG_DIR, 'sy-quant-us-server-error.log'),
+  path.join(PM2_LOG_DIR, 'sy-quant-us-error.log')
+];
+
 const STRATEGIES = Object.freeze([
   { id: 'CORE', slug: 'core' },
   { id: 'FAST', slug: 'fast' },
@@ -211,82 +280,438 @@ const STRATEGIES = Object.freeze([
   { id: 'WAVE', slug: 'wave' }
 ]);
 
-function section(title, body = '') { return `===== ${title} =====\n${String(body || '').trimEnd()}\n\n`; }
+const TRADE_LINE_RX = /\bBUY\b|\bSELL\b|\bORDER\b|\bFILLED\b|\bFILL\b|체결|매수|매도|익절|손절|청산|PORTFOLIO|MASTER/i;
+const IMPORTANT_MASTER_RX = /US-(CORE|FAST|VOLUME|WAVE)|\b(CORE|FAST|VOLUME|WAVE)\b|MASTER|PORTFOLIO|\bBUY\b|\bSELL\b|\bORDER\b|\bFILLED\b|\bFILL\b|체결|매수|매도|보유|차단|후보|전략설정|데이터보정|분석자료|오류|실패/i;
 
-function nyDateKeyFromDate(date) {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
-  const get = type => parts.find(p => p.type === type)?.value || '';
-  return `${get('year')}-${get('month')}-${get('day')}`;
+function section(title, body = '') {
+  return `===== ${title} =====\n${String(body || '').trimEnd()}\n\n`;
 }
 
-function lineBelongsToTradingDate(line, tradingDate) {
+function nyDateKeyFromDate(date) {
+  return dateKeyFromValue(date instanceof Date ? date.getTime() : date, TZ);
+}
+
+function explicitDateFromLogLine(line) {
   const value = String(line || '');
+
+  // timezone/offset가 붙은 ISO timestamp는 반드시 America/New_York 거래일로 환산.
   const iso = value.match(/\b(20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2}))\b/);
   if (iso) {
     const parsed = new Date(iso[1]);
-    if (!Number.isNaN(parsed.getTime())) return nyDateKeyFromDate(parsed) === tradingDate;
+    if (!Number.isNaN(parsed.getTime())) {
+      return { explicit: true, date: nyDateKeyFromDate(parsed), source: 'ISO_TZ' };
+    }
   }
-  const plainIso = value.match(/\b(20\d{2}-\d{2}-\d{2})T\d{2}:\d{2}:\d{2}\b/);
-  if (plainIso) return plainIso[1] === tradingDate;
-  return value.includes(tradingDate);
+
+  // timezone이 없는 timestamp는 기존 운영 로그의 로컬 표기로 보고 표기된 날짜를 그대로 사용.
+  const plainIso = value.match(/\b(20\d{2}-\d{2}-\d{2})[T ]\d{2}:\d{2}:\d{2}\b/);
+  if (plainIso) return { explicit: true, date: plainIso[1], source: 'PLAIN_ISO' };
+
+  const dateOnly = value.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
+  if (dateOnly) return { explicit: true, date: dateOnly[1], source: 'DATE_TEXT' };
+
+  return { explicit: false, date: '', source: 'UNDATED' };
 }
 
-async function filterTradingDayLog(filePath, tradingDate, keywordRegex = null, maxLines = 40000) {
-  if (!fs.existsSync(filePath)) return `[로그파일 없음] ${filePath}\n`;
+function lineBelongsToTradingDate(line, tradingDate) {
+  const info = explicitDateFromLogLine(line);
+  return info.explicit && info.date === tradingDate;
+}
+
+function discoverPm2LogFiles(kind = 'out') {
+  const suffix = kind === 'error' ? '-error.log' : '-out.log';
+  const known = kind === 'error' ? PM2_KNOWN_ERR : PM2_KNOWN_OUT;
+  let discovered = [];
+
+  try {
+    discovered = fs.readdirSync(PM2_LOG_DIR)
+      .filter(name => name.endsWith(suffix))
+      .filter(name => /sy-quant-us|syquant-us|us-server/i.test(name))
+      .map(name => path.join(PM2_LOG_DIR, name));
+  } catch (_) {}
+
+  return [...new Set([...known, ...discovered])]
+    .filter(filePath => fs.existsSync(filePath) && fs.statSync(filePath).isFile());
+}
+
+async function filterOneTradingDayLog(filePath, tradingDate, keywordRegex = null, maxLines = 20000) {
+  if (!fs.existsSync(filePath)) {
+    return {
+      filePath,
+      confirmedRows: [],
+      undatedRows: [],
+      truncated: false,
+      exists: false,
+      error: null
+    };
+  }
+
   const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
   const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
-  const rows = [];
+  const confirmedRows = [];
+  const undatedRows = [];
   let truncated = false;
+
   try {
     for await (const line of rl) {
-      if (!lineBelongsToTradingDate(line, tradingDate)) continue;
       if (keywordRegex) {
         keywordRegex.lastIndex = 0;
         if (!keywordRegex.test(line)) continue;
       }
-      rows.push(line);
-      if (rows.length >= maxLines) { truncated = true; break; }
+
+      const info = explicitDateFromLogLine(line);
+      if (info.explicit) {
+        if (info.date !== tradingDate) continue;
+        confirmedRows.push(line);
+      } else if (undatedRows.length < 500) {
+        // 날짜가 없는 로그는 오늘 거래로 확정하지 않고 참고자료로만 분리.
+        undatedRows.push(line);
+      }
+
+      if (confirmedRows.length >= maxLines) {
+        truncated = true;
+        break;
+      }
     }
+  } catch (error) {
+    return {
+      filePath,
+      confirmedRows,
+      undatedRows,
+      truncated,
+      exists: true,
+      error: error.message
+    };
   } finally {
     rl.close();
     stream.destroy();
   }
-  if (truncated) rows.push(`[이하 생략: 관련 로그 ${maxLines.toLocaleString()}줄 초과]`);
-  return rows.length ? rows.join('\n') + '\n' : '[해당 거래일 관련 로그 없음]\n';
+
+  return { filePath, confirmedRows, undatedRows, truncated, exists: true, error: null };
 }
 
-function strategyLogRegex(id) { return new RegExp(`US-${id}|\\b${id}\\b`, 'i'); }
-function strategyErrorRegex(id) { return new RegExp(`US-${id}|\\b${id}\\b|error|fail|timeout|시간초과|API|오류|실패`, 'i'); }
+async function filterPm2Logs(kind, tradingDate, keywordRegex = null, maxLines = 40000) {
+  const files = discoverPm2LogFiles(kind);
+  const confirmedChunks = [];
+  const undatedChunks = [];
+  const errors = [];
+  const matchedFiles = [];
+  let confirmedCount = 0;
+  let undatedCount = 0;
+  let truncated = false;
 
-async function buildStrategyAnalysis(strategy, date) {
+  for (const filePath of files) {
+    const remain = Math.max(1, maxLines - confirmedCount);
+    const part = await filterOneTradingDayLog(filePath, tradingDate, keywordRegex, remain);
+
+    if (part.error) errors.push(`${filePath}: ${part.error}`);
+    if (part.confirmedRows.length) {
+      matchedFiles.push(filePath);
+      confirmedCount += part.confirmedRows.length;
+      confirmedChunks.push(
+        `----- SOURCE: ${filePath} -----\n${part.confirmedRows.join('\n')}`
+      );
+    }
+
+    if (part.undatedRows.length) {
+      undatedCount += part.undatedRows.length;
+      undatedChunks.push(
+        `----- SOURCE: ${filePath} / 날짜 미확정 참고 -----\n${part.undatedRows.join('\n')}`
+      );
+    }
+
+    if (part.truncated || confirmedCount >= maxLines) {
+      truncated = true;
+      break;
+    }
+  }
+
+  const footer = [];
+  footer.push(`조회한 PM2 ${kind} 로그: ${files.length ? files.join(', ') : '[없음]'}`);
+  footer.push(`거래일 확정 매칭: ${confirmedCount.toLocaleString()}줄`);
+  if (truncated) footer.push(`[이하 생략: 거래일 확정 로그 ${maxLines.toLocaleString()}줄 초과]`);
+  if (errors.length) footer.push(`[로그 읽기 오류] ${errors.join(' | ')}`);
+
+  return {
+    text: confirmedChunks.length
+      ? confirmedChunks.join('\n') + '\n' + footer.join('\n') + '\n'
+      : `[해당 거래일 관련 로그 없음]\n${footer.join('\n')}\n`,
+    undatedText: undatedChunks.length
+      ? undatedChunks.join('\n') + `\n날짜 미확정 참고로그 ${undatedCount.toLocaleString()}줄\n`
+      : '[날짜 미확정 참고 로그 없음]\n',
+    confirmedCount,
+    undatedCount,
+    matchedFiles,
+    files,
+    truncated,
+    errors
+  };
+}
+
+async function tailPm2Errors(count = 150) {
+  const files = discoverPm2LogFiles('error');
+  if (!files.length) return `[PM2 관련 error 로그파일 없음] ${PM2_LOG_DIR}\n`;
+
+  const parts = [];
+  const perFile = Math.max(20, Math.ceil(count / files.length));
+  for (const filePath of files) {
+    const text = await tailLines(filePath, perFile);
+    if (!text.trim()) continue;
+    parts.push(`----- SOURCE: ${filePath} -----\n${text.trimEnd()}`);
+  }
+  return parts.join('\n') + '\n';
+}
+
+function strategyLogRegex(id) {
+  return new RegExp(
+    `US-${id}|\\b${id}\\b|${id}_|MASTER|PORTFOLIO|\\bBUY\\b|\\bSELL\\b|\\bORDER\\b|\\bFILLED\\b|체결|매수|매도|보유|차단|후보`,
+    'i'
+  );
+}
+
+function strategyErrorRegex(id) {
+  return new RegExp(
+    `US-${id}|\\b${id}\\b|${id}_|MASTER|PORTFOLIO|error|fail|timeout|시간초과|API|오류|실패|ECONN|fetch failed`,
+    'i'
+  );
+}
+
+
+function normalizeStrategy(value) {
+  const normalized = String(value || '').trim().toUpperCase();
+  return STRATEGIES.some(s => s.id === normalized) ? normalized : '';
+}
+
+function extractArray(value) {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== 'object') return [];
+  const candidates = [
+    value.history,
+    value.trades,
+    value.items,
+    value.rows,
+    value.data,
+    value.results,
+    value.records
+  ];
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) return candidate;
+  }
+  return [];
+}
+
+function looksLikeBuy(row = {}) {
+  const values = [
+    row.type, row.action, row.side, row.event, row.tradeType,
+    row.orderSide, row.reason, row.status
+  ].map(v => String(v || '').toUpperCase());
+  return values.some(v =>
+    v === 'BUY' ||
+    v.includes('BUY') ||
+    v.includes('ENTRY') ||
+    v.includes('매수')
+  );
+}
+
+function looksLikeSell(row = {}) {
+  const values = [
+    row.type, row.action, row.side, row.event, row.tradeType,
+    row.orderSide, row.reason, row.status
+  ].map(v => String(v || '').toUpperCase());
+  return values.some(v =>
+    v === 'SELL' ||
+    v.includes('SELL') ||
+    v.includes('EXIT') ||
+    v.includes('TAKE_PROFIT') ||
+    v.includes('STOP_LOSS') ||
+    v.includes('청산') ||
+    v.includes('매도') ||
+    v.includes('익절') ||
+    v.includes('손절')
+  );
+}
+
+function summarizeHistoryPayload(historyPayload, strategy, date) {
+  const rows = extractArray(historyPayload);
+  const buyRows = rows.filter(looksLikeBuy);
+  const sellRows = rows.filter(looksLikeSell);
+
+  return {
+    ok: historyPayload?.ok !== false,
+    source: `GET /api/us-${String(strategy || '').toLowerCase()}/history?date=${date}`,
+    sourceOfTruth: true,
+    strategy: normalizeStrategy(strategy) || String(strategy || '').toUpperCase(),
+    date,
+    count: rows.length,
+    buyCount: buyRows.length,
+    sellCount: sellRows.length,
+    rows,
+    rawShape: Array.isArray(historyPayload)
+      ? 'array'
+      : Object.keys(historyPayload || {})
+  };
+}
+
+async function getCurrentPortfolioSnapshot() {
+  if (!portfolioManager || typeof portfolioManager.getPortfolioSummary !== 'function') {
+    return {
+      ok: false,
+      error: 'portfolio-manager.getPortfolioSummary 사용 불가',
+      holdings: []
+    };
+  }
+
+  try {
+    const summary = await portfolioManager.getPortfolioSummary();
+    return {
+      ...(summary || {}),
+      ok: summary?.ok !== false,
+      holdings: Array.isArray(summary?.holdings) ? summary.holdings : []
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error.message,
+      holdings: []
+    };
+  }
+}
+
+function buildStrategyCoverageCheck(strategy, outLog, historySummary, portfolioSnapshot) {
+  const id = normalizeStrategy(strategy) || String(strategy || '').toUpperCase();
+  const confirmedRows = String(outLog?.text || '')
+    .split(/\r?\n/)
+    .filter(line => line && !line.startsWith('----- SOURCE:') && !line.startsWith('조회한 PM2'));
+
+  const tradeLikeCount = confirmedRows.filter(line => {
+    TRADE_LINE_RX.lastIndex = 0;
+    return TRADE_LINE_RX.test(line);
+  }).length;
+
+  const historyCount = Number(historySummary?.count || 0);
+  const buyCount = Number(historySummary?.buyCount || 0);
+  const sellCount = Number(historySummary?.sellCount || 0);
+
+  const rows = [];
+  rows.push(`분석일: ${historySummary?.date || '-'}`);
+  rows.push(`HISTORY ${id} 거래기록: ${historyCount}건 / 매수성 ${buyCount}건 / 매도성 ${sellCount}건`);
+  rows.push(`PM2 거래일 확정 전략로그: ${Number(outLog?.confirmedCount || 0)}줄 / 거래관련 키워드 ${tradeLikeCount}줄`);
+
+  if (historySummary?.ok === false) {
+    rows.push('주의: HISTORY API 응답이 정상 상태가 아닙니다.');
+    rows.push('PM2 로그와 VIRTUAL TRADES를 보조자료로 사용하십시오.');
+  } else if (historyCount > 0 && Number(outLog?.confirmedCount || 0) === 0) {
+    rows.push(`주의: PM2 조건 로그는 0건이지만 HISTORY에는 ${id} 거래기록이 있습니다.`);
+    rows.push(`[해당 거래일 관련 로그 없음]을 ${id} 미거래로 해석하면 안 됩니다.`);
+    rows.push(`아래 US-${id} CONFIRMED TRADE HISTORY를 거래 기준(source of truth)으로 사용하십시오.`);
+  } else if (historyCount > 0 && tradeLikeCount === 0) {
+    rows.push('주의: 전략 운영 로그는 있으나 매수/매도/체결 키워드가 잡히지 않았습니다.');
+    rows.push('거래 유무는 HISTORY를 우선하고, 원인은 PM2 로그로 교차검증하십시오.');
+  } else if (historyCount === 0) {
+    rows.push(`HISTORY 기준 해당 거래일 ${id} 거래기록 없음.`);
+    rows.push('단, VIRTUAL TRADES는 실계좌/페이퍼 체결기록과 별도이므로 따로 분석하십시오.');
+  } else {
+    rows.push('HISTORY 거래기록과 PM2 거래일 확정 로그가 모두 존재합니다.');
+    rows.push('거래 유무는 HISTORY를 우선하고, 진입/청산 이유는 PM2와 DAILY SUMMARY를 교차검증하십시오.');
+  }
+
+  if (portfolioSnapshot?.ok) {
+    rows.push(`현재 계좌 보유종목: ${Number(portfolioSnapshot.holdingCount ?? portfolioSnapshot.holdings?.length ?? 0)}개`);
+    rows.push('현재 보유현황은 과거 거래기록을 대체하지 않고, 현재 상태 교차검증용으로만 사용합니다.');
+  } else {
+    rows.push(`현재 보유현황 교차검증 실패: ${portfolioSnapshot?.error || '원인 미상'}`);
+  }
+
+  if (Number(outLog?.undatedCount || 0) > 0) {
+    rows.push(`날짜 미확정 참고로그 ${outLog.undatedCount}줄 존재: 오늘 거래 증거로 사용하지 말 것.`);
+  }
+
+  return rows.join('\n') + '\n';
+}
+
+function buildTodayTradeSummary(date, strategyHistorySummaries = {}, portfolioSnapshot = null) {
+  const strategies = {};
+  let totalTrades = 0;
+  let totalBuys = 0;
+  let totalSells = 0;
+
+  for (const s of STRATEGIES) {
+    const h = strategyHistorySummaries[s.id] || {};
+    strategies[s.id] = {
+      historyCount: Number(h.count || 0),
+      buyCount: Number(h.buyCount || 0),
+      sellCount: Number(h.sellCount || 0),
+      sourceOk: h.ok !== false
+    };
+    totalTrades += Number(h.count || 0);
+    totalBuys += Number(h.buyCount || 0);
+    totalSells += Number(h.sellCount || 0);
+  }
+
+  return {
+    ok: true,
+    date,
+    tradeSource: 'strategy history API',
+    strategies,
+    total: {
+      historyCount: totalTrades,
+      buyCount: totalBuys,
+      sellCount: totalSells
+    },
+    currentPortfolio: portfolioSnapshot?.ok ? {
+      holdingCount: Number(portfolioSnapshot.holdingCount ?? portfolioSnapshot.holdings?.length ?? 0),
+      totalExposure: portfolioSnapshot.totalExposure,
+      totalAsset: portfolioSnapshot.totalAsset,
+      availableCash: portfolioSnapshot.availableCash,
+      holdings: portfolioSnapshot.holdings
+    } : {
+      ok: false,
+      error: portfolioSnapshot?.error || '현재 포트폴리오 조회 실패'
+    }
+  };
+}
+
+async function buildStrategyAnalysis(strategy, date, portfolioSnapshot = null) {
   const { id, slug } = strategy;
-  const [outLog, errLog, status, virtualTrades, history, historyStatus, summaryStatus] = await Promise.all([
-    filterTradingDayLog(PM2_OUT, date, strategyLogRegex(id)),
-    filterTradingDayLog(PM2_ERR, date, strategyErrorRegex(id)),
+
+  const [outLog, errLog, status, buyCheck, virtualTrades, history, historyStatus, summaryStatus] = await Promise.all([
+    filterPm2Logs('out', date, strategyLogRegex(id)),
+    filterPm2Logs('error', date, strategyErrorRegex(id)),
     getJson(PORT, `/api/us-${slug}/status`),
+    getJson(PORT, `/api/strategy-buy-check/${id}`),
     getJson(PORT, `/api/us-${slug}/virtual-trades`),
     getJson(PORT, `/api/us-${slug}/history?date=${encodeURIComponent(date)}`),
     getJson(PORT, `/api/us-${slug}/history-status`),
     getJson(PORT, `/api/us-${slug}/daily-summary-status`)
   ]);
 
+  const historySummary = summarizeHistoryPayload(history, id, date);
+
   const rows = [
-    section(`US-${id} : US SERVER OUT`, outLog),
-    section(`US-${id} : US SERVER ERROR`, errLog),
+    section(`US-${id} CONFIRMED TRADE HISTORY`, safeJson(historySummary)),
+    section(`US-${id} : LOG COVERAGE CHECK`, buildStrategyCoverageCheck(id, outLog, historySummary, portfolioSnapshot)),
+    section(`US-${id} : CONFIRMED TRADING-DAY SERVER OUT`, outLog.text),
+    section(`US-${id} : UNDATED REFERENCE SERVER OUT`, outLog.undatedText),
+    section(`US-${id} : CONFIRMED TRADING-DAY SERVER ERROR`, errLog.text),
     section(`US-${id} STATUS`, safeJson(status)),
+    section(`US-${id} BUY CHECK`, safeJson(buyCheck)),
     section(`US-${id} VIRTUAL TRADES`, safeJson(virtualTrades)),
-    section(`US-${id} HISTORY`, safeJson(history)),
+    section(`US-${id} HISTORY RAW`, safeJson(history)),
     section(`US-${id} HISTORY RECORDER STATUS`, safeJson(historyStatus)),
-    section(`US-${id} DAILY SUMMARY STATUS`, safeJson(summaryStatus))
+    section(`US-${id} DAILY SUMMARY STATUS`, safeJson(summaryStatus)),
+    section('CURRENT US PORTFOLIO CROSS-CHECK', safeJson(portfolioSnapshot))
   ];
 
   if (id === 'CORE') {
     const diagnostics = await runNodeScript(path.join(ROOT, 'us-core-diagnostics.js'), [], {
-      cwd: ROOT, timeoutMs: 45000, nodeArgs: ['-r', path.join(ROOT, 'us-core-data-safety-patch.js')]
+      cwd: ROOT,
+      timeoutMs: 45000,
+      nodeArgs: ['-r', path.join(ROOT, 'us-core-data-safety-patch.js')]
     });
     rows.push(section('US-CORE DIAGNOSTICS', diagnostics));
   }
-  return rows.join('');
+
+  return { text: rows.join(''), historySummary };
 }
 
 async function buildStrategyResultAnalysis(strategy, date) {
@@ -294,7 +719,10 @@ async function buildStrategyResultAnalysis(strategy, date) {
   const day = date.replace(/-/g, '');
   const summary = await getJson(PORT, `/api/us-${slug}/daily-summary?date=${encodeURIComponent(date)}`);
   const finalTxtPath = path.join(ROOT, `us-${slug}-reports`, `us-${slug}-summary-${day}.txt`);
-  const finalTxt = readTextIfExists(finalTxtPath, `장마감 FINAL TXT 아직 없음: ${finalTxtPath}\n`);
+  const finalTxt = readTextIfExists(
+    finalTxtPath,
+    `장마감 FINAL TXT 아직 없음: ${finalTxtPath}\n`
+  );
 
   const simulatorPath = path.join(ROOT, `us-${slug}-exit-simulator.js`);
   const simulator = fs.existsSync(simulatorPath)
@@ -308,8 +736,12 @@ async function buildStrategyResultAnalysis(strategy, date) {
   ].join('');
 }
 
-async function buildMasterAnalysis(date) {
-  const strategyStatuses = {}, historyStatuses = {}, summaryStatuses = {}, buyChecks = {};
+async function buildMasterAnalysis(date, portfolioSnapshot = null, strategyHistorySummaries = {}) {
+  const strategyStatuses = {};
+  const historyStatuses = {};
+  const summaryStatuses = {};
+  const buyChecks = {};
+
   for (const s of STRATEGIES) {
     strategyStatuses[s.id] = await getJson(PORT, `/api/us-${s.slug}/status`);
     historyStatuses[s.id] = await getJson(PORT, `/api/us-${s.slug}/history-status`);
@@ -317,47 +749,67 @@ async function buildMasterAnalysis(date) {
     buyChecks[s.id] = await getJson(PORT, `/api/strategy-buy-check/${s.id}`);
   }
 
-  const [server, portfolio, settings, dashboard, allOut, allErr, recentErrors] = await Promise.all([
+  const tradeSummary = buildTodayTradeSummary(date, strategyHistorySummaries, portfolioSnapshot);
+
+  const [server, portfolioApi, settings, dashboard, confirmedAllOut, importantOut, allErr, recentErrors] = await Promise.all([
     getJson(PORT, '/api/status'),
     getJson(PORT, '/api/portfolio-summary'),
     getJson(PORT, '/api/strategy-settings'),
     getJson(PORT, '/api/strategy-dashboard-summary'),
-    filterTradingDayLog(PM2_OUT, date, /US-(CORE|FAST|VOLUME|WAVE)|SY Quant US|전략설정|데이터보정|분석자료/i),
-    filterTradingDayLog(PM2_ERR, date, null),
-    tailLines(PM2_ERR, 150)
+    filterPm2Logs('out', date, null),
+    filterPm2Logs('out', date, IMPORTANT_MASTER_RX),
+    filterPm2Logs('error', date, null),
+    tailPm2Errors(150)
   ]);
 
   return [
+    section('TODAY US TRADE SUMMARY', safeJson(tradeSummary)),
+    section('ALL STRATEGY CONFIRMED TRADE HISTORY', safeJson(strategyHistorySummaries)),
+    section('CURRENT PORTFOLIO FROM portfolio-manager', safeJson(portfolioSnapshot)),
     section('US SERVER STATUS', safeJson(server)),
-    section('US PORTFOLIO', safeJson(portfolio)),
+    section('US PORTFOLIO API', safeJson(portfolioApi)),
     section('US STRATEGY SETTINGS', safeJson(settings)),
     section('US STRATEGY DASHBOARD SUMMARY', safeJson(dashboard)),
     section('ALL STRATEGY STATUS', safeJson(strategyStatuses)),
     section('ALL STRATEGY BUY CHECK', safeJson(buyChecks)),
     section('ALL HISTORY RECORDER STATUS', safeJson(historyStatuses)),
     section('ALL DAILY SUMMARY STATUS', safeJson(summaryStatuses)),
-    section('ALL STRATEGIES : US SERVER OUT', allOut),
-    section('ALL STRATEGIES : US SERVER ERROR', allErr),
-    section('RECENT US ERRORS (TAIL)', recentErrors)
+    section('MASTER : CONFIRMED TRADING-DAY US SERVER OUT (FULL)', confirmedAllOut.text),
+    section('MASTER : IMPORTANT BUY/SELL/STRATEGY LOG', importantOut.text),
+    section('MASTER : UNDATED REFERENCE SERVER OUT', importantOut.undatedText),
+    section('ALL STRATEGIES : CONFIRMED TRADING-DAY US SERVER ERROR', allErr.text),
+    section('RECENT US ERRORS (TAIL / 날짜 미확정 참고)', recentErrors)
   ].join('');
 }
 
 function sourceFiles() {
   const common = [
-    'server.js', 'analysis-download.js', 'kiwoom-us-client.js', 'portfolio-manager.js',
-    'strategy-settings-store.js', 'market-calendar.js', 'us-core-market-client.js',
-    'us-dashboard-activity-store.js', 'us-core-data-safety-patch.js', 'us-core-diagnostics.js'
+    'server.js',
+    'analysis-download.js',
+    'kiwoom-us-client.js',
+    'portfolio-manager.js',
+    'strategy-settings-store.js',
+    'market-calendar.js',
+    'us-core-market-client.js',
+    'us-dashboard-activity-store.js',
+    'us-core-data-safety-patch.js',
+    'us-core-diagnostics.js'
   ];
+
   const strategyFiles = STRATEGIES.flatMap(s => [
-    `us-${s.slug}-strategy.js`, `us-${s.slug}-virtual-tracker.js`,
-    `us-${s.slug}-history-store.js`, `us-${s.slug}-daily-summary.js`,
+    `us-${s.slug}-strategy.js`,
+    `us-${s.slug}-virtual-tracker.js`,
+    `us-${s.slug}-history-store.js`,
+    `us-${s.slug}-daily-summary.js`,
     `us-${s.slug}-exit-simulator.js`
   ]);
+
   return [...common, ...strategyFiles];
 }
 
 function addRawFiles(entries, date) {
   const day = date.replace(/-/g, '');
+
   for (const s of STRATEGIES) {
     const slug = s.slug;
     const items = [
@@ -366,9 +818,14 @@ function addRawFiles(entries, date) {
       [path.join(ROOT, `us-${slug}-reports`, `us-${slug}-summary-${day}.json`), `raw/us-${slug}-summary-${day}.json`],
       [path.join(ROOT, `us-${slug}-reports`, `us-${slug}-summary-${day}.txt`), `raw/us-${slug}-summary-${day}.txt`]
     ];
+
     for (const [source, target] of items) {
       if (!fs.existsSync(source) || !fs.statSync(source).isFile()) continue;
-      entries.push({ name: target, data: fs.readFileSync(source), mtime: fs.statSync(source).mtime });
+      entries.push({
+        name: target,
+        data: fs.readFileSync(source),
+        mtime: fs.statSync(source).mtime
+      });
     }
   }
 }
@@ -376,14 +833,30 @@ function addRawFiles(entries, date) {
 async function createPackage(date) {
   const day = date.replace(/-/g, '');
   const entries = [];
+  const portfolioSnapshot = await getCurrentPortfolioSnapshot();
+  const strategyHistorySummaries = {};
 
-  // API/진단 부하가 한꺼번에 겹치지 않도록 전략별로 순차 수집한다.
+  // API/진단 부하가 한꺼번에 겹치지 않도록 전략별로 순차 수집.
   for (const strategy of STRATEGIES) {
-    entries.push({ name: `analysis/syquant-us-${strategy.slug}-${day}-analysis.txt`, data: await buildStrategyAnalysis(strategy, date) });
-    entries.push({ name: `analysis/syquant-us-${strategy.slug}-result-${day}-analysis.txt`, data: await buildStrategyResultAnalysis(strategy, date) });
+    const built = await buildStrategyAnalysis(strategy, date, portfolioSnapshot);
+    strategyHistorySummaries[strategy.id] = built.historySummary;
+
+    entries.push({
+      name: `analysis/syquant-us-${strategy.slug}-${day}-analysis.txt`,
+      data: built.text
+    });
+
+    entries.push({
+      name: `analysis/syquant-us-${strategy.slug}-result-${day}-analysis.txt`,
+      data: await buildStrategyResultAnalysis(strategy, date)
+    });
   }
 
-  entries.push({ name: `analysis/syquant-us-master-${day}-analysis.txt`, data: await buildMasterAnalysis(date) });
+  entries.push({
+    name: `analysis/syquant-us-master-${day}-analysis.txt`,
+    data: await buildMasterAnalysis(date, portfolioSnapshot, strategyHistorySummaries)
+  });
+
   addSourceFiles(entries, ROOT, sourceFiles());
   addRawFiles(entries, date);
 
@@ -397,31 +870,75 @@ async function createPackage(date) {
     tradingTimeZone: TZ,
     sourceRoot: ROOT,
     mode: 'PAPER expected',
-    safety: { secretsIncluded: false, envIncluded: false, tokenIncluded: false },
+    safety: {
+      secretsIncluded: false,
+      envIncluded: false,
+      tokenIncluded: false
+    },
+    tradeSourceOfTruth: 'strategy history API',
+    currentPortfolioCrossCheck: portfolioSnapshot?.ok
+      ? 'portfolio-manager.getPortfolioSummary'
+      : `unavailable: ${portfolioSnapshot?.error || 'unknown'}`,
     notes: [
       'CORE/FAST/VOLUME/WAVE를 전략별로 분리 수집.',
-      'PM2 로그는 America/New_York 거래일 기준으로 판정하여 UTC 자정 경계 누락 방지.',
-      'MASTER 분석 파일에 4전략 전체 로그를 다시 포함하여 개별 필터 누락 보완.',
-      'exit simulator가 존재하면 요청 date를 명시적으로 전달.',
-      'history/virtual trades/summary 원본 파일도 존재하면 raw/에 포함.',
+      '미국퀀트는 portfolio-manager에 tradeLogs가 없으므로 전략별 history API를 거래 기준(source of truth)으로 사용.',
+      'portfolio-manager.getPortfolioSummary는 현재 보유현황 교차검증용으로만 사용.',
+      '각 전략 분석파일에 CONFIRMED TRADE HISTORY와 LOG COVERAGE CHECK 추가.',
+      'PM2 로그는 고정 1개 경로가 아니라 US 관련 out/error 로그파일을 자동 탐색.',
+      'timezone/offset가 있는 ISO 로그는 America/New_York 거래일로 환산하여 UTC 자정 경계 누락 방지.',
+      '날짜 없는 PM2 로그는 오늘 거래 증거로 사용하지 않고 UNDATED REFERENCE로 별도 분리.',
+      'MASTER 분석파일에는 요청 거래일의 날짜확정 OUT 전체를 전략 키워드 필터 없이 보존.',
+      'MASTER 첫부분에 TODAY US TRADE SUMMARY와 4전략 CONFIRMED TRADE HISTORY를 포함.',
+      'history raw/virtual trades/daily summary/exit simulator 기존 분석자료는 그대로 유지.',
       '.env/token/인증정보는 포함하지 않음.'
     ],
-    analysisFiles: entries.filter(x => x.name.startsWith('analysis/')).map(x => x.name),
-    rawFiles: entries.filter(x => x.name.startsWith('raw/')).map(x => x.name),
-    sourceFiles: entries.filter(x => x.name.startsWith('source/')).map(x => x.name)
+    analysisFiles: entries
+      .filter(x => x.name.startsWith('analysis/'))
+      .map(x => x.name),
+    rawFiles: entries
+      .filter(x => x.name.startsWith('raw/'))
+      .map(x => x.name),
+    sourceFiles: entries
+      .filter(x => x.name.startsWith('source/'))
+      .map(x => x.name)
   };
-  entries.unshift({ name: 'manifest.json', data: safeJson(manifest) + '\n' });
-  return { fileName: `syquant-US-ALL-${day}.zip`, buffer: buildZip(entries) };
+
+  entries.unshift({
+    name: 'manifest.json',
+    data: safeJson(manifest) + '\n'
+  });
+
+  return {
+    fileName: `syquant-US-ALL-${day}.zip`,
+    buffer: buildZip(entries)
+  };
 }
 
 module.exports = function installUsAnalysisRoutes(app) {
-  if (!app || typeof app.get !== 'function') throw new Error('Express app이 필요합니다.');
+  if (!app || typeof app.get !== 'function') {
+    throw new Error('Express app이 필요합니다.');
+  }
 
   app.get('/api/analysis/status', async (req, res) => {
     try {
       const strategies = {};
-      for (const s of STRATEGIES) strategies[s.id] = await getJson(PORT, `/api/us-${s.slug}/status`);
-      res.json({ ok: true, market: 'US', date: dateKey(TZ), time: timeHHMM(TZ), server: await getJson(PORT, '/api/status'), strategies });
+      for (const s of STRATEGIES) {
+        strategies[s.id] = await getJson(PORT, `/api/us-${s.slug}/status`);
+      }
+
+      const portfolio = await getCurrentPortfolioSnapshot();
+
+      res.json({
+        ok: true,
+        market: 'US',
+        date: dateKey(TZ),
+        time: timeHHMM(TZ),
+        server: await getJson(PORT, '/api/status'),
+        tradeSourceOfTruth: 'strategy history API',
+        portfolioCrossCheckAvailable: portfolio.ok,
+        portfolioCrossCheckError: portfolio.error || null,
+        strategies
+      });
     } catch (error) {
       res.status(500).json({ ok: false, message: error.message });
     }
@@ -434,10 +951,29 @@ module.exports = function installUsAnalysisRoutes(app) {
       sendZip(res, result.fileName, result.buffer);
     } catch (error) {
       console.error('[US 분석 ZIP 생성 오류]', error);
-      if (!res.headersSent) res.status(500).json({ ok: false, message: error.message });
-      else res.end();
+      if (!res.headersSent) {
+        res.status(500).json({ ok: false, message: error.message });
+      } else {
+        res.end();
+      }
     }
   });
 
-  console.log('[분석자료] US 4전략 ZIP 다운로드 API 활성화 /api/analysis/download CORE/FAST/VOLUME/WAVE');
+  console.log(
+    '[분석자료] US 4전략 ZIP 다운로드 API 활성화 / HISTORY source-of-truth + portfolio 교차검증 + PM2 다중로그 + NY 거래일 확정 v3'
+  );
+};
+
+module.exports.__test = {
+  dateKeyFromValue,
+  explicitDateFromLogLine,
+  lineBelongsToTradingDate,
+  discoverPm2LogFiles,
+  extractArray,
+  summarizeHistoryPayload,
+  getCurrentPortfolioSnapshot,
+  buildStrategyCoverageCheck,
+  buildTodayTradeSummary,
+  filterPm2Logs,
+  createPackage
 };
