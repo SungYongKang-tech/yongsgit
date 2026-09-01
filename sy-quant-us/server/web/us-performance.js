@@ -1,10 +1,12 @@
 'use strict';
 
 const US_API_BASE = '/us-api/api';
-const US_DAILY_BASELINE_KEY = 'syquant-us-dashboard-daily-baseline-v1';
+const US_DAILY_BASELINE_KEY = 'syquant-us-dashboard-daily-baseline-v2';
+const US_AUTO_STATUS_API = `${US_API_BASE}/us/auto-trader/status`;
 
 let currentDashboardData = null;
 let activeTab = 'holdings';
+let currentAutoStatus = null;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -130,31 +132,42 @@ function normalizeStrategyId(value) {
     .toUpperCase();
 }
 
-function getCurrentStrategyText(data = {}) {
+function formatUsdShort(value) {
+  const n = Math.abs(toNumber(value));
+  if (n >= 1000) return `$${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}K`;
+  return `$${n.toFixed(0)}`;
+}
+
+function getCurrentStrategyText(data = {}, autoStatus = currentAutoStatus) {
+  const positions = Array.isArray(autoStatus?.openPositions)
+    ? autoStatus.openPositions
+    : [];
+
+  if (positions.length) {
+    const grouped = new Map();
+
+    for (const p of positions) {
+      const id = normalizeStrategyId(p.strategy);
+      if (!id) continue;
+      const notional = toNumber(p.entryPrice) * toNumber(p.quantity);
+      const prev = grouped.get(id) || { count: 0, amount: 0 };
+      prev.count += 1;
+      prev.amount += notional;
+      grouped.set(id, prev);
+    }
+
+    if (grouped.size) {
+      return [...grouped.entries()]
+        .map(([id, info]) => `${id}(${info.count}) ${formatUsdShort(info.amount)}`)
+        .join(' · ');
+    }
+  }
+
   const holdings = Array.isArray(data.details?.holdings)
     ? data.details.holdings
     : [];
 
-  if (!holdings.length) return '없음';
-
-  const strategyNames = [...new Set(
-    holdings
-      .map(item => normalizeStrategyId(
-        item.strategy ||
-        item.strategyId ||
-        item.strategyGroup ||
-        item.ownerStrategy
-      ))
-      .filter(Boolean)
-  )];
-
-  if (strategyNames.length) {
-    return strategyNames
-      .map(name => `${name}`)
-      .join(' · ');
-  }
-
-  return `보유 ${holdings.length}종목`;
+  return holdings.length ? `보유 ${holdings.length}종목` : '없음';
 }
 
 function getTodayRealized(data = {}) {
@@ -370,13 +383,12 @@ function renderRecent7Days(data = {}) {
     }
   }
 
-  const ids = ['OPEN', 'CORE', 'VOLUME', 'WAVE', 'FAST'];
+  const ids = ['CORE', 'FAST', 'VOLUME', 'WAVE'];
   const classMap = {
-    OPEN: 'flow-open',
     CORE: 'flow-core',
+    FAST: 'flow-fast',
     VOLUME: 'flow-volume',
-    WAVE: 'flow-wave',
-    FAST: 'flow-fast'
+    WAVE: 'flow-wave'
   };
 
   const rowMap = recentRowMap(data);
@@ -424,7 +436,7 @@ function renderStrategies(data = {}) {
     return;
   }
 
-  const ordered = ['OPEN', 'CORE', 'VOLUME', 'WAVE', 'FAST']
+  const ordered = ['CORE', 'FAST', 'VOLUME', 'WAVE']
     .map(id => rows.find(item => normalizeStrategyId(item.id) === id))
     .filter(Boolean);
 
@@ -438,13 +450,18 @@ function renderStrategies(data = {}) {
       ? (netProfit / initialCapital) * 100
       : toNumber(item.profitRate);
 
-    const singleBuyRate = toNumber(item.singleBuyRate);
     const strategyMaxRate = toNumber(
       item.strategyMaxInvestmentRate ?? item.allocationRate
     );
     const dailyMaxNewBuys = toNumber(
       item.dailyMaxNewBuys ?? item.maxHoldings
     );
+
+    const autoBudget = currentAutoStatus?.strategies?.[id] || {};
+    const remaining = toNumber(autoBudget.remaining);
+    const remainingSlots = toNumber(autoBudget.remainingSlots);
+    const nextBuy = remainingSlots > 0 ? remaining / remainingSlots : 0;
+    const usedAmount = toNumber(autoBudget.used);
 
     const buyText = item.buyEnabled ? 'ON' : 'OFF';
     const implementedText = item.implemented ? '운영' : '준비중';
@@ -479,13 +496,18 @@ function renderStrategies(data = {}) {
           </div>
 
           <div class="strategy-mini-item">
-            <div class="strategy-mini-label">1종목 / 전략한도</div>
-            <div class="strategy-mini-value">${formatPercent(singleBuyRate)} / ${formatPercent(strategyMaxRate)}</div>
+            <div class="strategy-mini-label">다음매수 / 전략한도</div>
+            <div class="strategy-mini-value">${formatUsdShort(nextBuy)} / ${formatUsdShort(autoBudget.budget)}</div>
           </div>
 
           <div class="strategy-mini-item">
             <div class="strategy-mini-label">최대종목 / 일일매수</div>
             <div class="strategy-mini-value">${toNumber(item.maxHoldings)}종목 / ${dailyMaxNewBuys}회</div>
+          </div>
+
+          <div class="strategy-mini-item">
+            <div class="strategy-mini-label">사용 / 잔여자금</div>
+            <div class="strategy-mini-value">${formatUsdShort(usedAmount)} / ${formatUsdShort(remaining)}</div>
           </div>
 
           <div class="strategy-mini-item">
@@ -495,7 +517,7 @@ function renderStrategies(data = {}) {
         </div>
 
         <div class="strategy-sparkline">${sparkline}</div>
-        <div class="strategy-footer">최근 7거래일 실현손익 흐름</div>
+        <div class="strategy-footer">다음매수 = 남은 전략자금 ÷ 남은 자리</div>
       </article>`;
   }).join('');
 }
@@ -540,6 +562,26 @@ function candidateHtml(item) {
     </article>`;
 }
 
+function orderHtml(item) {
+  return `
+    <article class="activity-card">
+      <div>
+        <div class="holding-name">${escapeHtml(item.name || item.symbol || '-')}</div>
+        <div class="holding-sub">
+          ${escapeHtml(item.symbol || '')}
+          · ${escapeHtml(item.strategy || '')}
+          · ${escapeHtml(item.side || '')}
+          · ${escapeHtml(item.status || '')}
+        </div>
+      </div>
+      <div class="metric"><span>수량</span><b>${toNumber(item.quantity).toLocaleString()}주</b></div>
+      <div class="metric"><span>지정가</span><b>${formatUsd(item.limitPrice)}</b></div>
+      <div class="metric"><span>정정횟수</span><b>${toNumber(item.modifyCount)}회</b></div>
+      <div class="metric"><span>주문번호</span><b>${escapeHtml(item.orderNo || '-')}</b></div>
+      <div class="metric"><span>사유</span><b>${escapeHtml(item.exitReason || item.candidateReason || '-')}</b></div>
+    </article>`;
+}
+
 function sellHtml(item) {
   const profit = toNumber(item.realizedProfit);
 
@@ -575,10 +617,16 @@ function renderActivityPanel() {
   const sells = Array.isArray(currentDashboardData.details?.sellHistory)
     ? currentDashboardData.details.sellHistory
     : [];
+  const orders = [
+    ...(Array.isArray(currentAutoStatus?.pendingOrders) ? currentAutoStatus.pendingOrders : []),
+    ...(Array.isArray(currentAutoStatus?.cancelRequestedOrders) ? currentAutoStatus.cancelRequestedOrders : [])
+  ];
 
   document.getElementById('holdingsTabCount').textContent = holdings.length;
   document.getElementById('candidatesTabCount').textContent = candidates.length;
   document.getElementById('sellsTabCount').textContent = sells.length;
+  const ordersCount = document.getElementById('ordersTabCount');
+  if (ordersCount) ordersCount.textContent = orders.length;
 
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === activeTab);
@@ -588,6 +636,13 @@ function renderActivityPanel() {
     panel.innerHTML = candidates.length
       ? candidates.map(candidateHtml).join('')
       : '<div class="empty">현재 전략 후보가 없습니다.</div>';
+    return;
+  }
+
+  if (activeTab === 'orders') {
+    panel.innerHTML = orders.length
+      ? orders.map(orderHtml).join('')
+      : '<div class="empty">현재 자동 미체결 주문이 없습니다.</div>';
     return;
   }
 
@@ -616,17 +671,39 @@ function renderDashboard(data = {}) {
   currentDashboardData = data;
 
   const overall = data.overall || {};
-
-  setMetric('totalAsset', formatUsd(overall.totalAsset));
-  setMetric('netProfit', formatUsd(overall.netProfit, true), overall.netProfit);
-  setMetric('profitRate', formatRate(overall.profitRate), overall.profitRate);
-  setMetric('currentStrategy', getCurrentStrategyText(data));
-  setMetric('totalExposure', formatUsd(overall.totalExposure));
-  setMetric(
-    'unrealizedProfit',
-    formatUsd(overall.unrealizedProfit, true),
-    overall.unrealizedProfit
+  const strategyRows = Array.isArray(data.strategies) ? data.strategies : [];
+  const liveRows = strategyRows.filter(row =>
+    ['CORE','FAST','VOLUME','WAVE'].includes(normalizeStrategyId(row.id))
   );
+
+  const strategyNetProfit = liveRows.reduce(
+    (sum, row) => sum + toNumber(row.netProfit), 0
+  );
+  const strategyUnrealized = liveRows.reduce(
+    (sum, row) => sum + toNumber(row.unrealizedProfit), 0
+  );
+
+  const paperCapital = toNumber(currentAutoStatus?.paperCapital) || toNumber(overall.initialCapital);
+  const effectiveNetProfit = currentAutoStatus ? strategyNetProfit : toNumber(overall.netProfit);
+  const effectiveTotalAsset = currentAutoStatus
+    ? paperCapital + effectiveNetProfit
+    : toNumber(overall.totalAsset);
+  const effectiveProfitRate = paperCapital > 0
+    ? (effectiveNetProfit / paperCapital) * 100
+    : toNumber(overall.profitRate);
+  const effectiveExposure = currentAutoStatus
+    ? toNumber(currentAutoStatus.globalUsed)
+    : toNumber(overall.totalExposure);
+  const effectiveUnrealized = currentAutoStatus
+    ? strategyUnrealized
+    : toNumber(overall.unrealizedProfit);
+
+  setMetric('totalAsset', formatUsd(effectiveTotalAsset));
+  setMetric('netProfit', formatUsd(effectiveNetProfit, true), effectiveNetProfit);
+  setMetric('profitRate', formatRate(effectiveProfitRate), effectiveProfitRate);
+  setMetric('currentStrategy', getCurrentStrategyText(data, currentAutoStatus));
+  setMetric('totalExposure', formatUsd(effectiveExposure));
+  setMetric('unrealizedProfit', formatUsd(effectiveUnrealized, true), effectiveUnrealized);
 
   const today = getTodayPerformance(data);
   setMetric('todayProfit', formatUsd(today.todayProfit, true), today.todayProfit);
@@ -659,6 +736,16 @@ function renderDashboard(data = {}) {
     masterBuyStatus.className = enabled ? 'status-on' : 'status-off';
   }
 
+  const autoTraderStatus = document.getElementById('autoTraderStatus');
+  if (autoTraderStatus) {
+    const version = currentAutoStatus?.version || '-';
+    const enabled = Boolean(data.strategyControl?.masterBuyEnabled);
+    autoTraderStatus.textContent = currentAutoStatus
+      ? `AUTO v${version} ${enabled ? '운전중' : '대기'}`
+      : 'AUTO 확인 필요';
+    autoTraderStatus.className = currentAutoStatus ? 'status-ok' : 'status-off';
+  }
+
   const updatedAt = document.getElementById('updatedAt');
   if (updatedAt) {
     updatedAt.textContent = formatTime(data.updatedAt);
@@ -674,21 +761,19 @@ async function loadDashboard() {
       status.className = '';
     }
 
-    const response = await fetch(
-      `${US_API_BASE}/strategy-dashboard-summary`,
-      { cache:'no-store' }
-    );
+    const [response, autoResponse] = await Promise.all([
+      fetch(`${US_API_BASE}/strategy-dashboard-summary`, { cache:'no-store' }),
+      fetch(`${US_AUTO_STATUS_API}?t=${Date.now()}`, { cache:'no-store' })
+    ]);
 
     const data = await response.json();
+    const autoData = await autoResponse.json().catch(() => null);
 
     if (!response.ok || data.ok === false) {
-      throw new Error(
-        data.error ||
-        data.message ||
-        `HTTP ${response.status}`
-      );
+      throw new Error(data.error || data.message || `HTTP ${response.status}`);
     }
 
+    currentAutoStatus = autoResponse.ok && autoData?.ok !== false ? autoData : null;
     renderDashboard(data);
   } catch (error) {
     console.error('SY Quant US dashboard error', error);
