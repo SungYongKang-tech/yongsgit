@@ -136,7 +136,8 @@
       margin-bottom: 5px;
     }
     .input-wrap { display: flex; align-items: center; gap: 5px; min-width: 0; }
-    input[type="number"] {
+    input[type="number"],
+    input[type="text"] {
       width: 100%;
       min-width: 0;
       height: 42px;
@@ -151,6 +152,7 @@
       outline: none;
     }
     input[type="number"]:focus { border-color: #60a5fa; }
+    input[readonly] { color:#bfdbfe; background:#172033; }
     .unit { color: #e2e8f0; font-size: 12px; font-weight: 800; white-space: nowrap; }
 
     .strategy-list {
@@ -255,9 +257,10 @@
     </header>
 
     <div id="loadMessage" class="load-message">서버의 현재 전략 설정을 불러오는 중입니다.</div>
+    <div id="autoSummary" class="safety-note">AUTO TRADER 상태를 확인하는 중입니다.</div>
 
     <div class="safety-note">
-      안전 원칙 · 여기서 끄는 기능은 <b>신규매수만 차단</b>합니다. 이미 보유한 종목의 손절·익절·트레일링 등 자동매도 관리는 계속 작동하도록 서버에서 분리합니다.
+      AUTO v1.2 · 여기서 끄는 기능은 <b>신규매수만 차단</b>합니다. 자동매수 금액은 <b>남은 전략자금 ÷ 남은 자리</b>로 계산하며, 이미 보유한 종목의 자동매도 관리는 계속 작동합니다.
     </div>
 
     <section class="master-card">
@@ -304,9 +307,10 @@
     'use strict';
 
     const API = '/us-api/api/strategy-settings';
+    const AUTO_API = '/us-api/api/us/auto-trader/status';
     const ORDER = ['OPEN', 'CORE', 'VOLUME', 'WAVE', 'FAST'];
     const META = {
-      OPEN: { desc: '장초 단기 급등 포착', accent: '#f59e0b' },
+      OPEN: { desc: '현재 미구현 · 매수 OFF', accent: '#f59e0b' },
       CORE: { desc: '강한 주도주 추세', accent: '#3b82f6' },
       VOLUME: { desc: '거래량 급증 종목', accent: '#8b5cf6' },
       WAVE: { desc: '눌림 후 반등', accent: '#14b8a6' },
@@ -315,6 +319,7 @@
 
     let current = null;
     let loading = false;
+    let currentAuto = null;
 
     function escapeHtml(value) {
       return String(value ?? '')
@@ -347,6 +352,14 @@
       el.className = `message ${type}`.trim();
     }
 
+    function formatUsd(value) {
+      const n = num(value, 0);
+      return '$' + n.toLocaleString('en-US', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      });
+    }
+
     function theoreticalExposure(s, data) {
       const byCount = num(s.singleBuyRate) * num(s.maxHoldings);
       const strategyCap = num(s.strategyMaxInvestmentRate, 100);
@@ -377,6 +390,10 @@
         const meta = META[id];
         const buyOn = Boolean(s.buyEnabled) && Boolean(s.implemented);
         const exposure = theoreticalExposure(s, data);
+        const auto = currentAuto?.strategies?.[id] || {};
+        const remaining = num(auto.remaining, 0);
+        const remainingSlots = num(auto.remainingSlots, 0);
+        const nextBuy = remainingSlots > 0 ? remaining / remainingSlots : 0;
         return `
           <article class="strategy-card" data-id="${id}" style="--accent:${meta.accent}">
             <div class="strategy-head">
@@ -394,13 +411,12 @@
             </div>
 
             <div class="field-grid">
-              <label class="field-box">
-                <span class="field-title">1종목 매수비율</span>
+              <div class="field-box">
+                <span class="field-title">다음 매수 예상금액</span>
                 <span class="input-wrap">
-                  <input class="single-buy-rate" type="number" min="0" max="100" step="0.1" value="${percent(s.singleBuyRate)}" />
-                  <span class="unit">%</span>
+                  <input type="text" value="${formatUsd(nextBuy)}" readonly disabled />
                 </span>
-              </label>
+              </div>
               <label class="field-box">
                 <span class="field-title">전략 최대 투자비율</span>
                 <span class="input-wrap">
@@ -426,8 +442,9 @@
 
             <div class="strategy-foot">
               신규매수 <span class="${buyOn ? 'good' : 'off'}">${buyOn ? '허용' : 'OFF'}</span>
-              · 1종목 ${percent(s.singleBuyRate)}%
-              · 이론상 최대 보유노출 약 ${percent(exposure)}%
+              · 다음매수 약 ${formatUsd(nextBuy)}
+              · 전략한도 ${formatUsd(auto.budget || 0)}
+              · 잔여 ${formatUsd(remaining)}
               ${s.implemented ? '' : ' · 전략 준비중'}
             </div>
           </article>`;
@@ -466,7 +483,7 @@
       document.querySelectorAll('.strategy-card').forEach(card => {
         const id = card.dataset.id;
         strategies[id] = {
-          singleBuyRate: num(card.querySelector('.single-buy-rate').value),
+          singleBuyRate: num(current?.strategies?.[id]?.singleBuyRate, 0),
           strategyMaxInvestmentRate: num(card.querySelector('.strategy-max-rate').value),
           maxHoldings: Math.trunc(num(card.querySelector('.max-holdings').value, 1)),
           dailyMaxNewBuys: Math.trunc(num(card.querySelector('.daily-max-buys').value, 1)),
@@ -495,11 +512,7 @@
 
       for (const id of ORDER) {
         const s = form.strategies[id];
-        if (s.singleBuyRate < 0 || s.singleBuyRate > 100) return `${id} 1종목 매수비율을 확인하세요.`;
         if (s.strategyMaxInvestmentRate < 0 || s.strategyMaxInvestmentRate > 100) return `${id} 전략 최대 투자비율을 확인하세요.`;
-        if (s.singleBuyRate > s.strategyMaxInvestmentRate && s.strategyMaxInvestmentRate > 0) {
-          return `${id} 1종목 매수비율이 전략 최대 투자비율보다 큽니다.`;
-        }
         if (s.maxHoldings < 1 || s.maxHoldings > 20) return `${id} 최대 보유종목은 1~20종목입니다.`;
         if (s.dailyMaxNewBuys < 1 || s.dailyMaxNewBuys > 20) return `${id} 하루 최대 신규매수는 1~20회입니다.`;
       }
@@ -513,9 +526,12 @@
         const s = form.strategies[id];
         const serverStrategy = current?.strategies?.[id] || {};
         const buyOn = Boolean(s.buyEnabled) && Boolean(serverStrategy.implemented);
-        const exposure = theoreticalExposure(s, form);
+        const auto = currentAuto?.strategies?.[id] || {};
+        const remaining = num(auto.remaining, 0);
+        const remainingSlots = num(auto.remainingSlots, 0);
+        const nextBuy = remainingSlots > 0 ? remaining / remainingSlots : 0;
         const foot = card.querySelector('.strategy-foot');
-        foot.innerHTML = `신규매수 <span class="${buyOn ? 'good' : 'off'}">${buyOn ? '허용' : 'OFF'}</span> · 1종목 ${percent(s.singleBuyRate)}% · 이론상 최대 보유노출 약 ${percent(exposure)}%${serverStrategy.implemented ? '' : ' · 전략 준비중'}`;
+        foot.innerHTML = `신규매수 <span class="${buyOn ? 'good' : 'off'}">${buyOn ? '허용' : 'OFF'}</span> · 다음매수 약 ${formatUsd(nextBuy)} · 전략한도 ${formatUsd(auto.budget || 0)} · 잔여 ${formatUsd(remaining)}${serverStrategy.implemented ? '' : ' · 전략 준비중'}`;
 
         const badge = card.querySelector('.buy-badge');
         badge.textContent = buyOn ? '매수 허용' : '매수 OFF';
@@ -531,11 +547,30 @@
       setMessage('불러오는 중입니다.');
 
       try {
-        const response = await fetch(`${API}?t=${Date.now()}`, { cache: 'no-store' });
+        const [response, autoResponse] = await Promise.all([
+          fetch(`${API}?t=${Date.now()}`, { cache: 'no-store' }),
+          fetch(`${AUTO_API}?t=${Date.now()}`, { cache: 'no-store' })
+        ]);
         const payload = await response.json();
+        const autoPayload = await autoResponse.json().catch(() => null);
+
         if (!response.ok || payload.ok === false || !payload.settings) {
           throw new Error(payload.error || `HTTP ${response.status}`);
         }
+
+        currentAuto = autoResponse.ok && autoPayload?.ok !== false ? autoPayload : null;
+
+        const autoSummary = document.getElementById('autoSummary');
+        if (currentAuto) {
+          autoSummary.innerHTML =
+            `AUTO v${escapeHtml(currentAuto.version || '-')} · 총 운용한도 <b>${formatUsd(currentAuto.paperCapital)}</b>` +
+            ` · 사용 <b>${formatUsd(currentAuto.globalUsed)}</b>` +
+            ` · 잔여 <b>${formatUsd(currentAuto.globalRemaining)}</b>` +
+            ` · 미체결 ${Array.isArray(currentAuto.pendingOrders) ? currentAuto.pendingOrders.length : 0}건`;
+        } else {
+          autoSummary.textContent = 'AUTO TRADER 상태를 불러오지 못했습니다.';
+        }
+
         loading = false;
         render(payload.settings);
       } catch (err) {
