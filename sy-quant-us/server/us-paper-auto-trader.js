@@ -6,6 +6,7 @@ const path = require('path');
 const kiwoom = require('./kiwoom-us-client');
 const orderClient = require('./kiwoom-us-order-client');
 const strategySettings = require('./strategy-settings-store');
+const activityStore = require('./us-dashboard-activity-store');
 
 const STATE_FILE = path.join(__dirname, 'us-paper-auto-state.json');
 
@@ -369,6 +370,44 @@ async function reconcilePendingOrders() {
               ? round((position.exitPrice - position.entryPrice) / position.entryPrice * 100, 2)
               : 0;
             position.sellOrderNo = order.orderNo || '';
+
+            // AUTO 실제 매도 체결을 대시보드 매도내역에도 기록한다.
+            // soldAt까지 비교해 재처리 시 중복 기록을 방지한다.
+            try {
+              const dashboard = activityStore.getDashboardActivity();
+              const alreadyRecorded = (dashboard.sellHistory || []).some(item =>
+                String(item.strategy || '').toUpperCase() === String(position.strategy || '').toUpperCase() &&
+                String(item.symbol || '').toUpperCase() === String(position.symbol || '').toUpperCase() &&
+                String(item.soldAt || '') === String(position.closedAt || '')
+              );
+
+              if (!alreadyRecorded) {
+                activityStore.recordSell({
+                  strategy: position.strategy,
+                  symbol: position.symbol,
+                  name: position.name || position.symbol,
+                  quantity: Number(position.quantity || 0),
+                  buyPrice: Number(position.entryPrice || 0),
+                  sellPrice: Number(position.exitPrice || 0),
+                  realizedProfit: Number(position.realizedProfit || 0),
+                  profitRate: Number(position.realizedProfitRate || 0),
+                  reason: position.exitReason || 'AUTO_EXIT',
+                  soldAt: position.closedAt
+                });
+
+                console.log(
+                  `[US-${order.strategy} AUTO 매도내역 기록]`,
+                  `${order.symbol} ${order.quantity}주`,
+                  `${position.realizedProfitRate}%`
+                );
+              }
+            } catch (dashboardError) {
+              console.error(
+                `[US-${order.strategy} AUTO 매도내역 기록 오류]`,
+                order.symbol,
+                dashboardError.message
+              );
+            }
           }
 
           changed = true;
