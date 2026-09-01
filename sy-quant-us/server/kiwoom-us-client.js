@@ -9,7 +9,7 @@ const MODE = String(process.env.TRADING_MODE || '').toUpperCase();
 const TOKEN_FILE = path.join(__dirname, 'token.txt');
 
 const EXCHANGES = new Set(['NA', 'ND', 'NY']);
-const ORDER_API_IDS = new Set(['ust20000', 'ust20001']);
+const ORDER_API_IDS = new Set(['ust20000', 'ust20001', 'ust20002', 'ust20003']);
 const API_MIN_INTERVAL_MS = Number(process.env.US_API_MIN_INTERVAL_MS || 1100);
 const READ_RATE_LIMIT_RETRIES = Number(process.env.US_READ_RATE_LIMIT_RETRIES || 2);
 const READ_RATE_LIMIT_BACKOFF_MS = Number(process.env.US_READ_RATE_LIMIT_BACKOFF_MS || 1500);
