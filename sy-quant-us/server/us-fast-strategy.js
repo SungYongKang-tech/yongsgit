@@ -2,12 +2,13 @@
 
 const marketClient = require('./us-core-market-client');
 const activityStore = require('./us-dashboard-activity-store');
+const paperAutoTrader = require('./us-paper-auto-trader');
 const { marketTodayKey, isUsTradingDay } = require('./market-calendar');
 
 const FAST_CONFIG = Object.freeze({
-  observerOnly: true,
-  orderSubmissionEnabled: false,
-  implemented: false,
+  observerOnly: false,
+  orderSubmissionEnabled: true,
+  implemented: true,
   fastStartEt: '09:35',
   fastEndEt: '10:30',
   autoScanIntervalMs: 2 * 60 * 1000,
@@ -35,7 +36,7 @@ const dailyVolumeCache = new Map();
 let scanRunning = false;
 let scanTimer = null;
 let lastScan = {
-  ok: true, strategy: 'FAST', observerOnly: true, implemented: false,
+  ok: true, strategy: 'FAST', observerOnly: false, implemented: true,
   status: 'WAITING', reason: '아직 US-FAST 후보 스캔을 실행하지 않았습니다.',
   updatedAt: null, market: null, candidates: [], errors: []
 };
@@ -180,7 +181,7 @@ async function analyzeCandidate(s,q,session) {
 
   let status='OBSERVE';
   if(!blocks.length&&score>=FAST_CONFIG.readyScore)status='READY';else if(score>=FAST_CONFIG.watchScore)status='WATCH';
-  return {strategy:'FAST',exchange:s.exchange,symbol:s.symbol,name:s.name||s.symbol,status,score:round(score,0),price:round(price,4),changeRate:round(change),dayPositionRate:round(pos,1),vwap:m.vwap,vwapGapRate:round(gap),rvol:round(rvol),tradeValue:round(tradeValue,0),trendPersistence:m.trendPersistence,accelerationRate:m.accelerationRate,qqqChangeRate:q.changeRate,qqqVwapGapRate:q.vwapGapRate,sources:s.sources,blocks,components,reason:`상승 ${change>=0?'+':''}${round(change)}% · VWAP ${gap>=0?'+':''}${round(gap)}% · RVOL ${round(rvol)}x · 위치 ${round(pos,0)}% · 추세 ${round(m.trendPersistence*100,0)}% · 가속 ${m.accelerationRate>=0?'+':''}${round(m.accelerationRate)}% · QQQ ${q.changeRate>=0?'+':''}${q.changeRate}%${blocks.length?' · '+blocks.slice(0,2).join('/'):''} · 관찰전용·주문OFF`,updatedAt:new Date().toISOString()};
+  return {strategy:'FAST',exchange:s.exchange,symbol:s.symbol,name:s.name||s.symbol,status,score:round(score,0),price:round(price,4),changeRate:round(change),dayPositionRate:round(pos,1),vwap:m.vwap,vwapGapRate:round(gap),rvol:round(rvol),tradeValue:round(tradeValue,0),trendPersistence:m.trendPersistence,accelerationRate:m.accelerationRate,qqqChangeRate:q.changeRate,qqqVwapGapRate:q.vwapGapRate,sources:s.sources,blocks,components,reason:`상승 ${change>=0?'+':''}${round(change)}% · VWAP ${gap>=0?'+':''}${round(gap)}% · RVOL ${round(rvol)}x · 위치 ${round(pos,0)}% · 추세 ${round(m.trendPersistence*100,0)}% · 가속 ${m.accelerationRate>=0?'+':''}${round(m.accelerationRate)}% · QQQ ${q.changeRate>=0?'+':''}${q.changeRate}%${blocks.length?' · '+blocks.slice(0,2).join('/'):''} · PAPER 자동주문 연결`,updatedAt:new Date().toISOString()};
 }
 
 async function runFastScan({force=false}={}) {
@@ -197,22 +198,24 @@ async function runFastScan({force=false}={}) {
     for(const s of selected){try{candidates.push(await analyzeCandidate(s,q,session));}catch(e){errors.push(`${s.symbol}: ${e.message}`);}}
     const r=x=>x==='READY'?3:x==='WATCH'?2:1;candidates.sort((a,b)=>r(b.status)-r(a.status)||b.score-a.score);
     const stored=activityStore.setCandidates('FAST',candidates.slice(0,FAST_CONFIG.candidateStoreCount));
-    lastScan={ok:true,strategy:'FAST',observerOnly:true,orderSubmissionEnabled:false,implemented:false,status:'OBSERVING',reason:'장초 강도 후보 탐색·점수화만 수행합니다. 실제 주문은 연결되어 있지 않습니다.',session,market:q,discoveredCount:snapshots.length,analyzedCount:selected.length,candidateCount:stored.length,readyCount:stored.filter(x=>x.status==='READY').length,watchCount:stored.filter(x=>x.status==='WATCH').length,candidates:stored,errors,elapsedMs:Date.now()-startedAt,updatedAt:new Date().toISOString()};
-    console.log('[US-FAST 관찰]',`후보 ${lastScan.candidateCount} / READY ${lastScan.readyCount} / WATCH ${lastScan.watchCount}`,`QQQ ${q.changeRate>=0?'+':''}${q.changeRate}%`,'주문OFF');
+
+    await paperAutoTrader.processReadyCandidates('FAST', stored);
+    lastScan={ok:true,strategy:'FAST',observerOnly: false,orderSubmissionEnabled: true,implemented: true,status:'OBSERVING',reason:'장초 강도 후보 탐색·점수화만 수행합니다. READY 후보는 설정 허용 시 PAPER 자동주문으로 연결합니다.',session,market:q,discoveredCount:snapshots.length,analyzedCount:selected.length,candidateCount:stored.length,readyCount:stored.filter(x=>x.status==='READY').length,watchCount:stored.filter(x=>x.status==='WATCH').length,candidates:stored,errors,elapsedMs:Date.now()-startedAt,updatedAt:new Date().toISOString()};
+    console.log('[US-FAST 관찰]',`후보 ${lastScan.candidateCount} / READY ${lastScan.readyCount} / WATCH ${lastScan.watchCount}`,`QQQ ${q.changeRate>=0?'+':''}${q.changeRate}%`,'PAPER AUTO');
     return lastScan;
   }catch(e){
-    lastScan={ok:false,strategy:'FAST',observerOnly:true,orderSubmissionEnabled:false,implemented:false,status:'ERROR',reason:e.message,session,errors:[e.message],elapsedMs:Date.now()-startedAt,updatedAt:new Date().toISOString()};
+    lastScan={ok:false,strategy:'FAST',observerOnly: false,orderSubmissionEnabled: true,implemented: true,status:'ERROR',reason:e.message,session,errors:[e.message],elapsedMs:Date.now()-startedAt,updatedAt:new Date().toISOString()};
     console.error('[US-FAST 관찰 오류]',e.message);return lastScan;
   }finally{scanRunning=false;}
 }
 
-function getFastStatus(){return {ok:true,strategy:'FAST',observerOnly:true,orderSubmissionEnabled:false,implemented:false,scanRunning,config:FAST_CONFIG,session:getSessionState(),lastScan};}
+function getFastStatus(){return {ok:true,strategy:'FAST',observerOnly: false,orderSubmissionEnabled: true,implemented: true,scanRunning,config:FAST_CONFIG,session:getSessionState(),lastScan};}
 function startFastObserver(){
   if(scanTimer)return scanTimer;
   scanTimer=setInterval(()=>runFastScan().catch(e=>console.error('[US-FAST 자동관찰 오류]',e.message)),FAST_CONFIG.autoScanIntervalMs);
   if(scanTimer.unref)scanTimer.unref();
   const t=setTimeout(()=>runFastScan().catch(e=>console.error('[US-FAST 초기관찰 오류]',e.message)),20000);if(t.unref)t.unref();
-  console.log('[US-FAST]',`관찰모드 시작 ${FAST_CONFIG.fastStartEt}~${FAST_CONFIG.fastEndEt} ET /`,'장초 강도전략 / 주문 기능 없음 / implemented=false');
+  console.log('[US-FAST]',`관찰모드 시작 ${FAST_CONFIG.fastStartEt}~${FAST_CONFIG.fastEndEt} ET /`,'장초 강도전략 / PAPER 자동주문 연결 / implemented=true');
   return scanTimer;
 }
 
