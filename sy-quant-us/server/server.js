@@ -7,6 +7,7 @@ const express = require('express');
 const cors = require('cors');
 const kiwoom = require('./kiwoom-us-client');
 const usOrder = require('./kiwoom-us-order-client');
+const paperAutoTrader = require('./us-paper-auto-trader');
 const portfolioManager = require('./portfolio-manager');
 const strategySettings = require('./strategy-settings-store');
 const activityStore = require('./us-dashboard-activity-store');
@@ -546,6 +547,36 @@ app.post('/api/us/paper-order/preview-sell', async (req, res) => {
   }
 });
 
+app.post('/api/us/paper-order/modify', async (req, res) => {
+  try {
+    requirePaperTestAcknowledgement(req);
+    const result = await usOrder.modifyOrder({
+      origOrderNo: req.body?.origOrderNo,
+      exchange: req.body?.exchange,
+      symbol: req.body?.symbol,
+      price: Number(req.body?.price),
+      stopPrice: req.body?.stopPrice || ''
+    });
+    res.json({ ok: true, mode: MODE, submitted: true, testOnly: true, result });
+  } catch (err) {
+    res.status(400).json({ ok: false, submitted: false, error: err.message });
+  }
+});
+
+app.post('/api/us/paper-order/cancel', async (req, res) => {
+  try {
+    requirePaperTestAcknowledgement(req);
+    const result = await usOrder.cancelOrder({
+      origOrderNo: req.body?.origOrderNo,
+      exchange: req.body?.exchange,
+      symbol: req.body?.symbol
+    });
+    res.json({ ok: true, mode: MODE, submitted: true, testOnly: true, result });
+  } catch (err) {
+    res.status(400).json({ ok: false, submitted: false, error: err.message });
+  }
+});
+
 app.post('/api/us/paper-order/buy', async (req, res) => {
   try {
     requirePaperTestAcknowledgement(req);
@@ -602,11 +633,21 @@ app.get('/api/us/paper-order/status', (req, res) => {
       previewBuy: 'POST /api/us/paper-order/preview-buy',
       previewSell: 'POST /api/us/paper-order/preview-sell',
       buy: 'POST /api/us/paper-order/buy',
-      sell: 'POST /api/us/paper-order/sell'
+      sell: 'POST /api/us/paper-order/sell',
+      modify: 'POST /api/us/paper-order/modify',
+      cancel: 'POST /api/us/paper-order/cancel'
     },
     submitRequirement: 'US_ORDER_ENABLED=true and confirm="PAPER"',
     note: '현재 수동 PAPER 주문 테스트 전용이며 전략 자동매매와 연결되지 않았습니다.'
   });
+});
+
+app.get('/api/us/auto-trader/status', (req, res) => {
+  try {
+    res.json(paperAutoTrader.getStatus());
+  } catch (err) {
+    sendError(res, err);
+  }
 });
 
 app.get('/api/portfolio-summary', async (req, res) => {
@@ -700,6 +741,8 @@ app.listen(PORT, '0.0.0.0', () => {
     `구현전략=${settings.implementedCount}개`,
     '미구현 전략 BUY는 서버에서 강제 OFF'
   );
+
+  paperAutoTrader.startAutoTrader();
 
   usCore.startCoreObserver();
   virtualTracker.startVirtualTracker();
