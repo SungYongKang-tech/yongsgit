@@ -13,6 +13,10 @@ const STATE_FILE = path.join(__dirname, 'us-paper-auto-state.json');
 const PAPER_CAPITAL = Number(process.env.US_PAPER_CAPITAL || 40000);
 const MONITOR_INTERVAL_MS = Number(process.env.US_AUTO_MONITOR_INTERVAL_MS || 60000);
 const MAX_AUTO_BUYS_PER_SCAN = Number(process.env.US_MAX_AUTO_BUYS_PER_SCAN || 1);
+const STRONG_READY_BUDGET_SCALE = Math.max(
+  0.1,
+  Math.min(1, Number(process.env.US_STRONG_READY_BUDGET_SCALE || 0.50))
+);
 
 const BUY_MODIFY_AFTER_MS = Number(process.env.US_BUY_MODIFY_AFTER_MS || 45000);
 const SELL_MODIFY_AFTER_MS = Number(process.env.US_SELL_MODIFY_AFTER_MS || 15000);
@@ -39,7 +43,16 @@ const EXIT_RULES = Object.freeze({
     forceExitEt: '15:45',
     maxHoldMinutes: 0
   },
-  WAVE:   { stopLossRate: -2.5, takeProfitRate: 5.0, forceExitEt: null, maxHoldMinutes: 0 }
+  WAVE: {
+    stopLossRate: -2.5,
+    takeProfitRate: null,
+    protectTriggerRate: 3.0,
+    protectFloorRate: 0.5,
+    trailTriggerRate: 5.0,
+    trailGapRate: 2.0,
+    forceExitEt: null,
+    maxHoldMinutes: 0
+  }
 });
 
 let monitorTimer = null;
@@ -229,7 +242,11 @@ async function submitAutoBuy(strategy, candidate, budgetInfo) {
   const quote = await currentPrice(exchange, symbol);
   const limitPrice = round(quote.price, 2);
 
-  const quantity = Math.floor(Number(budgetInfo.perStockBudget || 0) / limitPrice);
+  const budgetScale = candidate.status === 'STRONG_READY'
+    ? STRONG_READY_BUDGET_SCALE
+    : 1.0;
+  const effectiveBudget = Number(budgetInfo.perStockBudget || 0) * budgetScale;
+  const quantity = Math.floor(effectiveBudget / limitPrice);
   if (quantity <= 0) return { ok: false, reason: 'BUDGET_TOO_SMALL', symbol, limitPrice };
 
   const holdingBefore = await accountHolding(exchange, symbol);
@@ -256,6 +273,8 @@ async function submitAutoBuy(strategy, candidate, budgetInfo) {
     beforeQuantity: holdingBefore.quantity,
     orderNo: order.orderNo || '',
     score: Number(candidate.score || 0),
+    signalStatus: candidate.status || 'READY',
+    budgetScale,
     candidateReason: candidate.reason || '',
     tradingDate: nyDateKey(),
     submittedAt: nowIso(),
@@ -266,7 +285,13 @@ async function submitAutoBuy(strategy, candidate, budgetInfo) {
   state.orders.push(row);
   await saveState(state);
 
-  console.log(`[US-${strategy} AUTO BUY 제출]`, `${symbol} ${row.quantity}주 @ ${limitPrice}`, `예상 $${row.estimatedNotional}`, `orderNo=${row.orderNo || '-'}`);
+  console.log(
+    `[US-${strategy} AUTO BUY 제출]`,
+    `${symbol} ${row.quantity}주 @ ${limitPrice}`,
+    `예상 $${row.estimatedNotional}`,
+    row.signalStatus === 'STRONG_READY' ? `STRONG_READY ${Math.round(budgetScale * 100)}%` : 'READY 100%',
+    `orderNo=${row.orderNo || '-'}`
+  );
   return { ok: true, order: row };
 }
 
@@ -299,8 +324,11 @@ async function processReadyCandidatesUnlocked(strategyId, candidates = []) {
   const perStockBudget = Math.min(remainingStrategyCash / remainingSlots, remainingGlobalCash);
 
   const ready = (Array.isArray(candidates) ? candidates : [])
-    .filter(row => row && row.status === 'READY')
-    .sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+    .filter(row => row && ['READY', 'STRONG_READY'].includes(row.status))
+    .sort((a, b) => {
+      const priority = status => status === 'READY' ? 2 : status === 'STRONG_READY' ? 1 : 0;
+      return priority(b.status) - priority(a.status) || Number(b.score || 0) - Number(a.score || 0);
+    });
 
   if (!ready.length) return { ok: true, skipped: true, reason: 'NO_READY' };
 
@@ -636,13 +664,13 @@ async function monitorOpenPositions() {
       if (profitRate <= rules.stopLossRate) {
         exitReason = `STOP_LOSS ${round(profitRate, 2)}%`;
       } else if (
-        position.strategy === 'VOLUME' &&
+        Number(rules.trailTriggerRate || 0) > 0 &&
         peakProfitRate >= Number(rules.trailTriggerRate || 0) &&
         profitRate <= peakProfitRate - Number(rules.trailGapRate || 0)
       ) {
         exitReason = `TRAILING_STOP ${round(profitRate, 2)}% / PEAK ${round(peakProfitRate, 2)}%`;
       } else if (
-        position.strategy === 'VOLUME' &&
+        Number(rules.protectTriggerRate || 0) > 0 &&
         peakProfitRate >= Number(rules.protectTriggerRate || 0) &&
         profitRate <= Number(rules.protectFloorRate || 0)
       ) {
@@ -757,9 +785,9 @@ function startAutoTrader() {
   if (typeof initial.unref === 'function') initial.unref();
 
   console.log(
-    '[US AUTO TRADER v1.4]',
+    '[US AUTO TRADER v1.6]',
     `PAPER 운용한도 $${PAPER_CAPITAL.toLocaleString('en-US')}`,
-    '/ READY BUY',
+    '/ READY 100% + STRONG_READY 50% BUY',
     '/ 손절·익절 SELL',
     `/ BUY 미체결 ${BUY_MODIFY_AFTER_MS / 1000}s 후 가격정정`,
     `/ SELL 미체결 ${SELL_MODIFY_AFTER_MS / 1000}s 후 가격정정`
@@ -815,7 +843,7 @@ function getStatus() {
 
   return {
     ok: true,
-    version: '1.4',
+    version: '1.6',
     mode: 'PAPER',
     paperCapital: PAPER_CAPITAL,
     realizedProfit,
@@ -828,6 +856,7 @@ function getStatus() {
     monitorRunning,
     monitorIntervalMs: MONITOR_INTERVAL_MS,
     maxAutoBuysPerScan: MAX_AUTO_BUYS_PER_SCAN,
+    strongReadyBudgetScale: STRONG_READY_BUDGET_SCALE,
     engineSerialization: true,
     stateOverwriteProtection: true,
     stopLossReentryCooldownMs: STOP_LOSS_REENTRY_COOLDOWN_MS,

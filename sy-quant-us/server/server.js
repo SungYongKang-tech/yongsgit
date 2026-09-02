@@ -28,6 +28,7 @@ const usWave = require('./us-wave-strategy');
 const waveVirtualTracker = require('./us-wave-virtual-tracker');
 const waveHistory = require('./us-wave-history-store');
 const waveDailySummary = require('./us-wave-daily-summary');
+const installUsAnalysisRoutes = require('./analysis-download');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -728,6 +729,8 @@ app.get('/api/us/holdings', async (req, res) => {
     sendError(res, err);
   }
 });
+
+installUsAnalysisRoutes(app);
 
 app.listen(PORT, '0.0.0.0', () => {
   const settings = strategySettings.getSettings();

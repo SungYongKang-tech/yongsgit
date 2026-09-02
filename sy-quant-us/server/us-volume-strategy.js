@@ -5,6 +5,7 @@ const activityStore = require('./us-dashboard-activity-store');
 const paperAutoTrader = require('./us-paper-auto-trader');
 const { marketTodayKey, isUsTradingDay } = require('./market-calendar');
 
+// VOLUME v1.2: 일반 READY 유지 + 거래량 지속형 STRONG_READY 추가 / 청산은 AUTO v1.6
 const VOLUME_CONFIG = Object.freeze({
   observerOnly: false,
   orderSubmissionEnabled: true,
@@ -29,7 +30,22 @@ const VOLUME_CONFIG = Object.freeze({
   watchScore: 48,
   qqqHardBlockChangeRate: -1.50,
   qqqHardBlockVwapGapRate: -0.60,
-  dailyAverageLookback: 10
+  dailyAverageLookback: 10,
+
+  // STRONG_READY: RVOL만 소폭 완화하고 최근거래량·가격·추세를 더 강하게 요구
+  strongReadyEnabled: true,
+  strongReadyScore: 68,
+  strongMinOpenChangeRate: 2.0,
+  strongMaxOpenChangeRate: 8.5,
+  strongMinDayPositionRate: 75,
+  strongMaxDayPositionRate: 93,
+  strongMinVwapGapRate: 0.20,
+  strongMaxVwapGapRate: 3.00,
+  strongMinRvol: 1.30,
+  strongMinRecentVolumeRatio: 1.50,
+  strongMinRecentPriceChangeRate: 0.10,
+  strongMinTrendPersistence: 0.67,
+  strongMinTradeValue: 12000000
 });
 
 const INVALID_SYMBOLS = new Set(['PSQL']);
@@ -99,6 +115,34 @@ function mergeRows(volumeRows=[],changeRows=[]){
   return [...map.values()].filter(r=>r.price>=VOLUME_CONFIG.minPrice).sort((a,b)=>Number(b.sources.includes('VOLUME_TOP'))-Number(a.sources.includes('VOLUME_TOP'))||b.weight-a.weight||b.tradeValue-a.tradeValue);
 }
 
+
+function previousCandidate(symbol) {
+  return (lastScan?.candidates || []).find(
+    row => row && String(row.symbol || '').toUpperCase() === String(symbol || '').toUpperCase()
+  ) || null;
+}
+
+function isVolumeStrongReady({ symbol, q, score, price, change, pos, gap, rvol, recentVolumeRatio, recentPriceChangeRate, trend, tradeValue }) {
+  if (!VOLUME_CONFIG.strongReadyEnabled || q.hardBlocked) return false;
+  if (score < VOLUME_CONFIG.strongReadyScore) return false;
+  if (change < VOLUME_CONFIG.strongMinOpenChangeRate || change > VOLUME_CONFIG.strongMaxOpenChangeRate) return false;
+  if (pos < VOLUME_CONFIG.strongMinDayPositionRate || pos > VOLUME_CONFIG.strongMaxDayPositionRate) return false;
+  if (gap < VOLUME_CONFIG.strongMinVwapGapRate || gap > VOLUME_CONFIG.strongMaxVwapGapRate) return false;
+  if (rvol < VOLUME_CONFIG.strongMinRvol) return false;
+  if (recentVolumeRatio < VOLUME_CONFIG.strongMinRecentVolumeRatio) return false;
+  if (recentPriceChangeRate < VOLUME_CONFIG.strongMinRecentPriceChangeRate) return false;
+  if (trend < VOLUME_CONFIG.strongMinTrendPersistence) return false;
+  if (tradeValue < VOLUME_CONFIG.strongMinTradeValue) return false;
+
+  const prev = previousCandidate(symbol);
+  if (!prev) return false;
+  if (num(prev.price) <= 0 || num(prev.score) <= 0) return false;
+  if (price < num(prev.price) * 0.998) return false;
+  if (score < num(prev.score)) return false;
+  if (num(prev.recentVolumeRatio) > 0 && recentVolumeRatio < num(prev.recentVolumeRatio) * 0.90) return false;
+  return true;
+}
+
 async function analyzeCandidate(s,q,session){
   const chart=await marketClient.getMinuteChart({exchange:s.exchange,symbol:s.symbol,startDate:session.date,minute:5,maxPages:2}),m=computeMinuteMetrics(chart.rows),d=await avgDailyVolume(s.exchange,s.symbol);
   const price=num(s.price)||m.price,open=num(s.open)||m.open,high=Math.max(num(s.high),m.high),low=num(s.low)>0&&m.low>0?Math.min(num(s.low),m.low):num(s.low)||m.low;
@@ -106,18 +150,27 @@ async function analyzeCandidate(s,q,session){
   const components={market:scoreMarket(q),change:scoreChange(change),dayPosition:scorePosition(pos),vwap:scoreVwap(gap),rvol:scoreRvol(rvol),recentVolume:scoreRecentVolume(m.recentVolumeRatio),trend:scoreTrend(m.trendPersistence),liquidity:scoreLiquidity(tradeValue)};
   const score=Object.values(components).reduce((a,b)=>a+b,0),blocks=[];
   if(q.hardBlocked)blocks.push('QQQ 약세');if(change<VOLUME_CONFIG.minOpenChangeRate)blocks.push('시가대비 상승 부족');if(change>VOLUME_CONFIG.maxOpenChangeRate)blocks.push('상승 과열');if(pos<VOLUME_CONFIG.minDayPositionRate)blocks.push('당일 위치 낮음');if(pos>VOLUME_CONFIG.maxDayPositionRate)blocks.push('고점 추격');if(gap<VOLUME_CONFIG.minVwapGapRate)blocks.push('VWAP 아래');if(gap>VOLUME_CONFIG.maxVwapGapRate)blocks.push('VWAP 과이격');if(rvol>0&&rvol<VOLUME_CONFIG.minRvol)blocks.push('RVOL 부족');if(m.recentVolumeRatio>0&&m.recentVolumeRatio<VOLUME_CONFIG.minRecentVolumeRatio)blocks.push('최근 거래량 둔화');if(m.trendPersistence<VOLUME_CONFIG.minTrendPersistence)blocks.push('단기 추세 약함');if(tradeValue<VOLUME_CONFIG.minTradeValue)blocks.push('거래대금 부족');if(change>=7&&pos>=94&&gap>=2)blocks.push('과열 추격');if(m.businessDate!==compactDate(session.date))blocks.push('당일 분봉 없음');
-  let status='OBSERVE';if(!blocks.length&&score>=VOLUME_CONFIG.readyScore)status='READY';else if(score>=VOLUME_CONFIG.watchScore)status='WATCH';
-  return {strategy:'VOLUME',exchange:s.exchange,symbol:s.symbol,name:s.name||s.symbol,status,score:round(score,0),price:round(price,4),changeRate:round(change),dayPositionRate:round(pos,1),vwap:m.vwap,vwapGapRate:round(gap),rvol:round(rvol),recentVolumeRatio:m.recentVolumeRatio,recentPriceChangeRate:m.recentPriceChangeRate,tradeValue:round(tradeValue,0),trendPersistence:m.trendPersistence,qqqChangeRate:q.changeRate,qqqVwapGapRate:q.vwapGapRate,sources:s.sources,blocks,components,reason:[`상승 ${change>=0?'+':''}${round(change)}%`,`RVOL ${round(rvol)}x`,`최근거래량 ${round(m.recentVolumeRatio)}x`,`VWAP ${gap>=0?'+':''}${round(gap)}%`,`위치 ${round(pos,0)}%`,`추세 ${round(m.trendPersistence*100,0)}%`,`QQQ ${q.changeRate>=0?'+':''}${q.changeRate}%`,blocks.length?blocks.slice(0,2).join('/'):null,'PAPER 자동주문 연결'].filter(Boolean).join(' · '),updatedAt:new Date().toISOString()};
+  let status='OBSERVE';
+  const strongReady = isVolumeStrongReady({
+    symbol:s.symbol, q, score, price, change, pos, gap, rvol,
+    recentVolumeRatio:m.recentVolumeRatio,
+    recentPriceChangeRate:m.recentPriceChangeRate,
+    trend:m.trendPersistence, tradeValue
+  });
+  if(!blocks.length&&score>=VOLUME_CONFIG.readyScore)status='READY';
+  else if(strongReady)status='STRONG_READY';
+  else if(score>=VOLUME_CONFIG.watchScore)status='WATCH';
+  return {strategy:'VOLUME',exchange:s.exchange,symbol:s.symbol,name:s.name||s.symbol,status,score:round(score,0),price:round(price,4),changeRate:round(change),dayPositionRate:round(pos,1),vwap:m.vwap,vwapGapRate:round(gap),rvol:round(rvol),recentVolumeRatio:m.recentVolumeRatio,recentPriceChangeRate:m.recentPriceChangeRate,tradeValue:round(tradeValue,0),trendPersistence:m.trendPersistence,qqqChangeRate:q.changeRate,qqqVwapGapRate:q.vwapGapRate,sources:s.sources,blocks,components,reason:[status==='STRONG_READY'?'STRONG_READY':null,`상승 ${change>=0?'+':''}${round(change)}%`,`RVOL ${round(rvol)}x`,`최근거래량 ${round(m.recentVolumeRatio)}x`,`VWAP ${gap>=0?'+':''}${round(gap)}%`,`위치 ${round(pos,0)}%`,`추세 ${round(m.trendPersistence*100,0)}%`,`QQQ ${q.changeRate>=0?'+':''}${q.changeRate}%`,blocks.length?blocks.slice(0,2).join('/'):null,'PAPER 자동주문 연결'].filter(Boolean).join(' · '),updatedAt:new Date().toISOString()};
 }
 
 async function runVolumeScan({force=false}={}){
   if(scanRunning)return {...lastScan,ok:false,status:'BUSY',reason:'US-VOLUME 스캔이 이미 실행 중입니다.'};
   const session=getSessionState();if(!force&&!session.volumeWindow){lastScan={...lastScan,ok:true,status:'WAITING',reason:session.tradingDay?`US-VOLUME 관찰시간 대기 (${VOLUME_CONFIG.volumeStartEt}~${VOLUME_CONFIG.volumeEndEt} ET)`:'미국시장 휴장일',session,updatedAt:new Date().toISOString()};return lastScan;}
   scanRunning=true;const startedAt=Date.now(),errors=[];
-  try{const [q,volume,change]=await Promise.all([getQqqState(),marketClient.getTodayVolumeTop({maxPages:1}),marketClient.getChangeRateTopVsOpen({maxPages:1})]);const snapshots=mergeRows(volume.rows,change.rows),selected=snapshots.slice(0,VOLUME_CONFIG.analyzeCandidateCount),candidates=[];for(const s of selected){try{candidates.push(await analyzeCandidate(s,q,session));}catch(e){errors.push(`${s.symbol}: ${e.message}`);}}const rank=x=>x==='READY'?3:x==='WATCH'?2:1;candidates.sort((a,b)=>rank(b.status)-rank(a.status)||b.score-a.score);const stored=activityStore.setCandidates('VOLUME',candidates.slice(0,VOLUME_CONFIG.candidateStoreCount));
+  try{const [q,volume,change]=await Promise.all([getQqqState(),marketClient.getTodayVolumeTop({maxPages:1}),marketClient.getChangeRateTopVsOpen({maxPages:1})]);const snapshots=mergeRows(volume.rows,change.rows),selected=snapshots.slice(0,VOLUME_CONFIG.analyzeCandidateCount),candidates=[];for(const s of selected){try{candidates.push(await analyzeCandidate(s,q,session));}catch(e){errors.push(`${s.symbol}: ${e.message}`);}}const rank=x=>x==='READY'?4:x==='STRONG_READY'?3:x==='WATCH'?2:1;candidates.sort((a,b)=>rank(b.status)-rank(a.status)||b.score-a.score);const stored=activityStore.setCandidates('VOLUME',candidates.slice(0,VOLUME_CONFIG.candidateStoreCount));
 
-    await paperAutoTrader.processReadyCandidates('VOLUME', stored);lastScan={ok:true,strategy:'VOLUME',observerOnly: false,orderSubmissionEnabled: true,implemented: true,status:'OBSERVING',reason:'거래량 급증·VWAP·추세 후보만 관찰합니다. READY 후보는 설정 허용 시 PAPER 자동주문으로 연결합니다.',session,market:q,discoveredCount:snapshots.length,analyzedCount:selected.length,candidateCount:stored.length,readyCount:stored.filter(x=>x.status==='READY').length,watchCount:stored.filter(x=>x.status==='WATCH').length,candidates:stored,errors,elapsedMs:Date.now()-startedAt,updatedAt:new Date().toISOString()};console.log('[US-VOLUME 관찰]',`후보 ${lastScan.candidateCount} / READY ${lastScan.readyCount} / WATCH ${lastScan.watchCount}`,`QQQ ${q.changeRate>=0?'+':''}${q.changeRate}%`,'PAPER AUTO');return lastScan;}catch(e){lastScan={ok:false,strategy:'VOLUME',observerOnly: false,orderSubmissionEnabled: true,implemented: true,status:'ERROR',reason:e.message,session,errors:[e.message],elapsedMs:Date.now()-startedAt,updatedAt:new Date().toISOString()};console.error('[US-VOLUME 관찰 오류]',e.message);return lastScan;}finally{scanRunning=false;}
+    await paperAutoTrader.processReadyCandidates('VOLUME', stored);lastScan={ok:true,strategy:'VOLUME',observerOnly: false,orderSubmissionEnabled: true,implemented: true,status:'OBSERVING',reason:'거래량 급증·VWAP·추세 후보만 관찰합니다. READY 후보는 설정 허용 시 PAPER 자동주문으로 연결합니다.',session,market:q,discoveredCount:snapshots.length,analyzedCount:selected.length,candidateCount:stored.length,readyCount:stored.filter(x=>x.status==='READY').length,strongReadyCount:stored.filter(x=>x.status==='STRONG_READY').length,watchCount:stored.filter(x=>x.status==='WATCH').length,candidates:stored,errors,elapsedMs:Date.now()-startedAt,updatedAt:new Date().toISOString()};console.log('[US-VOLUME 관찰]',`후보 ${lastScan.candidateCount} / READY ${lastScan.readyCount} / STRONG ${lastScan.strongReadyCount || 0} / WATCH ${lastScan.watchCount}`,`QQQ ${q.changeRate>=0?'+':''}${q.changeRate}%`,'PAPER AUTO');return lastScan;}catch(e){lastScan={ok:false,strategy:'VOLUME',observerOnly: false,orderSubmissionEnabled: true,implemented: true,status:'ERROR',reason:e.message,session,errors:[e.message],elapsedMs:Date.now()-startedAt,updatedAt:new Date().toISOString()};console.error('[US-VOLUME 관찰 오류]',e.message);return lastScan;}finally{scanRunning=false;}
 }
 function getVolumeStatus(){return {ok:true,strategy:'VOLUME',observerOnly: false,orderSubmissionEnabled: true,implemented: true,scanRunning,config:VOLUME_CONFIG,session:getSessionState(),lastScan};}
-function startVolumeObserver(){if(scanTimer)return scanTimer;scanTimer=setInterval(()=>runVolumeScan().catch(e=>console.error('[US-VOLUME 자동관찰 오류]',e.message)),VOLUME_CONFIG.autoScanIntervalMs);if(scanTimer.unref)scanTimer.unref();const t=setTimeout(()=>runVolumeScan().catch(e=>console.error('[US-VOLUME 초기관찰 오류]',e.message)),25000);if(t.unref)t.unref();console.log('[US-VOLUME]',`관찰모드 시작 ${VOLUME_CONFIG.volumeStartEt}~${VOLUME_CONFIG.volumeEndEt} ET /`,'거래량 급증전략 / PAPER 자동주문 연결 / implemented=true');return scanTimer;}
+function startVolumeObserver(){if(scanTimer)return scanTimer;scanTimer=setInterval(()=>runVolumeScan().catch(e=>console.error('[US-VOLUME 자동관찰 오류]',e.message)),VOLUME_CONFIG.autoScanIntervalMs);if(scanTimer.unref)scanTimer.unref();const t=setTimeout(()=>runVolumeScan().catch(e=>console.error('[US-VOLUME 초기관찰 오류]',e.message)),25000);if(t.unref)t.unref();console.log('[US-VOLUME v1.2]',`관찰모드 시작 ${VOLUME_CONFIG.volumeStartEt}~${VOLUME_CONFIG.volumeEndEt} ET /`,'거래량 급증전략 / PAPER 자동주문 연결 / implemented=true');return scanTimer;}
 module.exports={VOLUME_CONFIG,startVolumeObserver,runVolumeScan,getVolumeStatus,computeMinuteMetrics,getSessionState};

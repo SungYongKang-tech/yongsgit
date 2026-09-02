@@ -28,7 +28,23 @@ const FAST_CONFIG = Object.freeze({
   watchScore: 50,
   qqqHardBlockChangeRate: -1.50,
   qqqHardBlockVwapGapRate: -0.60,
-  dailyAverageLookback: 10
+  dailyAverageLookback: 10,
+
+  // STRONG_READY: 일반 READY 기준은 유지하고, 직전 스캔부터 강도가 유지되는 후보만 제한 허용
+  strongReadyEnabled: true,
+  strongReadyScore: 70,
+  strongMinOpenChangeRate: 2.5,
+  strongMaxOpenChangeRate: 10.0,
+  strongMinDayPositionRate: 82,
+  strongMaxDayPositionRate: 93,
+  strongMinVwapGapRate: 0.30,
+  strongMaxVwapGapRate: 3.00,
+  strongMinRvol: 1.00,
+  strongMinTrendPersistence: 0.80,
+  strongMinTradeValue: 10000000,
+  strongMinAccelerationRate: 0.00,
+  strongSurgeRvol: 2.00,
+  strongSurgeAccelerationRate: 0.20
 });
 
 const INVALID_SYMBOLS = new Set(['PSQL']);
@@ -153,6 +169,36 @@ function mergeRows(volumeRows=[],changeRows=[]) {
   return [...map.values()].filter(r=>r.price>=FAST_CONFIG.minPrice).sort((a,b)=>b.sources.length-a.sources.length||b.weight-a.weight||b.tradeValue-a.tradeValue);
 }
 
+
+function previousCandidate(symbol) {
+  return (lastScan?.candidates || []).find(
+    row => row && String(row.symbol || '').toUpperCase() === String(symbol || '').toUpperCase()
+  ) || null;
+}
+
+function isFastStrongReady({ symbol, q, score, price, change, pos, gap, rvol, trend, accel, tradeValue }) {
+  if (!FAST_CONFIG.strongReadyEnabled || q.hardBlocked) return false;
+  if (score < FAST_CONFIG.strongReadyScore) return false;
+  if (change < FAST_CONFIG.strongMinOpenChangeRate || change > FAST_CONFIG.strongMaxOpenChangeRate) return false;
+  if (pos < FAST_CONFIG.strongMinDayPositionRate || pos > FAST_CONFIG.strongMaxDayPositionRate) return false;
+  if (gap < FAST_CONFIG.strongMinVwapGapRate || gap > FAST_CONFIG.strongMaxVwapGapRate) return false;
+  if (rvol < FAST_CONFIG.strongMinRvol) return false;
+  if (tradeValue < FAST_CONFIG.strongMinTradeValue) return false;
+  if (accel < FAST_CONFIG.strongMinAccelerationRate) return false;
+
+  const momentumOk =
+    trend >= FAST_CONFIG.strongMinTrendPersistence ||
+    (rvol >= FAST_CONFIG.strongSurgeRvol && accel >= FAST_CONFIG.strongSurgeAccelerationRate);
+  if (!momentumOk) return false;
+
+  const prev = previousCandidate(symbol);
+  if (!prev) return false;
+  if (num(prev.price) <= 0 || num(prev.score) <= 0) return false;
+  if (price < num(prev.price) * 0.998) return false;
+  if (score < num(prev.score)) return false;
+  return true;
+}
+
 async function analyzeCandidate(s,q,session) {
   const chart=await marketClient.getMinuteChart({exchange:s.exchange,symbol:s.symbol,startDate:session.date,minute:5,maxPages:2});
   const m=minuteMetrics(chart.rows), d=await avgDailyVolume(s.exchange,s.symbol);
@@ -180,8 +226,14 @@ async function analyzeCandidate(s,q,session) {
   if(m.businessDate!==compactDate(session.date))blocks.push('당일 분봉 없음');
 
   let status='OBSERVE';
-  if(!blocks.length&&score>=FAST_CONFIG.readyScore)status='READY';else if(score>=FAST_CONFIG.watchScore)status='WATCH';
-  return {strategy:'FAST',exchange:s.exchange,symbol:s.symbol,name:s.name||s.symbol,status,score:round(score,0),price:round(price,4),changeRate:round(change),dayPositionRate:round(pos,1),vwap:m.vwap,vwapGapRate:round(gap),rvol:round(rvol),tradeValue:round(tradeValue,0),trendPersistence:m.trendPersistence,accelerationRate:m.accelerationRate,qqqChangeRate:q.changeRate,qqqVwapGapRate:q.vwapGapRate,sources:s.sources,blocks,components,reason:`상승 ${change>=0?'+':''}${round(change)}% · VWAP ${gap>=0?'+':''}${round(gap)}% · RVOL ${round(rvol)}x · 위치 ${round(pos,0)}% · 추세 ${round(m.trendPersistence*100,0)}% · 가속 ${m.accelerationRate>=0?'+':''}${round(m.accelerationRate)}% · QQQ ${q.changeRate>=0?'+':''}${q.changeRate}%${blocks.length?' · '+blocks.slice(0,2).join('/'):''} · PAPER 자동주문 연결`,updatedAt:new Date().toISOString()};
+  const strongReady = isFastStrongReady({
+    symbol:s.symbol, q, score, price, change, pos, gap, rvol,
+    trend:m.trendPersistence, accel:m.accelerationRate, tradeValue
+  });
+  if(!blocks.length&&score>=FAST_CONFIG.readyScore)status='READY';
+  else if(strongReady)status='STRONG_READY';
+  else if(score>=FAST_CONFIG.watchScore)status='WATCH';
+  return {strategy:'FAST',exchange:s.exchange,symbol:s.symbol,name:s.name||s.symbol,status,score:round(score,0),price:round(price,4),changeRate:round(change),dayPositionRate:round(pos,1),vwap:m.vwap,vwapGapRate:round(gap),rvol:round(rvol),tradeValue:round(tradeValue,0),trendPersistence:m.trendPersistence,accelerationRate:m.accelerationRate,qqqChangeRate:q.changeRate,qqqVwapGapRate:q.vwapGapRate,sources:s.sources,blocks,components,reason:`${status==='STRONG_READY'?'STRONG_READY · ':''}상승 ${change>=0?'+':''}${round(change)}% · VWAP ${gap>=0?'+':''}${round(gap)}% · RVOL ${round(rvol)}x · 위치 ${round(pos,0)}% · 추세 ${round(m.trendPersistence*100,0)}% · 가속 ${m.accelerationRate>=0?'+':''}${round(m.accelerationRate)}% · QQQ ${q.changeRate>=0?'+':''}${q.changeRate}%${blocks.length?' · '+blocks.slice(0,2).join('/'):''} · PAPER 자동주문 연결`,updatedAt:new Date().toISOString()};
 }
 
 async function runFastScan({force=false}={}) {
@@ -196,12 +248,12 @@ async function runFastScan({force=false}={}) {
     const [q,volume,change]=await Promise.all([getQqqState(),marketClient.getTodayVolumeTop({maxPages:1}),marketClient.getChangeRateTopVsOpen({maxPages:1})]);
     const snapshots=mergeRows(volume.rows,change.rows), selected=snapshots.slice(0,FAST_CONFIG.analyzeCandidateCount), candidates=[];
     for(const s of selected){try{candidates.push(await analyzeCandidate(s,q,session));}catch(e){errors.push(`${s.symbol}: ${e.message}`);}}
-    const r=x=>x==='READY'?3:x==='WATCH'?2:1;candidates.sort((a,b)=>r(b.status)-r(a.status)||b.score-a.score);
+    const r=x=>x==='READY'?4:x==='STRONG_READY'?3:x==='WATCH'?2:1;candidates.sort((a,b)=>r(b.status)-r(a.status)||b.score-a.score);
     const stored=activityStore.setCandidates('FAST',candidates.slice(0,FAST_CONFIG.candidateStoreCount));
 
     await paperAutoTrader.processReadyCandidates('FAST', stored);
-    lastScan={ok:true,strategy:'FAST',observerOnly: false,orderSubmissionEnabled: true,implemented: true,status:'OBSERVING',reason:'장초 강도 후보 탐색·점수화만 수행합니다. READY 후보는 설정 허용 시 PAPER 자동주문으로 연결합니다.',session,market:q,discoveredCount:snapshots.length,analyzedCount:selected.length,candidateCount:stored.length,readyCount:stored.filter(x=>x.status==='READY').length,watchCount:stored.filter(x=>x.status==='WATCH').length,candidates:stored,errors,elapsedMs:Date.now()-startedAt,updatedAt:new Date().toISOString()};
-    console.log('[US-FAST 관찰]',`후보 ${lastScan.candidateCount} / READY ${lastScan.readyCount} / WATCH ${lastScan.watchCount}`,`QQQ ${q.changeRate>=0?'+':''}${q.changeRate}%`,'PAPER AUTO');
+    lastScan={ok:true,strategy:'FAST',observerOnly: false,orderSubmissionEnabled: true,implemented: true,status:'OBSERVING',reason:'장초 강도 후보 탐색·점수화만 수행합니다. READY 후보는 설정 허용 시 PAPER 자동주문으로 연결합니다.',session,market:q,discoveredCount:snapshots.length,analyzedCount:selected.length,candidateCount:stored.length,readyCount:stored.filter(x=>x.status==='READY').length,strongReadyCount:stored.filter(x=>x.status==='STRONG_READY').length,watchCount:stored.filter(x=>x.status==='WATCH').length,candidates:stored,errors,elapsedMs:Date.now()-startedAt,updatedAt:new Date().toISOString()};
+    console.log('[US-FAST 관찰]',`후보 ${lastScan.candidateCount} / READY ${lastScan.readyCount} / STRONG ${lastScan.strongReadyCount || 0} / WATCH ${lastScan.watchCount}`,`QQQ ${q.changeRate>=0?'+':''}${q.changeRate}%`,'PAPER AUTO');
     return lastScan;
   }catch(e){
     lastScan={ok:false,strategy:'FAST',observerOnly: false,orderSubmissionEnabled: true,implemented: true,status:'ERROR',reason:e.message,session,errors:[e.message],elapsedMs:Date.now()-startedAt,updatedAt:new Date().toISOString()};
@@ -215,7 +267,7 @@ function startFastObserver(){
   scanTimer=setInterval(()=>runFastScan().catch(e=>console.error('[US-FAST 자동관찰 오류]',e.message)),FAST_CONFIG.autoScanIntervalMs);
   if(scanTimer.unref)scanTimer.unref();
   const t=setTimeout(()=>runFastScan().catch(e=>console.error('[US-FAST 초기관찰 오류]',e.message)),20000);if(t.unref)t.unref();
-  console.log('[US-FAST]',`관찰모드 시작 ${FAST_CONFIG.fastStartEt}~${FAST_CONFIG.fastEndEt} ET /`,'장초 강도전략 / PAPER 자동주문 연결 / implemented=true');
+  console.log('[US-FAST v1.1]',`관찰모드 시작 ${FAST_CONFIG.fastStartEt}~${FAST_CONFIG.fastEndEt} ET /`,'장초 강도전략 / PAPER 자동주문 연결 / implemented=true');
   return scanTimer;
 }
 

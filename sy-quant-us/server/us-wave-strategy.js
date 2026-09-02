@@ -5,6 +5,7 @@ const activityStore = require('./us-dashboard-activity-store');
 const paperAutoTrader = require('./us-paper-auto-trader');
 const { marketTodayKey, isUsTradingDay } = require('./market-calendar');
 
+// WAVE v1.1: 진입 필터 유지 / 청산 개선은 AUTO v1.5에서 처리
 const WAVE_CONFIG = Object.freeze({
   observerOnly: false,
   orderSubmissionEnabled: true,
@@ -536,7 +537,7 @@ function startWaveObserver(){
   if(t.unref)t.unref();
 
   console.log(
-    '[US-WAVE]',
+    '[US-WAVE v1.1]',
     `관찰모드 시작 ${WAVE_CONFIG.waveStartEt}~${WAVE_CONFIG.waveEndEt} ET /`,
     '멀티데이 추세전략 / PAPER 자동주문 연결 / implemented=true'
   );
