@@ -393,6 +393,7 @@ function uploadCloudinaryImage(file, onProgress){
     // 폴더는 Cloudinary의 koen_solar preset에 설정된 Asset folder를 따릅니다.
     formData.append("file", file);
     formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+    formData.append("asset_folder", "koen-solar");
 
     xhr.open("POST", CLOUDINARY_UPLOAD_URL, true);
     xhr.timeout = 45000;

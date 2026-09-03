@@ -73,3 +73,8 @@
 - 업로드 진행률(%) 표시
 - Cloudinary 업로드 완료 후 Firebase URL 저장 단계 별도 표시
 - 네트워크/Cloudinary 오류 문구를 화면과 콘솔에 표시
+
+
+[V8.2]
+- Cloudinary 업로드 시 asset_folder=koen-solar 강제 지정
+- Cloudinary가 반환한 secure_url을 Firebase에 저장
