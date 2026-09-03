@@ -55,3 +55,21 @@
 - 100.44: 옥외주차장 / 50.22: 체육관옥상A / 256: 옥외주차장 / 102.4: 강당옥상 / 46.08: 체육관옥상B
 - 휴대폰 세로 화면에서 월별 발전량 표 가로 스크롤 제거
 - 표 셀/패널 가로 여백 축소 및 글자 자동 압축
+
+
+[V8 Cloudinary]
+- Firebase Storage 제거
+- Cloudinary cloud name: dqpcvlakz
+- Unsigned upload preset: koen_solar
+- Asset folder는 Cloudinary preset의 koen-solar 설정 사용
+- 사진 업로드 후 secure_url을 Firebase Realtime Database에 저장
+- JPG/PNG/WEBP, 5MB 이하 클라이언트 검사
+
+
+[V8.1 Cloudinary 업로드 멈춤 수정]
+- fetch 대신 XMLHttpRequest 업로드로 변경
+- Unsigned 업로드 파라미터를 file + upload_preset으로 최소화
+- 45초 타임아웃 추가
+- 업로드 진행률(%) 표시
+- Cloudinary 업로드 완료 후 Firebase URL 저장 단계 별도 표시
+- 네트워크/Cloudinary 오류 문구를 화면과 콘솔에 표시

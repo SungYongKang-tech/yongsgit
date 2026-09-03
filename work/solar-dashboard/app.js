@@ -1,6 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import { getDatabase, ref, get, set, update } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
-import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 import { HISTORICAL_DATA } from "./historical-data.js";
 
 const firebaseConfig = {
@@ -14,6 +13,11 @@ const firebaseConfig = {
 };
 
 const BASE = "solarHQ";
+
+const CLOUDINARY_CLOUD_NAME = "dqpcvlakz";
+const CLOUDINARY_UPLOAD_PRESET = "koen_solar";
+const CLOUDINARY_UPLOAD_URL =
+  `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
 const ADMIN_PASSWORD = "1111";
 const EQUIPMENT = [
   { id: "gym-roof-b", name: "체육관 옥상 B", alias: "45kW", capacityKw: 46.08, position: "상부 좌측", status: "active" },
@@ -30,7 +34,6 @@ const ALL_EQUIPMENT = [
 
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
-const storage = getStorage(app);
 const $ = (id) => document.getElementById(id);
 let unlocked = false;
 let currentInspection = null;
@@ -365,7 +368,7 @@ function renderPhotoCards(){
     <h3>${e.name} ${e.capacityKw} kW</h3>
     <div class="photo-preview" id="preview-${e.id}">등록된 사진 없음</div>
     <input id="file-${e.id}" type="file" accept="image/*" disabled />
-    <button id="upload-${e.id}" class="btn secondary" type="button" disabled>인버터 사진 업로드/교체</button>
+    <button id="upload-${e.id}" class="btn secondary" type="button" disabled>사진 업로드/교체</button>
   </article>`).join("");
   EQUIPMENT.forEach(e=>$("upload-"+e.id).addEventListener("click",()=>uploadPhoto(e)));
 }
@@ -380,23 +383,134 @@ async function loadPhotos(){
   }
 }
 
+
+function uploadCloudinaryImage(file, onProgress){
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const formData = new FormData();
+
+    // Unsigned preset은 file + upload_preset 두 값만 사용합니다.
+    // 폴더는 Cloudinary의 koen_solar preset에 설정된 Asset folder를 따릅니다.
+    formData.append("file", file);
+    formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+
+    xhr.open("POST", CLOUDINARY_UPLOAD_URL, true);
+    xhr.timeout = 45000;
+
+    xhr.upload.addEventListener("progress", (event) => {
+      if(event.lengthComputable && typeof onProgress === "function"){
+        const percent = Math.max(0, Math.min(100, Math.round((event.loaded / event.total) * 100)));
+        onProgress(percent);
+      }
+    });
+
+    xhr.addEventListener("load", () => {
+      let result = {};
+      try{
+        result = JSON.parse(xhr.responseText || "{}");
+      }catch(_){}
+
+      if(xhr.status >= 200 && xhr.status < 300 && result.secure_url){
+        resolve(result);
+        return;
+      }
+
+      const reason =
+        result?.error?.message ||
+        `Cloudinary HTTP ${xhr.status || "응답 없음"}`;
+      reject(new Error(reason));
+    });
+
+    xhr.addEventListener("error", () => {
+      reject(new Error("Cloudinary 서버와 통신하지 못했습니다. 네트워크 또는 브라우저 차단을 확인하세요."));
+    });
+
+    xhr.addEventListener("timeout", () => {
+      reject(new Error("Cloudinary 업로드가 45초 안에 완료되지 않았습니다."));
+    });
+
+    xhr.addEventListener("abort", () => {
+      reject(new Error("Cloudinary 업로드가 취소되었습니다."));
+    });
+
+    xhr.send(formData);
+  });
+}
+
 async function uploadPhoto(e){
   if(!unlocked) return;
-  const file=$("file-"+e.id).files[0];
-  if(!file){ setMsg($("photoMessage"),`${e.name} 사진을 선택하세요.`,"error"); return; }
-  const month=$("photoMonth").value;
-  if(month<"2026-07"){ setMsg($("photoMessage"),"사진 관리는 2026년 7월부터입니다.","error"); return; }
+
+  const fileInput = $("file-" + e.id);
+  const uploadBtn = $("upload-" + e.id);
+  const file = fileInput?.files?.[0];
+
+  if(!file){
+    setMsg($("photoMessage"), `${e.name} 사진을 선택하세요.`, "error");
+    return;
+  }
+
+  const month = $("photoMonth").value;
+  if(month < "2026-07"){
+    setMsg($("photoMessage"), "사진 관리는 2026년 7월부터입니다.", "error");
+    return;
+  }
+
+  const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+  if(!allowedTypes.includes(file.type)){
+    setMsg($("photoMessage"), "JPG, PNG, WEBP 사진만 업로드할 수 있습니다.", "error");
+    return;
+  }
+
+  const maxBytes = 5 * 1024 * 1024;
+  if(file.size > maxBytes){
+    setMsg($("photoMessage"), "사진은 5MB 이하로 선택하세요.", "error");
+    return;
+  }
+
+  const originalText = uploadBtn?.textContent || "사진 업로드/교체";
+
   try{
-    setMsg($("photoMessage"),`${e.name} 업로드 중…`);
-    const ext=(file.name.split(".").pop()||"jpg").toLowerCase();
-    const storagePath=`${BASE}/inverterPhotos/${month}/${e.id}.${ext}`;
-    const storageRef=sRef(storage,storagePath);
-    await uploadBytes(storageRef,file,{contentType:file.type||"image/jpeg"});
-    const photoUrl=await getDownloadURL(storageRef);
-    await update(ref(db,`${BASE}/monthlyPhotos/${month}/${e.id}`),{photoUrl,storagePath,uploadedAt:Date.now()});
-    setMsg($("photoMessage"),`${e.name} 사진을 저장했습니다.`,"ok");
+    if(uploadBtn){
+      uploadBtn.disabled = true;
+      uploadBtn.textContent = "업로드 준비…";
+    }
+
+    const result = await uploadCloudinaryImage(file, (percent) => {
+      setMsg($("photoMessage"), `${e.name} 업로드 중… ${percent}%`);
+      if(uploadBtn) uploadBtn.textContent = `업로드 ${percent}%`;
+    });
+
+    if(uploadBtn) uploadBtn.textContent = "Firebase 기록 중…";
+
+    await update(
+      ref(db, `${BASE}/monthlyPhotos/${month}/${e.id}`),
+      {
+        photoUrl: result.secure_url,
+        publicId: result.public_id || "",
+        assetId: result.asset_id || "",
+        format: result.format || "",
+        width: Number(result.width || 0),
+        height: Number(result.height || 0),
+        bytes: Number(result.bytes || file.size || 0),
+        cloudinaryFolder: "koen-solar",
+        uploadPreset: CLOUDINARY_UPLOAD_PRESET,
+        uploadedAt: Date.now()
+      }
+    );
+
+    fileInput.value = "";
+    setMsg($("photoMessage"), `${e.name} 사진을 저장했습니다.`, "ok");
     await loadPhotos();
-  }catch(err){ setMsg($("photoMessage"),`사진 저장 실패: ${err.message}`,"error"); }
+
+  }catch(err){
+    console.error("[Cloudinary 업로드 실패]", err);
+    setMsg($("photoMessage"), `사진 저장 실패: ${err.message}`, "error");
+  }finally{
+    if(uploadBtn){
+      uploadBtn.disabled = !unlocked;
+      uploadBtn.textContent = originalText;
+    }
+  }
 }
 
 async function ensureHistoricalData(){
