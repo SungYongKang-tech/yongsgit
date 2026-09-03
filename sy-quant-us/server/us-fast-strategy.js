@@ -39,7 +39,7 @@ const FAST_CONFIG = Object.freeze({
   readyConfirmScans: 2,
   readyMinAccelerationRate: 0.00,
 
-  // STRONG_READY: 일반 READY보다 현재 모멘텀을 더 강하게 확인
+  // STRONG_READY: 일반 READY 기준은 유지하고, 직전 스캔부터 강도가 유지되는 후보만 제한 허용
   strongReadyEnabled: true,
   strongReadyScore: 70,
   strongMinOpenChangeRate: 2.5,
@@ -184,7 +184,7 @@ function previousCandidate(symbol) {
   ) || null;
 }
 
-function isFastStrongReady({ q, score, change, pos, gap, rvol, trend, accel, tradeValue }) {
+function isFastStrongReady({ symbol, q, score, price, change, pos, gap, rvol, trend, accel, tradeValue }) {
   if (!FAST_CONFIG.strongReadyEnabled || q.hardBlocked) return false;
   if (score < FAST_CONFIG.strongReadyScore) return false;
   if (change < FAST_CONFIG.strongMinOpenChangeRate || change > FAST_CONFIG.strongMaxOpenChangeRate) return false;
@@ -197,8 +197,18 @@ function isFastStrongReady({ q, score, change, pos, gap, rvol, trend, accel, tra
   const momentumOk =
     trend >= FAST_CONFIG.strongMinTrendPersistence ||
     (rvol >= FAST_CONFIG.strongSurgeRvol && accel >= FAST_CONFIG.strongSurgeAccelerationRate);
+  const momentumOk =
+    trend >= FAST_CONFIG.strongMinTrendPersistence ||
+    (rvol >= FAST_CONFIG.strongSurgeRvol && accel >= FAST_CONFIG.strongSurgeAccelerationRate);
 
-  return momentumOk;
+  if (!momentumOk) return false;
+
+  const prev = previousCandidate(symbol);
+  if (!prev) return false;
+  if (num(prev.price) <= 0 || num(prev.score) <= 0) return false;
+  if (price < num(prev.price) * 0.998) return false;
+  if (score < num(prev.score)) return false;
+  return true;
 }
 
 async function analyzeCandidate(s,q,session) {
@@ -241,12 +251,18 @@ async function analyzeCandidate(s,q,session) {
   const readyConfirmed = readyQualified && readyStreak >= FAST_CONFIG.readyConfirmScans;
 
   let status='OBSERVE';
-  const entryNotes=[];
+  const strongReady = isFastStrongReady({
+    symbol:s.symbol, q, score, price, change, pos, gap, rvol,
+    trend:m.trendPersistence, accel:m.accelerationRate, tradeValue
+  });
 
-  // STRONG_READY는 첫 포착에서도 즉시 주문 가능.
+  const entryNotes=[];
   if (strongReady) {
     status='STRONG_READY';
     entryNotes.push('STRONG_READY 즉시진입');
+  } else if (!blocks.length && score >= FAST_CONFIG.readyScore) {
+    status='READY';
+    entryNotes.push(`READY ${Math.min(readyStreak, FAST_CONFIG.readyConfirmScans)}/${FAST_CONFIG.readyConfirmScans}`);
   } else if (readyConfirmed) {
     status='READY';
     entryNotes.push(`READY ${readyStreak}/${FAST_CONFIG.readyConfirmScans} 확인`);
@@ -272,7 +288,7 @@ async function analyzeCandidate(s,q,session) {
     `QQQ ${q.changeRate>=0?'+':''}${q.changeRate}%`
   );
   if(entryNotes.length) reasonParts.push(entryNotes.join('/'));
-  if(blocks.length) reasonParts.push(blocks.slice(0,2).join('/'));
+  if(blocks.length) reasonParts.push(blocks.slice(0, 2).join('/'));
   reasonParts.push('PAPER 자동주문 연결');
 
   return {
@@ -327,13 +343,11 @@ async function runFastScan({force=false}={}) {
 
     const rankStatus=x=>x==='STRONG_READY'?4:x==='READY'?3:x==='WATCH'?2:1;
     candidates.sort((a,b)=>rankStatus(b.status)-rankStatus(a.status)||b.score-a.score);
-
     const stored=activityStore.setCandidates('FAST',candidates.slice(0,FAST_CONFIG.candidateStoreCount));
 
     // AUTO v1.6은 READY/STRONG_READY만 주문하므로
     // 첫 READY(WATCH 표시)와 음수 가속 READY(WATCH 표시)는 자동으로 주문 제외된다.
     await paperAutoTrader.processReadyCandidates('FAST', stored);
-
     lastScan={
       ok:true,
       strategy:'FAST',
@@ -396,7 +410,6 @@ function startFastObserver(){
     FAST_CONFIG.autoScanIntervalMs
   );
   if(scanTimer.unref)scanTimer.unref();
-
   const t=setTimeout(
     ()=>runFastScan().catch(e=>console.error('[US-FAST 초기관찰 오류]',e.message)),
     20000

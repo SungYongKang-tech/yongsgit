@@ -259,6 +259,7 @@ function sendZip(res, fileName, buffer) {
 }
 
 const ROOT = __dirname;
+const AUTO_STATE_FILE = path.join(ROOT, 'us-paper-auto-state.json');
 const PORT = 3001;
 const TZ = 'America/New_York';
 const PM2_LOG_DIR = '/home/ubuntu/.pm2/logs';
@@ -477,6 +478,136 @@ function strategyErrorRegex(id) {
 }
 
 
+function loadAutoTradeState() {
+  if (!fs.existsSync(AUTO_STATE_FILE)) {
+    return {
+      ok: false,
+      source: AUTO_STATE_FILE,
+      positions: [],
+      orders: [],
+      error: 'us-paper-auto-state.json 없음'
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(AUTO_STATE_FILE, 'utf8'));
+    return {
+      ok: true,
+      source: AUTO_STATE_FILE,
+      version: parsed.version,
+      market: parsed.market,
+      paperCapital: parsed.paperCapital,
+      positions: Array.isArray(parsed.positions) ? parsed.positions : [],
+      orders: Array.isArray(parsed.orders) ? parsed.orders : [],
+      updatedAt: parsed.updatedAt || null
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      source: AUTO_STATE_FILE,
+      positions: [],
+      orders: [],
+      error: error.message
+    };
+  }
+}
+
+function findFilledOrder(autoState, side, strategy, symbol, position = null) {
+  const targetOrderNo = side === 'BUY'
+    ? String(position?.buyOrderNo || '')
+    : String(position?.sellOrderNo || '');
+
+  const rows = (autoState?.orders || []).filter(row =>
+    row &&
+    String(row.side || '').toUpperCase() === side &&
+    String(row.strategy || '').toUpperCase() === strategy &&
+    String(row.symbol || '').toUpperCase() === symbol
+  );
+
+  if (targetOrderNo) {
+    const exact = rows.find(row => String(row.orderNo || '') === targetOrderNo);
+    if (exact) return exact;
+  }
+
+  return rows
+    .filter(row => row.status === 'FILLED')
+    .sort((a, b) =>
+      new Date(b.filledAt || b.submittedAt || 0).getTime() -
+      new Date(a.filledAt || a.submittedAt || 0).getTime()
+    )[0] || null;
+}
+
+function summarizeAutoTradeState(autoState, strategy, date) {
+  const id = normalizeStrategy(strategy) || String(strategy || '').toUpperCase();
+  const rows = [];
+
+  for (const position of autoState?.positions || []) {
+    if (!position || String(position.strategy || '').toUpperCase() !== id) continue;
+
+    const symbol = String(position.symbol || '').toUpperCase();
+    const openedDate = dateKeyFromValue(position.openedAt, TZ);
+
+    if (openedDate === date) {
+      const order = findFilledOrder(autoState, 'BUY', id, symbol, position);
+      rows.push({
+        type: 'BUY', side: 'BUY', strategy: id,
+        exchange: position.exchange || order?.exchange || '',
+        symbol,
+        name: position.name || order?.name || symbol,
+        quantity: Number(position.quantity || order?.quantity || 0),
+        price: Number(position.entryPrice || order?.limitPrice || 0),
+        amount: Number(position.entryNotional || 0),
+        filledAt: position.openedAt || order?.filledAt || null,
+        orderNo: position.buyOrderNo || order?.orderNo || '',
+        positionId: position.id || '',
+        status: 'FILLED'
+      });
+    }
+
+    const closedDate = dateKeyFromValue(position.closedAt, TZ);
+    if (position.status === 'CLOSED' && closedDate === date) {
+      const order = findFilledOrder(autoState, 'SELL', id, symbol, position);
+      rows.push({
+        type: 'SELL', side: 'SELL', strategy: id,
+        exchange: position.exchange || order?.exchange || '',
+        symbol,
+        name: position.name || order?.name || symbol,
+        quantity: Number(position.quantity || order?.quantity || 0),
+        price: Number(position.exitPrice || order?.limitPrice || 0),
+        filledAt: position.closedAt || order?.filledAt || null,
+        orderNo: position.sellOrderNo || order?.orderNo || '',
+        positionId: position.id || '',
+        status: 'FILLED',
+        exitReason: position.exitReason || order?.exitReason || '',
+        realizedProfit: Number(position.realizedProfit || 0),
+        realizedProfitRate: Number(position.realizedProfitRate || 0)
+      });
+    }
+  }
+
+  rows.sort((a, b) =>
+    new Date(a.filledAt || 0).getTime() - new Date(b.filledAt || 0).getTime()
+  );
+
+  return {
+    ok: autoState?.ok !== false,
+    source: AUTO_STATE_FILE,
+    sourceOfTruth: true,
+    sourceType: 'us-paper-auto-state positions confirmed fills',
+    strategy: id,
+    date,
+    count: rows.length,
+    buyCount: rows.filter(row => row.side === 'BUY').length,
+    sellCount: rows.filter(row => row.side === 'SELL').length,
+    realizedProfit: rows
+      .filter(row => row.side === 'SELL')
+      .reduce((sum, row) => sum + Number(row.realizedProfit || 0), 0),
+    rows,
+    stateUpdatedAt: autoState?.updatedAt || null,
+    error: autoState?.error || null
+  };
+}
+
 function normalizeStrategy(value) {
   const normalized = String(value || '').trim().toUpperCase();
   return STRATEGIES.some(s => s.id === normalized) ? normalized : '';
@@ -539,7 +670,8 @@ function summarizeHistoryPayload(historyPayload, strategy, date) {
   return {
     ok: historyPayload?.ok !== false,
     source: `GET /api/us-${String(strategy || '').toLowerCase()}/history?date=${date}`,
-    sourceOfTruth: true,
+    sourceOfTruth: false,
+    sourceRole: 'candidate/signal history only',
     strategy: normalizeStrategy(strategy) || String(strategy || '').toUpperCase(),
     date,
     count: rows.length,
@@ -577,7 +709,7 @@ async function getCurrentPortfolioSnapshot() {
   }
 }
 
-function buildStrategyCoverageCheck(strategy, outLog, historySummary, portfolioSnapshot) {
+function buildStrategyCoverageCheck(strategy, outLog, tradeSummary, portfolioSnapshot) {
   const id = normalizeStrategy(strategy) || String(strategy || '').toUpperCase();
   const confirmedRows = String(outLog?.text || '')
     .split(/\r?\n/)
@@ -588,31 +720,31 @@ function buildStrategyCoverageCheck(strategy, outLog, historySummary, portfolioS
     return TRADE_LINE_RX.test(line);
   }).length;
 
-  const historyCount = Number(historySummary?.count || 0);
-  const buyCount = Number(historySummary?.buyCount || 0);
-  const sellCount = Number(historySummary?.sellCount || 0);
+  const historyCount = Number(tradeSummary?.count || 0);
+  const buyCount = Number(tradeSummary?.buyCount || 0);
+  const sellCount = Number(tradeSummary?.sellCount || 0);
 
   const rows = [];
-  rows.push(`분석일: ${historySummary?.date || '-'}`);
-  rows.push(`HISTORY ${id} 거래기록: ${historyCount}건 / 매수성 ${buyCount}건 / 매도성 ${sellCount}건`);
+  rows.push(`분석일: ${tradeSummary?.date || '-'}`);
+  rows.push(`AUTO STATE ${id} 실제체결: ${historyCount}건 / BUY ${buyCount}건 / SELL ${sellCount}건`);
   rows.push(`PM2 거래일 확정 전략로그: ${Number(outLog?.confirmedCount || 0)}줄 / 거래관련 키워드 ${tradeLikeCount}줄`);
 
-  if (historySummary?.ok === false) {
-    rows.push('주의: HISTORY API 응답이 정상 상태가 아닙니다.');
-    rows.push('PM2 로그와 VIRTUAL TRADES를 보조자료로 사용하십시오.');
+  if (tradeSummary?.ok === false) {
+    rows.push('주의: AUTO STATE 실제체결 자료를 읽지 못했습니다.');
+    rows.push('PM2 로그와 전략 HISTORY/VIRTUAL TRADES를 보조자료로만 사용하십시오.');
   } else if (historyCount > 0 && Number(outLog?.confirmedCount || 0) === 0) {
-    rows.push(`주의: PM2 조건 로그는 0건이지만 HISTORY에는 ${id} 거래기록이 있습니다.`);
+    rows.push(`주의: PM2 조건 로그는 0건이지만 AUTO STATE에는 ${id} 실제체결이 있습니다.`);
     rows.push(`[해당 거래일 관련 로그 없음]을 ${id} 미거래로 해석하면 안 됩니다.`);
-    rows.push(`아래 US-${id} CONFIRMED TRADE HISTORY를 거래 기준(source of truth)으로 사용하십시오.`);
+    rows.push(`위 US-${id} CONFIRMED AUTO TRADE HISTORY를 거래 기준(source of truth)으로 사용하십시오.`);
   } else if (historyCount > 0 && tradeLikeCount === 0) {
     rows.push('주의: 전략 운영 로그는 있으나 매수/매도/체결 키워드가 잡히지 않았습니다.');
-    rows.push('거래 유무는 HISTORY를 우선하고, 원인은 PM2 로그로 교차검증하십시오.');
+    rows.push('거래 유무는 AUTO STATE를 우선하고, 원인은 PM2 로그로 교차검증하십시오.');
   } else if (historyCount === 0) {
-    rows.push(`HISTORY 기준 해당 거래일 ${id} 거래기록 없음.`);
+    rows.push(`AUTO STATE 기준 해당 거래일 ${id} 실제체결 없음.`);
     rows.push('단, VIRTUAL TRADES는 실계좌/페이퍼 체결기록과 별도이므로 따로 분석하십시오.');
   } else {
-    rows.push('HISTORY 거래기록과 PM2 거래일 확정 로그가 모두 존재합니다.');
-    rows.push('거래 유무는 HISTORY를 우선하고, 진입/청산 이유는 PM2와 DAILY SUMMARY를 교차검증하십시오.');
+    rows.push('AUTO STATE 실제체결과 PM2 거래일 확정 로그가 모두 존재합니다.');
+    rows.push('거래 유무/손익은 AUTO STATE를 우선하고, 진입/청산 이유는 PM2와 DAILY SUMMARY를 교차검증하십시오.');
   }
 
   if (portfolioSnapshot?.ok) {
@@ -629,45 +761,169 @@ function buildStrategyCoverageCheck(strategy, outLog, historySummary, portfolioS
   return rows.join('\n') + '\n';
 }
 
-function buildTodayTradeSummary(date, strategyHistorySummaries = {}, portfolioSnapshot = null) {
+function buildTodayTradeSummary(date, strategyTradeSummaries = {}, portfolioSnapshot = null) {
   const strategies = {};
   let totalTrades = 0;
   let totalBuys = 0;
   let totalSells = 0;
+  let realizedProfit = 0;
 
   for (const s of STRATEGIES) {
-    const h = strategyHistorySummaries[s.id] || {};
+    const h = strategyTradeSummaries[s.id] || {};
     strategies[s.id] = {
-      historyCount: Number(h.count || 0),
+      tradeCount: Number(h.count || 0),
       buyCount: Number(h.buyCount || 0),
       sellCount: Number(h.sellCount || 0),
+      realizedProfit: Number(h.realizedProfit || 0),
       sourceOk: h.ok !== false
     };
     totalTrades += Number(h.count || 0);
     totalBuys += Number(h.buyCount || 0);
     totalSells += Number(h.sellCount || 0);
+    realizedProfit += Number(h.realizedProfit || 0);
   }
 
   return {
     ok: true,
     date,
-    tradeSource: 'strategy history API',
+    tradeSource: 'us-paper-auto-state.json confirmed positions',
     strategies,
     total: {
-      historyCount: totalTrades,
+      tradeCount: totalTrades,
       buyCount: totalBuys,
-      sellCount: totalSells
+      sellCount: totalSells,
+      realizedProfit
     },
     currentPortfolio: portfolioSnapshot?.ok ? {
       holdingCount: Number(portfolioSnapshot.holdingCount ?? portfolioSnapshot.holdings?.length ?? 0),
       totalExposure: portfolioSnapshot.totalExposure,
       totalAsset: portfolioSnapshot.totalAsset,
+      totalProfitLoss: portfolioSnapshot.totalProfitLoss,
+      realizedProfitLoss: portfolioSnapshot.realizedProfitLoss,
+      unrealizedProfitLoss: portfolioSnapshot.unrealizedProfitLoss,
       availableCash: portfolioSnapshot.availableCash,
       holdings: portfolioSnapshot.holdings
     } : {
       ok: false,
       error: portfolioSnapshot?.error || '현재 포트폴리오 조회 실패'
     }
+  };
+}
+
+
+function buildSignalPerformanceFromAutoState(strategy, date) {
+  const id = normalizeStrategy(strategy) || String(strategy || '').toUpperCase();
+
+  let state = null;
+  try {
+    state = fs.existsSync(AUTO_STATE_FILE)
+      ? JSON.parse(fs.readFileSync(AUTO_STATE_FILE, 'utf8'))
+      : {};
+  } catch (error) {
+    return { ok:false, strategy:id, date, source:AUTO_STATE_FILE, error:error.message, groups:{} };
+  }
+
+  const positions = Array.isArray(state?.positions) ? state.positions : [];
+  const orders = Array.isArray(state?.orders) ? state.orders : [];
+
+  function orderForPosition(side, position) {
+    const orderNo = side === 'BUY'
+      ? String(position?.buyOrderNo || '')
+      : String(position?.sellOrderNo || '');
+
+    if (orderNo) {
+      const exact = orders.find(row =>
+        row &&
+        String(row.side || '').toUpperCase() === side &&
+        String(row.orderNo || '') === orderNo
+      );
+      if (exact) return exact;
+    }
+
+    return orders
+      .filter(row =>
+        row &&
+        String(row.side || '').toUpperCase() === side &&
+        String(row.strategy || '').toUpperCase() === id &&
+        String(row.symbol || '').toUpperCase() === String(position?.symbol || '').toUpperCase()
+      )
+      .sort((a,b) =>
+        new Date(b.filledAt || b.submittedAt || 0).getTime() -
+        new Date(a.filledAt || a.submittedAt || 0).getTime()
+      )[0] || null;
+  }
+
+  const rows = [];
+
+  for (const position of positions) {
+    if (!position || String(position.strategy || '').toUpperCase() !== id) continue;
+
+    const buyOrder = orderForPosition('BUY', position);
+    const signalStatus = String(buyOrder?.signalStatus || 'READY').toUpperCase();
+    const budgetScale = Number(buyOrder?.budgetScale ?? 1);
+    const score = Number(buyOrder?.score || 0);
+    const candidateReason = buyOrder?.candidateReason || '';
+
+    if (dateKeyFromValue(position.openedAt, TZ) === date) {
+      rows.push({
+        side:'BUY', strategy:id,
+        symbol:String(position.symbol || '').toUpperCase(),
+        name:position.name || position.symbol || '',
+        quantity:Number(position.quantity || 0),
+        price:Number(position.entryPrice || buyOrder?.limitPrice || 0),
+        filledAt:position.openedAt || buyOrder?.filledAt || null,
+        signalStatus, budgetScale, score, candidateReason
+      });
+    }
+
+    if (position.status === 'CLOSED' && dateKeyFromValue(position.closedAt, TZ) === date) {
+      rows.push({
+        side:'SELL', strategy:id,
+        symbol:String(position.symbol || '').toUpperCase(),
+        name:position.name || position.symbol || '',
+        quantity:Number(position.quantity || 0),
+        price:Number(position.exitPrice || 0),
+        filledAt:position.closedAt || null,
+        signalStatus, budgetScale, score, candidateReason,
+        exitReason:position.exitReason || '',
+        realizedProfit:Number(position.realizedProfit || 0),
+        realizedProfitRate:Number(position.realizedProfitRate || 0)
+      });
+    }
+  }
+
+  const groups = {};
+  for (const signalStatus of ['READY','STRONG_READY']) {
+    const signalRows = rows.filter(row => row.signalStatus === signalStatus);
+    const buys = signalRows.filter(row => row.side === 'BUY');
+    const sells = signalRows.filter(row => row.side === 'SELL');
+    const wins = sells.filter(row => Number(row.realizedProfit || 0) > 0).length;
+    const losses = sells.filter(row => Number(row.realizedProfit || 0) < 0).length;
+    const flats = sells.length - wins - losses;
+    const realizedProfit = sells.reduce((sum,row) => sum + Number(row.realizedProfit || 0), 0);
+    const avgRealizedProfitRate = sells.length
+      ? sells.reduce((sum,row) => sum + Number(row.realizedProfitRate || 0), 0) / sells.length
+      : 0;
+
+    groups[signalStatus] = {
+      buyCount:buys.length,
+      sellCount:sells.length,
+      openCount:Math.max(0, buys.length - sells.length),
+      wins, losses, flats,
+      winRate:sells.length ? Math.round((wins / sells.length) * 10000) / 100 : null,
+      realizedProfit:Math.round(realizedProfit * 100) / 100,
+      avgRealizedProfitRate:Math.round(avgRealizedProfitRate * 100) / 100,
+      rows:signalRows
+    };
+  }
+
+  return {
+    ok:true,
+    strategy:id,
+    date,
+    source:'us-paper-auto-state.json',
+    note:'AUTO v1.6 실제 BUY 주문의 signalStatus/budgetScale/score/candidateReason 기준 READY/STRONG_READY 성과 분리',
+    groups
   };
 }
 
@@ -686,10 +942,13 @@ async function buildStrategyAnalysis(strategy, date, portfolioSnapshot = null) {
   ]);
 
   const historySummary = summarizeHistoryPayload(history, id, date);
+  const autoTradeSummary = summarizeAutoTradeState(loadAutoTradeState(), id, date);
 
   const rows = [
-    section(`US-${id} CONFIRMED TRADE HISTORY`, safeJson(historySummary)),
-    section(`US-${id} : LOG COVERAGE CHECK`, buildStrategyCoverageCheck(id, outLog, historySummary, portfolioSnapshot)),
+    section(`US-${id} CONFIRMED AUTO TRADE HISTORY`, safeJson(autoTradeSummary)),
+    section(`US-${id} READY vs STRONG_READY PERFORMANCE`, safeJson(buildSignalPerformanceFromAutoState(id, date))),
+    section(`US-${id} SIGNAL/HISTORY API (NOT SOURCE OF TRUTH)`, safeJson(historySummary)),
+    section(`US-${id} : LOG COVERAGE CHECK`, buildStrategyCoverageCheck(id, outLog, autoTradeSummary, portfolioSnapshot)),
     section(`US-${id} : CONFIRMED TRADING-DAY SERVER OUT`, outLog.text),
     section(`US-${id} : UNDATED REFERENCE SERVER OUT`, outLog.undatedText),
     section(`US-${id} : CONFIRMED TRADING-DAY SERVER ERROR`, errLog.text),
@@ -711,7 +970,7 @@ async function buildStrategyAnalysis(strategy, date, portfolioSnapshot = null) {
     rows.push(section('US-CORE DIAGNOSTICS', diagnostics));
   }
 
-  return { text: rows.join(''), historySummary };
+  return { text: rows.join(''), historySummary, autoTradeSummary };
 }
 
 async function buildStrategyResultAnalysis(strategy, date) {
@@ -736,7 +995,7 @@ async function buildStrategyResultAnalysis(strategy, date) {
   ].join('');
 }
 
-async function buildMasterAnalysis(date, portfolioSnapshot = null, strategyHistorySummaries = {}) {
+async function buildMasterAnalysis(date, portfolioSnapshot = null, strategyHistorySummaries = {}, strategyTradeSummaries = {}) {
   const strategyStatuses = {};
   const historyStatuses = {};
   const summaryStatuses = {};
@@ -749,7 +1008,10 @@ async function buildMasterAnalysis(date, portfolioSnapshot = null, strategyHisto
     buyChecks[s.id] = await getJson(PORT, `/api/strategy-buy-check/${s.id}`);
   }
 
-  const tradeSummary = buildTodayTradeSummary(date, strategyHistorySummaries, portfolioSnapshot);
+  const tradeSummary = buildTodayTradeSummary(date, strategyTradeSummaries, portfolioSnapshot);
+  const signalPerformance = Object.fromEntries(
+    STRATEGIES.map(s => [s.id, buildSignalPerformanceFromAutoState(s.id, date)])
+  );
 
   const [server, portfolioApi, settings, dashboard, confirmedAllOut, importantOut, allErr, recentErrors] = await Promise.all([
     getJson(PORT, '/api/status'),
@@ -764,7 +1026,9 @@ async function buildMasterAnalysis(date, portfolioSnapshot = null, strategyHisto
 
   return [
     section('TODAY US TRADE SUMMARY', safeJson(tradeSummary)),
-    section('ALL STRATEGY CONFIRMED TRADE HISTORY', safeJson(strategyHistorySummaries)),
+    section('READY vs STRONG_READY PERFORMANCE', safeJson(signalPerformance)),
+    section('ALL STRATEGY CONFIRMED AUTO TRADE HISTORY', safeJson(strategyTradeSummaries)),
+    section('ALL STRATEGY SIGNAL/HISTORY API (NOT SOURCE OF TRUTH)', safeJson(strategyHistorySummaries)),
     section('CURRENT PORTFOLIO FROM portfolio-manager', safeJson(portfolioSnapshot)),
     section('US SERVER STATUS', safeJson(server)),
     section('US PORTFOLIO API', safeJson(portfolioApi)),
@@ -792,6 +1056,7 @@ function sourceFiles() {
     'market-calendar.js',
     'us-core-market-client.js',
     'us-dashboard-activity-store.js',
+    'us-paper-auto-trader.js',
     'us-core-data-safety-patch.js',
     'us-core-diagnostics.js'
   ];
@@ -809,6 +1074,14 @@ function sourceFiles() {
 
 function addRawFiles(entries, date) {
   const day = date.replace(/-/g, '');
+
+  if (fs.existsSync(AUTO_STATE_FILE) && fs.statSync(AUTO_STATE_FILE).isFile()) {
+    entries.push({
+      name: 'raw/us-paper-auto-state.json',
+      data: fs.readFileSync(AUTO_STATE_FILE),
+      mtime: fs.statSync(AUTO_STATE_FILE).mtime
+    });
+  }
 
   for (const s of STRATEGIES) {
     const slug = s.slug;
@@ -835,11 +1108,13 @@ async function createPackage(date) {
   const entries = [];
   const portfolioSnapshot = await getCurrentPortfolioSnapshot();
   const strategyHistorySummaries = {};
+  const strategyTradeSummaries = {};
 
   // API/진단 부하가 한꺼번에 겹치지 않도록 전략별로 순차 수집.
   for (const strategy of STRATEGIES) {
     const built = await buildStrategyAnalysis(strategy, date, portfolioSnapshot);
     strategyHistorySummaries[strategy.id] = built.historySummary;
+    strategyTradeSummaries[strategy.id] = built.autoTradeSummary;
 
     entries.push({
       name: `analysis/syquant-us-${strategy.slug}-${day}-analysis.txt`,
@@ -854,7 +1129,7 @@ async function createPackage(date) {
 
   entries.push({
     name: `analysis/syquant-us-master-${day}-analysis.txt`,
-    data: await buildMasterAnalysis(date, portfolioSnapshot, strategyHistorySummaries)
+    data: await buildMasterAnalysis(date, portfolioSnapshot, strategyHistorySummaries, strategyTradeSummaries)
   });
 
   addSourceFiles(entries, ROOT, sourceFiles());
@@ -875,20 +1150,21 @@ async function createPackage(date) {
       envIncluded: false,
       tokenIncluded: false
     },
-    tradeSourceOfTruth: 'strategy history API',
+    tradeSourceOfTruth: 'us-paper-auto-state.json confirmed positions',
     currentPortfolioCrossCheck: portfolioSnapshot?.ok
       ? 'portfolio-manager.getPortfolioSummary'
       : `unavailable: ${portfolioSnapshot?.error || 'unknown'}`,
     notes: [
       'CORE/FAST/VOLUME/WAVE를 전략별로 분리 수집.',
-      '미국퀀트는 portfolio-manager에 tradeLogs가 없으므로 전략별 history API를 거래 기준(source of truth)으로 사용.',
-      'portfolio-manager.getPortfolioSummary는 현재 보유현황 교차검증용으로만 사용.',
-      '각 전략 분석파일에 CONFIRMED TRADE HISTORY와 LOG COVERAGE CHECK 추가.',
+      '실제 체결 source of truth는 us-paper-auto-state.json의 position OPEN/CLOSED 체결상태를 사용.',
+      '전략별 history API는 후보/READY/가상신호 분석용이며 실제 체결 source of truth가 아님.',
+      'portfolio-manager.getPortfolioSummary는 현재 보유현황 및 자산/손익 교차검증용으로 사용.',
+      '각 전략 분석파일에 CONFIRMED AUTO TRADE HISTORY와 LOG COVERAGE CHECK 추가.',
       'PM2 로그는 고정 1개 경로가 아니라 US 관련 out/error 로그파일을 자동 탐색.',
       'timezone/offset가 있는 ISO 로그는 America/New_York 거래일로 환산하여 UTC 자정 경계 누락 방지.',
       '날짜 없는 PM2 로그는 오늘 거래 증거로 사용하지 않고 UNDATED REFERENCE로 별도 분리.',
       'MASTER 분석파일에는 요청 거래일의 날짜확정 OUT 전체를 전략 키워드 필터 없이 보존.',
-      'MASTER 첫부분에 TODAY US TRADE SUMMARY와 4전략 CONFIRMED TRADE HISTORY를 포함.',
+      'MASTER 첫부분에 TODAY US TRADE SUMMARY와 4전략 CONFIRMED AUTO TRADE HISTORY를 포함.',
       'history raw/virtual trades/daily summary/exit simulator 기존 분석자료는 그대로 유지.',
       '.env/token/인증정보는 포함하지 않음.'
     ],
@@ -934,7 +1210,8 @@ module.exports = function installUsAnalysisRoutes(app) {
         date: dateKey(TZ),
         time: timeHHMM(TZ),
         server: await getJson(PORT, '/api/status'),
-        tradeSourceOfTruth: 'strategy history API',
+        tradeSourceOfTruth: 'us-paper-auto-state.json confirmed positions',
+        signalPerformanceTracking: 'READY vs STRONG_READY',
         portfolioCrossCheckAvailable: portfolio.ok,
         portfolioCrossCheckError: portfolio.error || null,
         strategies
@@ -960,7 +1237,7 @@ module.exports = function installUsAnalysisRoutes(app) {
   });
 
   console.log(
-    '[분석자료] US 4전략 ZIP 다운로드 API 활성화 / HISTORY source-of-truth + portfolio 교차검증 + PM2 다중로그 + NY 거래일 확정 v3'
+    '[분석자료] US 4전략 ZIP 다운로드 API 활성화 / AUTO STATE source-of-truth + READY/STRONG_READY 성과분리 + portfolio 손익교정 + PM2 다중로그 + NY 거래일 확정 v5c'
   );
 };
 
@@ -971,6 +1248,8 @@ module.exports.__test = {
   discoverPm2LogFiles,
   extractArray,
   summarizeHistoryPayload,
+  loadAutoTradeState,
+  summarizeAutoTradeState,
   getCurrentPortfolioSnapshot,
   buildStrategyCoverageCheck,
   buildTodayTradeSummary,
