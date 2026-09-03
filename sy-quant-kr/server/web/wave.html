@@ -112,7 +112,7 @@
       <div class="flow-item"><span>SOLD</span><b id="flowSold">0</b></div>
       <div class="flow-item"><span>제외</span><b id="flowDropped">0</b></div>
     </div>
-    <div class="legend">DISCOVERED → WATCH → READY → TRIGGER → HOLD → PROTECT → SOLD 순서로 진행합니다. READY는 종목·눌림 조건 통과, TRIGGER는 실제 반등을 1차 확인한 상태입니다. TRIGGER 즉시 매수하지 않고 다음 평가에서도 조건이 유지되어야 HOLD(모의매수)로 전환합니다. WAVE 매수·매도 자금은 MASTER 단일계좌에서 처리되고, 후보·사전분석·WATCH 이력은 WAVE 전용 상태로 유지됩니다.</div>
+    <div class="legend">DISCOVERED → WATCH → READY → TRIGGER → HOLD → PROTECT → SOLD 순서로 진행합니다. READY는 종목·눌림 조건 통과, TRIGGER는 실제 반등을 1차 확인한 상태입니다. TRIGGER 즉시 매수하지 않고 다음 평가에서도 조건이 유지되어야 HOLD로 전환합니다. 보유 후에는 서버의 실제 protectActive·trailingActive 상태를 우선 표시합니다. WAVE 매수·매도 자금은 MASTER 단일계좌에서 처리되고, 후보·사전분석·WATCH 이력은 WAVE 전용 상태로 유지됩니다.</div>
   </div>
 
   <div class="section">
@@ -272,6 +272,13 @@ function renderFlow(watchlist = []) {
   setText("flowDropped", counts.DROPPED || 0);
 }
 
+function holdingProtectLabel(item = {}, maxProfit = 0) {
+  if (item.strongProtectActive) return { text: "STRONG PROTECT", cls: "status-protect" };
+  if (item.trailingActive) return { text: "TRAILING", cls: "status-protect" };
+  if (item.protectActive) return { text: "PROTECT", cls: "status-protect" };
+  return { text: "HOLD", cls: "status-hold" };
+}
+
 function renderHoldings(holdings = []) {
   const box = document.getElementById("holdingsBox");
   if (!holdings.length) {
@@ -283,6 +290,7 @@ function renderHoldings(holdings = []) {
     const cur = n(item.currentPrice || item.buyPrice);
     const profit = buy > 0 ? ((cur - buy) / buy) * 100 : n(item.profitRate);
     const maxProfit = n(item.maxProfitRate, buy > 0 ? ((n(item.highestPrice,cur)-buy)/buy)*100 : 0);
+    const protect = holdingProtectLabel(item, maxProfit);
     return `
       <div class="card">
         <div class="card-head">
@@ -296,8 +304,10 @@ function renderHoldings(holdings = []) {
           <div class="detail"><span>최고수익</span><b class="plus">${rate(maxProfit)}</b></div>
           <div class="detail"><span>고점대비</span><b class="${n(item.drawdownFromHigh) >= 0 ? "plus" : "minus"}">${rate(item.drawdownFromHigh)}</b></div>
           <div class="detail"><span>추세점수</span><b>${score(item.trendScore)}/10</b></div>
+          <div class="detail"><span>수익보호</span><b>${item.protectActive ? "ON" : "OFF"}</b></div>
+          <div class="detail"><span>트레일링</span><b>${item.trailingActive ? "ON" : "OFF"}</b></div>
         </div>
-        <span class="pill ${maxProfit >= 8 ? "status-protect" : "status-hold"}">${maxProfit >= 8 ? "PROTECT 관리" : "HOLD"}</span>
+        <span class="pill ${protect.cls}">${protect.text}</span>
       </div>`;
   }).join("");
 }

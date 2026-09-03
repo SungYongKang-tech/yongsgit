@@ -26,7 +26,7 @@
         <button id="resetButton" class="reset" onclick="resetFast()">후보·통계 초기화</button>
       </div>
     </header>
-    <div class="master-note">MASTER 단일계좌 1억원을 5개 전략이 함께 사용합니다. FAST의 종목당 목표금액은 MASTER 기준 10%로, 기존 5천만원 독립계좌의 20%와 같은 약 1천만원 수준입니다.</div>
+    <div class="master-note">MASTER 단일계좌 1억원을 5개 전략이 함께 사용합니다. FAST의 종목당 목표금액은 MASTER 기준 10%입니다. 일일 신규매수 한도는 09:05 전 3회 → 09:20 전 5회 → 09:20 이후 7회로 단계적으로 확대됩니다.</div>
     <div id="status" class="status">FAST 상태를 불러오는 중...</div>
 
     <section class="grid">
@@ -48,7 +48,7 @@
         <div class="setting"><span class="label">매수 시간</span><b id="buyWindow">-</b></div>
         <div class="setting"><span class="label">시장 방어</span><b id="marketPolicy">-</b></div>
       </div>
-      <p class="note">FAST는 OPEN·CORE·VOLUME·WAVE와 같은 MASTER 단일계좌를 사용합니다. 종목당 목표금액은 MASTER 당일 기준자산의 10%이며 최대 5종목을 보유합니다. 시장 15점 미만은 절대차단합니다. 약세장에서는 기존 엄격경로 외에 1.5~8% 초기돌파 경로와 7~18% 후기지속 경로를 운영하며, 두 경로 모두 교차순위·거래대금·지속성·실시간 당일위치를 재확인한 뒤에만 매수합니다.</p>
+      <p class="note">FAST는 OPEN·CORE·VOLUME·WAVE와 같은 MASTER 단일계좌를 사용합니다. 종목당 목표금액은 MASTER 당일 기준자산의 10%이며 최대 5종목을 동시에 보유합니다. 일일 신규매수 한도는 09:05 전 3회, 09:20 전 5회, 09:20 이후 7회입니다. 시장점수는 개별 종목 조건과 함께 보정에 사용하며, 약세장에서도 특히 강한 종목은 별도 강화조건을 통과하면 매수할 수 있습니다. 초기돌파·후기지속 경로 모두 교차순위·거래대금·지속성·실시간 당일위치를 재확인합니다.</p>
     </section>
 
     <section class="card">
@@ -82,6 +82,24 @@
       return `<tr><td class="empty" colspan="${columns}">${safe(message)}</td></tr>`;
     }
 
+    function phasedDailyBuyLimit(data = {}) {
+      const serverLimit = Number(data.currentDailyBuyLimit || data.effectiveDailyBuyLimit || 0);
+      if (serverLimit > 0) return serverLimit;
+
+      const now = new Date();
+      const kst = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Seoul',
+        hourCycle: 'h23',
+        hour: '2-digit',
+        minute: '2-digit'
+      }).format(now);
+
+      // 한국장 FAST 운용 기준: 09:05 전 3회 → 09:20 전 5회 → 이후 7회
+      if (kst < '09:05') return 3;
+      if (kst < '09:20') return 5;
+      return 7;
+    }
+
     function render(data) {
       $('totalAsset').textContent = won(data.totalAsset);
       $('cash').textContent = won(data.cash);
@@ -90,13 +108,13 @@
       $('unrealized').textContent = won(data.unrealizedProfit);
       $('unrealized').className = `value ${colorClass(data.unrealizedProfit)}`;
       $('holdingCount').textContent = `${Number(data.holdingCount || 0)} / ${Number(data.maxHoldingCount || 5)}종목`;
-      $('buyCount').textContent = `${Number(data.todayBuyCount || 0)} / ${Number(data.maxDailyBuyCount || 5)}회`;
+      $('buyCount').textContent = `${Number(data.todayBuyCount || 0)} / ${phasedDailyBuyLimit(data)}회`;
       $('initialCapital').textContent = won(data.initialCapital);
       $('positionAmount').textContent = `${won(data.positionAmount)} · ${Number(data.positionRatio || 0) * 100}%`;
       $('maxHolding').textContent = `${Number(data.maxHoldingCount || 0)}종목`;
-      $('maxDailyBuy').textContent = `${Number(data.maxDailyBuyCount || 0)}회`;
+      $('maxDailyBuy').textContent = `09:05 전 3회 · 09:20 전 5회 · 이후 7회`;
       $('buyWindow').textContent = `${data.buyStartTime || '-'} ~ ${data.buyEndTime || '-'}`;
-      $('marketPolicy').textContent = `<${Number(data.absoluteMarketBlockScore || 15)} 차단 · 약세장 개별주 확인`;
+      $('marketPolicy').textContent = data.marketPolicyLabel || '시장점수 보정 · 약세장 개별주 강화확인';
       $('marketScore').textContent = data.market?.available ? `${Number(data.market.score || 0).toFixed(1)}점 · ${safe(data.market.type || '')}` : '자료 대기';
       $('status').textContent = `${data.lastRunAt || data.updatedAt || '-'} · ${data.lastRunReason || '평가 대기'} · READY ${Number(data.readyCount || 0)} / 후보 ${Number(data.candidateCount || 0)}`;
 

@@ -28,7 +28,13 @@ const CORE_CONFIG = Object.freeze({
   watchScore: 45,
   qqqHardBlockChangeRate: -1.0,
   qqqHardBlockVwapGapRate: -0.40,
-  dailyAverageLookback: 10
+  dailyAverageLookback: 10,
+
+  // v1.1 CORE entry-quality guards
+  maxLateChaseFromFirstReadyRate: 1.5,
+  highVolatilityRvol: 4.0,
+  highVolatilityVwapGapRate: 2.0,
+  highVolatilityDayPositionRate: 90
 });
 
 const INVALID_SYMBOLS = new Set([
@@ -50,6 +56,39 @@ let lastScan = {
 };
 
 const dailyVolumeCache = new Map();
+
+// CORE는 최초 READY 가격을 하루 동안 기억한다.
+// 다른 전략의 보유/쿨다운 등으로 최초 주문을 놓쳤더라도,
+// 이후 가격이 너무 높아진 상태에서 뒤늦게 추격매수하지 않도록 사용한다.
+const firstReadyByDaySymbol = new Map();
+
+function firstReadyKey(sessionDate, symbol) {
+  return `${String(sessionDate || '')}:${String(symbol || '').toUpperCase().trim()}`;
+}
+
+function getOrRememberFirstReady(sessionDate, symbol, price, score) {
+  const key = firstReadyKey(sessionDate, symbol);
+  const existing = firstReadyByDaySymbol.get(key);
+  if (existing) return existing;
+
+  const row = {
+    date: String(sessionDate || ''),
+    symbol: String(symbol || '').toUpperCase().trim(),
+    price: toNumber(price),
+    score: toNumber(score),
+    firstReadyAt: new Date().toISOString()
+  };
+  firstReadyByDaySymbol.set(key, row);
+  return row;
+}
+
+function cleanupFirstReadyMemory(currentDate) {
+  for (const [key, value] of firstReadyByDaySymbol.entries()) {
+    if (!value || String(value.date || '') !== String(currentDate || '')) {
+      firstReadyByDaySymbol.delete(key);
+    }
+  }
+}
 
 function toNumber(value) {
   const n = Number(value);
@@ -441,6 +480,37 @@ async function analyzeCandidate(snapshot, qqq, session) {
   const dataFresh = minuteMetrics.businessDate === compactDate(session.date);
   if (!dataFresh) blocks.push('당일 분봉 없음');
 
+  // DELL 같은 급변동 추격형은 FAST 성격에 더 가깝다.
+  // CORE에서는 RVOL/VWAP/당일위치가 동시에 과도한 경우 신규매수를 보류한다.
+  if (
+    rvol >= CORE_CONFIG.highVolatilityRvol &&
+    vwapGapRate >= CORE_CONFIG.highVolatilityVwapGapRate &&
+    dayPositionRate >= CORE_CONFIG.highVolatilityDayPositionRate
+  ) {
+    blocks.push('고변동 추격');
+  }
+
+  // blocks를 제외한 순수 READY 자격을 먼저 계산한다.
+  const rawReady = !blocks.length && score >= CORE_CONFIG.readyScore;
+  let firstReady = null;
+  let lateChaseRate = 0;
+
+  if (rawReady) {
+    firstReady = getOrRememberFirstReady(
+      session.date,
+      snapshot.symbol,
+      price,
+      score
+    );
+
+    if (toNumber(firstReady.price) > 0) {
+      lateChaseRate = (price - toNumber(firstReady.price)) / toNumber(firstReady.price) * 100;
+      if (lateChaseRate > CORE_CONFIG.maxLateChaseFromFirstReadyRate) {
+        blocks.push('최초 READY 대비 추격');
+      }
+    }
+  }
+
   let status = 'OBSERVE';
   if (!blocks.length && score >= CORE_CONFIG.readyScore) status = 'READY';
   else if (score >= CORE_CONFIG.watchScore) status = 'WATCH';
@@ -452,6 +522,11 @@ async function analyzeCandidate(snapshot, qqq, session) {
     `추세 ${round(minuteMetrics.trendPersistence * 100, 0)}%`,
     `QQQ ${qqq.changeRate >= 0 ? '+' : ''}${round(qqq.changeRate)}%`
   ];
+  if (firstReady && lateChaseRate > 0) {
+    reasonParts.push(
+      `최초READY ${round(firstReady.price, 4)} / 현재 +${round(lateChaseRate)}%`
+    );
+  }
   if (blocks.length) reasonParts.push(blocks.slice(0, 2).join('/'));
   reasonParts.push('PAPER 자동주문 연결');
 
@@ -478,6 +553,9 @@ async function analyzeCandidate(snapshot, qqq, session) {
     sources: snapshot.sources,
     blocks,
     components,
+    firstReadyPrice: firstReady ? round(firstReady.price, 4) : null,
+    firstReadyAt: firstReady ? firstReady.firstReadyAt : null,
+    lateChaseRate: round(lateChaseRate),
     reason: reasonParts.join(' · '),
     updatedAt: new Date().toISOString()
   };
@@ -495,6 +573,7 @@ async function runCoreScan({ force = false } = {}) {
   }
 
   const session = getSessionState();
+  cleanupFirstReadyMemory(session.date);
   if (!force && !session.coreWindow) {
     lastScan = {
       ...lastScan,
@@ -549,7 +628,7 @@ async function runCoreScan({ force = false } = {}) {
       orderSubmissionEnabled: true,
       implemented: true,
       status: 'OBSERVING',
-      reason: '후보 탐색·점수화만 수행합니다. READY 후보는 설정 허용 시 PAPER 자동주문으로 연결합니다.',
+      reason: 'CORE v1.1: 최초 READY 추격방지 + 고변동 추격 차단. READY 후보는 설정 허용 시 PAPER 자동주문으로 연결합니다.',
       session,
       market: qqq,
       discoveredCount: snapshots.length,
@@ -631,6 +710,7 @@ function getCoreStatus() {
     observerOnly: false,
     orderSubmissionEnabled: true,
     implemented: true,
+    version: '1.1-entry-quality',
     scanRunning,
     config: CORE_CONFIG,
     session: getSessionState(),
@@ -651,7 +731,7 @@ function startCoreObserver() {
   if (typeof initialTimer.unref === 'function') initialTimer.unref();
 
   console.log(
-    '[US-CORE]',
+    '[US-CORE v1.1]',
     `관찰모드 시작 ${CORE_CONFIG.coreStartEt}~${CORE_CONFIG.coreEndEt} ET /`,
     'PAPER 자동주문 연결 / implemented=true'
   );

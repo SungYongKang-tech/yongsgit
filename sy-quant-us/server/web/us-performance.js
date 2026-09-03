@@ -205,78 +205,44 @@ function saveDailyBaseline(value) {
 
 function getTodayPerformance(data = {}) {
   const overall = data.overall || {};
-
-  if (
-    Number.isFinite(Number(overall.todayProfit)) ||
-    Number.isFinite(Number(overall.todayRealizedProfit))
-  ) {
-    const todayProfit = toNumber(overall.todayProfit);
-    const todayRealized = toNumber(overall.todayRealizedProfit);
-    const todayHoldingChange = Number.isFinite(Number(overall.todayUnrealizedChange))
-      ? toNumber(overall.todayUnrealizedChange)
-      : todayProfit - todayRealized;
-
-    const startAsset = toNumber(
-      overall.dailyStartAsset ||
-      overall.todayStartAsset ||
-      overall.initialCapital
-    );
-
-    const todayProfitRate = Number.isFinite(Number(overall.todayProfitRate))
-      ? toNumber(overall.todayProfitRate)
-      : startAsset > 0
-        ? (todayProfit / startAsset) * 100
-        : 0;
-
-    return {
-      todayProfit,
-      todayRealized,
-      todayHoldingChange,
-      todayProfitRate
-    };
-  }
-
   const today = usDateKey();
-  const currentAsset = toNumber(overall.totalAsset);
-  const initialCapital = toNumber(overall.initialCapital);
   const todayRealized = getTodayRealized(data);
+  const currentUnrealized = toNumber(overall.unrealizedProfit);
 
-  const recentDates = Array.isArray(data.recent7Days?.dates)
-    ? data.recent7Days.dates
-    : [];
-
-  const isTradingDate = recentDates.some(item => String(item.key || '') === today);
-
-  if (!isTradingDate) {
-    return {
-      todayProfit: 0,
-      todayRealized: 0,
-      todayHoldingChange: 0,
-      todayProfitRate: 0
-    };
-  }
+  const paperCapital =
+    toNumber(currentAutoStatus?.paperCapital) ||
+    toNumber(overall.initialCapital);
 
   const saved = loadDailyBaseline();
-  let startAsset = 0;
+  let startUnrealized = 0;
 
-  if (saved.date === today && toNumber(saved.startAsset) > 0) {
-    startAsset = toNumber(saved.startAsset);
-  } else {
-    startAsset = currentAsset || initialCapital;
+  if (
+    saved.date === today &&
+    Number.isFinite(Number(saved.startUnrealized))
+  ) {
+    startUnrealized = toNumber(saved.startUnrealized);
+  } else if (
+    saved.date &&
+    saved.date !== today &&
+    Number.isFinite(Number(saved.lastUnrealized))
+  ) {
+    startUnrealized = toNumber(saved.lastUnrealized);
   }
+
+  const todayHoldingChange = currentUnrealized - startUnrealized;
+  const todayProfit = todayRealized + todayHoldingChange;
+  const todayProfitRate = paperCapital > 0
+    ? (todayProfit / paperCapital) * 100
+    : 0;
 
   saveDailyBaseline({
     date: today,
-    startAsset,
-    lastAsset: currentAsset,
+    startUnrealized,
+    lastUnrealized: currentUnrealized,
+    startAsset: paperCapital,
+    lastAsset: paperCapital + toNumber(overall.netProfit),
     updatedAt: new Date().toISOString()
   });
-
-  const todayProfit = currentAsset - startAsset;
-  const todayHoldingChange = todayProfit - todayRealized;
-  const todayProfitRate = startAsset > 0
-    ? (todayProfit / startAsset) * 100
-    : 0;
 
   return {
     todayProfit,
@@ -408,6 +374,22 @@ function renderRecent7Days(data = {}) {
   }
 }
 
+
+function strategyDetailUrl(id) {
+  const map = {
+    CORE: '/us-core.html',
+    VOLUME: '/us-volume.html',
+    WAVE: '/us-wave.html',
+    FAST: '/us-fast.html'
+  };
+  return map[normalizeStrategyId(id)] || '';
+}
+
+function openStrategyDetail(id) {
+  const url = strategyDetailUrl(id);
+  if (url) location.href = url;
+}
+
 function renderStrategies(data = {}) {
   const grid = document.getElementById('strategyGrid');
   const note = document.getElementById('strategyNote');
@@ -451,7 +433,14 @@ function renderStrategies(data = {}) {
     const autoBudget = currentAutoStatus?.strategies?.[id] || {};
     const remaining = toNumber(autoBudget.remaining);
     const remainingSlots = toNumber(autoBudget.remainingSlots);
-    const nextBuy = remainingSlots > 0 ? remaining / remainingSlots : 0;
+    const strategyBudget = toNumber(autoBudget.budget);
+    const maxHoldings = Math.max(1, toNumber(item.maxHoldings));
+    const perPositionCap = strategyBudget > 0
+      ? strategyBudget / maxHoldings
+      : 0;
+    const nextBuy = remainingSlots > 0
+      ? Math.min(remaining, perPositionCap)
+      : 0;
     const usedAmount = toNumber(autoBudget.used);
 
     const buyText = item.buyEnabled ? 'ON' : 'OFF';
@@ -460,7 +449,7 @@ function renderStrategies(data = {}) {
     const sparkline = buildSparkline(recent?.values || []);
 
     return `
-      <article class="strategy-card ${strategyCssClass(id)}">
+      <article class="strategy-card ${strategyCssClass(id)} strategy-clickable" role="button" tabindex="0" onclick="openStrategyDetail('${id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openStrategyDetail('${id}')}">
         <div class="strategy-head">
           <div class="strategy-name">
             ${escapeHtml(item.icon || '📈')} ${escapeHtml(item.label || `US-${id}`)}
@@ -508,29 +497,54 @@ function renderStrategies(data = {}) {
         </div>
 
         <div class="strategy-sparkline">${sparkline}</div>
-        <div class="strategy-footer">다음매수 = 남은 전략자금 ÷ 남은 자리</div>
+        <div class="strategy-footer">다음매수 = 전략한도 ÷ 최대종목 (잔여자금 이내) · 상세보기 ›</div>
       </article>`;
   }).join('');
 }
 
 function holdingHtml(item) {
-  const profit = toNumber(item.profitLoss);
-  const rate = toNumber(item.profitLossRate);
+  const quantity = toNumber(item.quantity ?? item.qty);
+  const buyPrice = toNumber(item.buyPrice);
+  const currentPrice = toNumber(item.currentPrice ?? item.price);
+
+  const evaluationAmount = Number.isFinite(Number(item.evalAmount))
+    ? toNumber(item.evalAmount)
+    : Number.isFinite(Number(item.evaluationAmount))
+      ? toNumber(item.evaluationAmount)
+      : currentPrice * quantity;
+
+  const profit = Number.isFinite(Number(item.profit))
+    ? toNumber(item.profit)
+    : Number.isFinite(Number(item.unrealizedProfit))
+      ? toNumber(item.unrealizedProfit)
+      : Number.isFinite(Number(item.profitLoss))
+        ? toNumber(item.profitLoss)
+        : evaluationAmount - (buyPrice * quantity);
+
+  const rate = Number.isFinite(Number(item.profitRate))
+    ? toNumber(item.profitRate)
+    : Number.isFinite(Number(item.unrealizedProfitRate))
+      ? toNumber(item.unrealizedProfitRate)
+      : Number.isFinite(Number(item.profitLossRate))
+        ? toNumber(item.profitLossRate)
+        : buyPrice > 0
+          ? ((currentPrice - buyPrice) / buyPrice) * 100
+          : 0;
 
   return `
     <article class="holding-card">
       <div>
-        <div class="holding-name">${escapeHtml(item.name || item.symbol || '-')}</div>
+        <div class="holding-name">${escapeHtml(item.name || item.symbol || item.code || '-')}</div>
         <div class="holding-sub">
-          ${escapeHtml(item.symbol || '')}
+          ${escapeHtml(item.symbol || item.code || '')}
           · ${escapeHtml(item.exchange || '')}
           · ${escapeHtml(item.currency || 'USD')}
         </div>
       </div>
-      <div class="metric"><span>수량</span><b>${toNumber(item.quantity).toLocaleString()}주</b></div>
-      <div class="metric"><span>매수가</span><b>${formatUsd(item.buyPrice)}</b></div>
-      <div class="metric"><span>현재가</span><b>${formatUsd(item.currentPrice)}</b></div>
-      <div class="metric"><span>평가금액</span><b>${formatUsd(item.evaluationAmount)}</b></div>
+      <div class="metric"><span>수량</span><b>${quantity.toLocaleString()}주</b></div>
+      <div class="metric"><span>매수가</span><b>${formatUsd(buyPrice)}</b></div>
+      <div class="metric"><span>현재가</span><b>${formatUsd(currentPrice)}</b></div>
+      <div class="metric"><span>평가금액</span><b>${formatUsd(evaluationAmount)}</b></div>
       <div class="metric"><span>보유손익</span><b class="${profitClass(profit)}">${formatUsd(profit, true)} · ${formatRate(rate)}</b></div>
     </article>`;
 }
@@ -658,7 +672,112 @@ function setupTabs() {
   });
 }
 
+
+// SYQ_US_DASHBOARD_CALC_SYNC_V1
+function syncDashboardWithAutoStatus(data = {}) {
+  if (!currentAutoStatus || typeof currentAutoStatus !== 'object') return data;
+  if (!data.overall || typeof data.overall !== 'object') data.overall = {};
+  if (!data.details || typeof data.details !== 'object') data.details = {};
+
+  const autoPositions = Array.isArray(currentAutoStatus.openPositions)
+    ? currentAutoStatus.openPositions : [];
+  const oldHoldings = Array.isArray(data.details.holdings)
+    ? data.details.holdings : [];
+
+  const oldMap = new Map(oldHoldings.map(item => [
+    String(item.code || item.symbol || '').toUpperCase(), item
+  ]));
+
+  const syncedHoldings = autoPositions.map(position => {
+    const key = String(position.symbol || position.code || '').toUpperCase();
+    const old = oldMap.get(key) || {};
+    const qty = toNumber(position.quantity ?? position.qty ?? old.qty);
+    const buyPrice = toNumber(position.entryPrice ?? position.buyPrice ?? old.buyPrice);
+    const currentPrice = toNumber(
+      position.currentPrice ?? position.lastPrice ?? old.currentPrice ?? buyPrice
+    );
+    const buyAmount = toNumber(position.entryNotional) > 0
+      ? toNumber(position.entryNotional)
+      : buyPrice * qty;
+    const evalAmount = toNumber(position.currentValue) > 0
+      ? toNumber(position.currentValue)
+      : currentPrice * qty;
+    const profit = Number.isFinite(Number(position.unrealizedProfit))
+      ? toNumber(position.unrealizedProfit)
+      : evalAmount - buyAmount;
+    const profitRate = Number.isFinite(Number(position.unrealizedProfitRate))
+      ? toNumber(position.unrealizedProfitRate)
+      : buyAmount > 0 ? (profit / buyAmount) * 100 : 0;
+
+    return {
+      ...old,
+      code: key || old.code,
+      symbol: key || old.symbol,
+      name: position.name || old.name || key,
+      strategyGroup: position.strategy || old.strategyGroup || '',
+      strategy: position.strategy || old.strategy || '',
+      qty,
+      quantity: qty,
+      buyPrice,
+      currentPrice,
+      buyAmount,
+      evalAmount,
+      profit,
+      unrealizedProfit: profit,
+      profitRate,
+      openedAt: position.openedAt || old.openedAt,
+      buyAt: position.openedAt || old.buyAt,
+      status: position.status || old.status || 'OPEN'
+    };
+  });
+
+  data.details.holdings = syncedHoldings;
+
+  const paperCapital =
+    toNumber(currentAutoStatus.paperCapital) ||
+    toNumber(data.overall.initialCapital);
+
+  const liveIds = new Set(['CORE', 'FAST', 'VOLUME', 'WAVE']);
+  const strategies = Array.isArray(data.strategies) ? data.strategies : [];
+
+  let realizedTotal = 0;
+  let unrealizedTotal = 0;
+
+  for (const row of strategies) {
+    const id = normalizeStrategyId(row.id);
+    if (!liveIds.has(id)) continue;
+
+    const realized = toNumber(row.realizedProfit);
+    const unrealized = syncedHoldings
+      .filter(h => normalizeStrategyId(h.strategyGroup || h.strategy) === id)
+      .reduce((sum, h) => sum + toNumber(h.profit), 0);
+
+    row.realizedProfit = realized;
+    row.unrealizedProfit = unrealized;
+    row.netProfit = realized + unrealized;
+    row.profitRate = paperCapital > 0 ? (row.netProfit / paperCapital) * 100 : 0;
+
+    realizedTotal += realized;
+    unrealizedTotal += unrealized;
+  }
+
+  const netProfit = realizedTotal + unrealizedTotal;
+
+  data.overall.initialCapital = paperCapital;
+  data.overall.realizedProfit = realizedTotal;
+  data.overall.unrealizedProfit = unrealizedTotal;
+  data.overall.netProfit = netProfit;
+  data.overall.totalAsset = paperCapital + netProfit;
+  data.overall.currentAsset = paperCapital + netProfit;
+  data.overall.profitRate = paperCapital > 0 ? (netProfit / paperCapital) * 100 : 0;
+  data.overall.totalExposure = toNumber(currentAutoStatus.globalUsed);
+  data.overall.holdingCount = syncedHoldings.length;
+
+  return data;
+}
+
 function renderDashboard(data = {}) {
+  data = syncDashboardWithAutoStatus(data);
   currentDashboardData = data;
 
   const overall = data.overall || {};
@@ -675,25 +794,15 @@ function renderDashboard(data = {}) {
     toNumber(currentAutoStatus?.paperCapital) ||
     toNumber(overall.initialCapital);
 
-  const effectiveNetProfit = currentAutoStatus
-    ? toNumber(currentAutoStatus.netProfit)
-    : toNumber(overall.netProfit);
+  const effectiveNetProfit = toNumber(overall.netProfit);
 
-  const effectiveTotalAsset = currentAutoStatus
-    ? toNumber(currentAutoStatus.totalAsset)
-    : toNumber(overall.totalAsset);
+  const effectiveTotalAsset = toNumber(overall.totalAsset);
 
-  const effectiveProfitRate = currentAutoStatus
-    ? toNumber(currentAutoStatus.profitRate)
-    : toNumber(overall.profitRate);
+  const effectiveProfitRate = toNumber(overall.profitRate);
 
-  const effectiveExposure = currentAutoStatus
-    ? toNumber(currentAutoStatus.globalUsed)
-    : toNumber(overall.totalExposure);
+  const effectiveExposure = toNumber(overall.totalExposure);
 
-  const effectiveUnrealized = currentAutoStatus
-    ? toNumber(currentAutoStatus.unrealizedProfit)
-    : strategyUnrealized;
+  const effectiveUnrealized = toNumber(overall.unrealizedProfit);
 
   setMetric('totalAsset', formatUsd(effectiveTotalAsset));
   setMetric('netProfit', formatUsd(effectiveNetProfit, true), effectiveNetProfit);
