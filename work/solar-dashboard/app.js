@@ -12,15 +12,13 @@ const firebaseConfig = {
   appId: "1:823965422017:web:5967c96d54d66b74919f40"
 };
 
-// 강당 용량은 업로드된 기존 엑셀의 102.4 kWp를 기준으로 작성했습니다.
-// 실제 용량이 10.24 kW라면 아래 capacityKw만 10.24로 변경하세요.
 const EQUIPMENT = [
   { id: "gym-roof-b", name: "체육관 옥상 B", alias: "45kW", capacityKw: 46.08, position: "상부 좌측" },
   { id: "gym-roof-a", name: "체육관 옥상 A", alias: "50kW", capacityKw: 50.22, position: "상부 우측" },
   { id: "auditorium-roof", name: "강당 옥상", alias: "103kW", capacityKw: 102.4, position: "하부 전체" }
 ];
 
-const ADMIN_PASSWORD = "1111"; // 간편 잠금용. 강한 보안이 필요한 경우 Firebase Authentication 권장.
+const ADMIN_PASSWORD = "1111";
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const storage = getStorage(app);
@@ -30,12 +28,16 @@ let unlocked = false;
 let currentPrevious = {};
 let currentExisting = null;
 
-function todayISO(){
+function monthISO(){
   const d = new Date();
-  const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,"0"), day=String(d.getDate()).padStart(2,"0");
-  return `${y}-${m}-${day}`;
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
 }
-function monthISO(){ return todayISO().slice(0,7); }
+function previousMonthISO(month){
+  const [y,m] = month.split("-").map(Number);
+  const d = new Date(y,m-2,1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+}
+function generationMonthFromInspection(month){ return previousMonthISO(month); }
 function num(v){ const n=Number(String(v??"").replace(/,/g,"")); return Number.isFinite(n)?n:null; }
 function fmt(v, digits=1){ return Number.isFinite(Number(v)) ? Number(v).toLocaleString("ko-KR",{maximumFractionDigits:digits}) : "-"; }
 function setMsg(el, text, type=""){ el.textContent=text; el.className=`message ${type}`; }
@@ -44,14 +46,14 @@ function renderEquipmentInputs(){
   $("equipmentInputs").innerHTML = EQUIPMENT.map(e => `
     <div class="equipment-row" data-id="${e.id}">
       <div class="equipment-name"><b>${e.name} ${e.capacityKw} kW</b><small>${e.alias} · ${e.position}</small></div>
-      <label class="field">전일 누적발전량
+      <label class="field prev-field">이전 검침 누적값
         <div class="readonly-box" id="prev-${e.id}">- <small>kWh</small></div>
       </label>
-      <label class="field">금일 누적발전량
+      <label class="field input-field"><span id="label-${e.id}">이번 검침 누적값</span>
         <input id="input-${e.id}" type="number" step="0.1" min="0" inputmode="decimal" placeholder="누적 kWh" disabled />
       </label>
-      <label class="field">오늘 발전량
-        <div class="readonly-box" id="daily-${e.id}">- <small>kWh</small></div>
+      <label class="field result-field"><span id="resultLabel-${e.id}">전월 발전량</span>
+        <div class="readonly-box" id="monthly-${e.id}">- <small>kWh</small></div>
       </label>
     </div>`).join("");
   EQUIPMENT.forEach(e => $("input-"+e.id).addEventListener("input", recalc));
@@ -62,119 +64,192 @@ function setUnlocked(value){
   $("saveBtn").disabled=!value;
   $("memo").disabled=!value;
   $("writer").disabled=!value;
+  $("inputMode").disabled=!value;
   EQUIPMENT.forEach(e=>$("input-"+e.id).disabled=!value);
   document.querySelectorAll(".photo-card input[type=file], .photo-card button").forEach(el=>el.disabled=!value);
   $("unlockBtn").textContent=value?"🔓 입력 가능":"🔒 입력 잠금";
   $("lockNotice").style.display=value?"none":"block";
 }
 
-async function findPreviousReading(date, equipmentId){
-  const target = new Date(date+"T00:00:00");
-  for(let i=1;i<=370;i++){
-    const d=new Date(target); d.setDate(d.getDate()-i);
-    const ds=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-    const snap=await get(ref(db,`solar/daily/${ds}/${equipmentId}`));
+async function findPreviousCumulative(month, equipmentId){
+  const [y,m] = month.split("-").map(Number);
+  for(let i=1;i<=180;i++){
+    const d = new Date(y,m-1-i,1);
+    const ms = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+    const snap = await get(ref(db,`solar/monthly/${ms}/${equipmentId}`));
     if(snap.exists()){
       const v=snap.val();
-      if(Number.isFinite(Number(v.cumulative))) return {date:ds,value:Number(v.cumulative)};
-      if(Number.isFinite(Number(v.inputValue)) && v.inputMode==="cumulative") return {date:ds,value:Number(v.inputValue)};
+      if(Number.isFinite(Number(v.cumulative))) return {month:ms,value:Number(v.cumulative)};
+      if(v.inputMode==="cumulative" && Number.isFinite(Number(v.inputValue))) return {month:ms,value:Number(v.inputValue)};
     }
   }
   return null;
 }
 
-async function loadDate(){
-  const date=$("readingDate").value;
+function updateModeUI(){
+  const mode=$("inputMode").value;
+  const inspection=$("readingMonth").value;
+  const genMonth=generationMonthFromInspection(inspection);
+  if(mode==="cumulative"){
+    $("modeHelp").textContent=`${inspection} 1일 누적값을 입력하면 ${genMonth} 발전량을 자동 계산합니다.`;
+    document.querySelectorAll(".prev-field").forEach(el=>el.style.display="flex");
+    EQUIPMENT.forEach(e=>{
+      $("label-"+e.id).textContent="이번 검침 누적값";
+      $("resultLabel-"+e.id).textContent=`${genMonth} 발전량`;
+      $("input-"+e.id).placeholder="누적 kWh";
+    });
+  }else{
+    $("modeHelp").textContent="과거자료처럼 월 발전량 자체가 정리되어 있을 때 사용합니다.";
+    document.querySelectorAll(".prev-field").forEach(el=>el.style.display="none");
+    EQUIPMENT.forEach(e=>{
+      $("label-"+e.id).textContent="월 발전량";
+      $("resultLabel-"+e.id).textContent="저장 발전량";
+      $("input-"+e.id).placeholder="월 발전량 kWh";
+    });
+  }
+  recalc();
+}
+
+async function loadMonth(){
+  const month=$("readingMonth").value;
   setMsg($("formMessage"),"불러오는 중…");
   currentExisting=null; currentPrevious={};
-  const existingSnap=await get(ref(db,`solar/daily/${date}`));
+  const existingSnap=await get(ref(db,`solar/monthly/${month}`));
   currentExisting=existingSnap.exists()?existingSnap.val():null;
+  const existingMode=currentExisting?._meta?.inputMode || "cumulative";
+  $("inputMode").value=existingMode;
+
   for(const e of EQUIPMENT){
-    const prev=await findPreviousReading(date,e.id);
+    const prev=await findPreviousCumulative(month,e.id);
     currentPrevious[e.id]=prev;
-    $("prev-"+e.id).innerHTML=prev?`${fmt(prev.value)} <small>kWh · ${prev.date}</small>`:`없음 <small>최초 입력</small>`;
+    $("prev-"+e.id).innerHTML=prev?`${fmt(prev.value)} <small>kWh · ${prev.month}</small>`:`없음 <small>최초 기준값</small>`;
     const existing=currentExisting?.[e.id];
-    $("input-"+e.id).value=existing?.cumulative ?? existing?.inputValue ?? "";
+    if(existingMode==="generation") $("input-"+e.id).value=existing?.monthlyGeneration ?? existing?.inputValue ?? "";
+    else $("input-"+e.id).value=existing?.cumulative ?? existing?.inputValue ?? "";
   }
   $("memo").value=currentExisting?._meta?.memo||"";
   $("writer").value=currentExisting?._meta?.writer||"";
-  recalc();
-  setMsg($("formMessage"), currentExisting?"기존 입력값을 불러왔습니다. 잠금 해제 후 수정할 수 있습니다.":"새 날짜입니다.", currentExisting?"":"ok");
+  updateModeUI();
+  setMsg($("formMessage"), currentExisting?"기존 월 자료를 불러왔습니다. 잠금 해제 후 수정할 수 있습니다.":"새 검침월입니다.", currentExisting?"":"ok");
+  updateStatusForSelectedMonth();
 }
 
 function recalc(){
+  const mode=$("inputMode").value;
   let total=0, validCount=0;
   for(const e of EQUIPMENT){
     const cur=num($("input-"+e.id).value);
-    const prev=currentPrevious[e.id]?.value;
-    let daily=null;
-    if(cur!==null && prev!==undefined){ daily=cur-prev; }
-    if(cur!==null && prev===undefined){ daily=null; }
-    const box=$("daily-"+e.id);
-    if(daily===null){ box.innerHTML=`- <small>${cur!==null?"기준값 없음":"kWh"}</small>`; }
-    else if(daily<0){ box.innerHTML=`<span style="color:#b42318">${fmt(daily)} kWh</span> <small>확인 필요</small>`; }
-    else { box.innerHTML=`${fmt(daily)} <small>kWh</small>`; total+=daily; validCount++; }
+    let generation=null;
+    if(mode==="generation") generation=cur;
+    else {
+      const prev=currentPrevious[e.id]?.value;
+      if(cur!==null && prev!==undefined) generation=cur-prev;
+    }
+    const box=$("monthly-"+e.id);
+    if(generation===null){
+      box.innerHTML=`- <small>${cur!==null && mode==="cumulative"?"이전 누적값 없음":"kWh"}</small>`;
+    } else if(generation<0){
+      box.innerHTML=`<span class="negative">${fmt(generation)} kWh</span> <small>확인 필요</small>`;
+    } else {
+      box.innerHTML=`${fmt(generation)} <small>kWh</small>`;
+      total+=generation; validCount++;
+    }
   }
-  $("calcTotal").innerHTML=`금일 계산 발전량 합계 <b>${validCount?fmt(total):"-"} kWh</b>`;
+  $("calcTotal").innerHTML=`계산 발전량 합계 <b>${validCount?fmt(total):"-"} kWh</b>`;
 }
 
 async function saveReading(ev){
   ev.preventDefault();
   if(!unlocked) return;
-  const date=$("readingDate").value;
+  const month=$("readingMonth").value;
+  const mode=$("inputMode").value;
   const payload={}; let total=0;
   for(const e of EQUIPMENT){
-    const cumulative=num($("input-"+e.id).value);
-    if(cumulative===null){ setMsg($("formMessage"),`${e.name} 누적발전량을 입력하세요.`,"error"); return; }
-    const prev=currentPrevious[e.id]?.value;
-    const daily=prev===undefined?null:cumulative-prev;
-    if(daily!==null && daily<0){ setMsg($("formMessage"),`${e.name}의 금일 누적값이 전일보다 작습니다. 입력값을 확인하세요.`,"error"); return; }
+    const inputValue=num($("input-"+e.id).value);
+    if(inputValue===null){ setMsg($("formMessage"),`${e.name} 값을 입력하세요.`,"error"); return; }
+    let monthlyGeneration=null;
+    let cumulative=null;
+    let prev=null;
+    if(mode==="cumulative"){
+      cumulative=inputValue;
+      prev=currentPrevious[e.id]?.value;
+      monthlyGeneration=prev===undefined?null:cumulative-prev;
+      if(monthlyGeneration!==null && monthlyGeneration<0){
+        setMsg($("formMessage"),`${e.name}의 누적값이 이전 검침값보다 작습니다. 입력값을 확인하세요.`,"error"); return;
+      }
+    }else{
+      monthlyGeneration=inputValue;
+      if(monthlyGeneration<0){ setMsg($("formMessage"),`${e.name} 월 발전량을 확인하세요.`,"error"); return; }
+    }
     payload[e.id]={
-      inputMode:"cumulative", cumulative, inputValue:cumulative,
+      inputMode:mode,
+      inputValue,
+      cumulative,
       previousCumulative:prev ?? null,
-      previousDate:currentPrevious[e.id]?.date ?? null,
-      dailyGeneration:daily,
+      previousMonth:currentPrevious[e.id]?.month ?? null,
+      monthlyGeneration,
       capacityKw:e.capacityKw,
       updatedAt:Date.now()
     };
-    if(daily!==null) total+=daily;
+    if(monthlyGeneration!==null) total+=monthlyGeneration;
   }
-  payload._meta={date,memo:$("memo").value.trim(),writer:$("writer").value.trim(),dailyTotal:total,updatedAt:Date.now()};
+  payload._meta={
+    inspectionMonth:month,
+    generationMonth: mode==="cumulative" ? generationMonthFromInspection(month) : month,
+    inputMode:mode,
+    memo:$("memo").value.trim(),
+    writer:$("writer").value.trim(),
+    monthlyTotal:total,
+    updatedAt:Date.now()
+  };
   try{
-    await set(ref(db,`solar/daily/${date}`),payload);
-    setMsg($("formMessage"),"저장했습니다.","ok");
-    await Promise.all([loadDate(),loadHistory(),loadSummary()]);
+    await set(ref(db,`solar/monthly/${month}`),payload);
+    setMsg($("formMessage"),"월간자료를 저장했습니다.","ok");
+    await Promise.all([loadMonth(),loadHistory(),loadSummary()]);
   }catch(err){ setMsg($("formMessage"),`저장 실패: ${err.message}`,"error"); }
 }
 
 async function loadHistory(){
-  const snap=await get(ref(db,"solar/daily"));
+  const snap=await get(ref(db,"solar/monthly"));
   const data=snap.exists()?snap.val():{};
-  const rows=Object.entries(data).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,14);
-  $("historyBody").innerHTML=rows.length?rows.map(([date,v])=>{
-    const vals=EQUIPMENT.map(e=>v[e.id]?.dailyGeneration);
-    const total=v._meta?.dailyTotal ?? vals.reduce((s,x)=>s+(Number.isFinite(Number(x))?Number(x):0),0);
-    return `<tr><td>${date}</td>${vals.map(x=>`<td>${fmt(x)}</td>`).join("")}<td><b>${fmt(total)}</b></td><td>${v._meta?.memo||""}</td></tr>`;
-  }).join(""):`<tr><td colspan="6" class="muted">저장된 일일 데이터가 없습니다.</td></tr>`;
+  const rows=Object.entries(data).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,18);
+  $("historyBody").innerHTML=rows.length?rows.map(([inspectionMonth,v])=>{
+    const vals=EQUIPMENT.map(e=>v[e.id]?.monthlyGeneration);
+    const total=v._meta?.monthlyTotal ?? vals.reduce((s,x)=>s+(Number.isFinite(Number(x))?Number(x):0),0);
+    const generationMonth=v._meta?.generationMonth || inspectionMonth;
+    const mode=v._meta?.inputMode==="generation"?"직접입력":"누적차감";
+    return `<tr><td>${generationMonth}</td>${vals.map(x=>`<td>${fmt(x)}</td>`).join("")}<td><b>${fmt(total)}</b></td><td>${mode}</td><td>${v._meta?.memo||""}</td></tr>`;
+  }).join(""):`<tr><td colspan="7" class="muted">저장된 월간 데이터가 없습니다.</td></tr>`;
 }
 
 async function loadSummary(){
-  const snap=await get(ref(db,"solar/daily"));
+  const snap=await get(ref(db,"solar/monthly"));
   const data=snap.exists()?snap.val():{};
-  const today=todayISO(); const month=today.slice(0,7); const year=today.slice(0,4);
-  let todayTotal=null, monthTotal=0, yearTotal=0, monthCount=0, yearCount=0;
-  for(const [date,v] of Object.entries(data)){
-    const t=Number(v._meta?.dailyTotal);
-    if(!Number.isFinite(t)) continue;
-    if(date===today) todayTotal=t;
-    if(date.startsWith(month)){monthTotal+=t;monthCount++;}
-    if(date.startsWith(year)){yearTotal+=t;yearCount++;}
+  const entries=Object.entries(data).sort((a,b)=>b[0].localeCompare(a[0]));
+  if(!entries.length){
+    $("latestTotal").textContent="-"; $("yearTotal").textContent="-"; $("latestMonth").textContent="-"; $("latestMonthSub").textContent="저장된 자료 없음"; return;
   }
-  $("todayTotal").textContent=fmt(todayTotal);
-  $("monthTotal").textContent=monthCount?fmt(monthTotal):"-";
-  $("yearTotal").textContent=yearCount?fmt(yearTotal):"-";
-  $("todayStatus").textContent=todayTotal===null?"미입력":"입력완료";
-  $("todayStatusSub").textContent=todayTotal===null?"오늘 누적값을 입력하세요":"오늘 데이터 저장됨";
+  const [latestInspection,latest]=entries[0];
+  const latestGenMonth=latest._meta?.generationMonth || latestInspection;
+  $("latestTotal").textContent=fmt(latest._meta?.monthlyTotal);
+  $("latestMonth").textContent=latestGenMonth;
+  $("latestMonthSub").textContent=`검침 ${latestInspection}`;
+  const year=latestGenMonth.slice(0,4);
+  let yTotal=0, count=0;
+  for(const [,v] of entries){
+    const gm=v._meta?.generationMonth;
+    const t=Number(v._meta?.monthlyTotal);
+    if(gm?.startsWith(year) && Number.isFinite(t)){yTotal+=t;count++;}
+  }
+  $("yearTotal").textContent=count?fmt(yTotal):"-";
+}
+
+async function updateStatusForSelectedMonth(){
+  const month=$("readingMonth").value;
+  const snap=await get(ref(db,`solar/monthly/${month}`));
+  const exists=snap.exists();
+  $("monthStatus").textContent=exists?"입력완료":"미입력";
+  $("monthStatusSub").textContent=exists?`${month} 검침자료 저장됨`:`${month} 검침자료 없음`;
 }
 
 function renderPhotoCards(){
@@ -231,14 +306,15 @@ function initPassword(){
 
 async function init(){
   renderEquipmentInputs(); renderPhotoCards(); initPassword(); setUnlocked(false);
-  $("readingDate").value=todayISO(); $("photoMonth").value=monthISO();
-  $("readingDate").addEventListener("change",loadDate);
+  $("readingMonth").value=monthISO(); $("photoMonth").value=monthISO();
+  $("readingMonth").addEventListener("change",async()=>{ await loadMonth(); $("photoMonth").value=$("readingMonth").value; await loadPhotos(); });
   $("photoMonth").addEventListener("change",loadPhotos);
+  $("inputMode").addEventListener("change",updateModeUI);
   $("readingForm").addEventListener("submit",saveReading);
   try{
     await get(ref(db,"solar"));
     $("firebaseState").textContent="Firebase 정상"; $("firebaseState").classList.add("ok");
-    await Promise.all([loadDate(),loadHistory(),loadSummary(),loadPhotos()]);
+    await Promise.all([loadMonth(),loadHistory(),loadSummary(),loadPhotos()]);
   }catch(err){
     $("firebaseState").textContent="Firebase 연결 오류"; $("firebaseState").classList.add("bad");
     setMsg($("formMessage"),`Firebase 연결 오류: ${err.message}`,"error");
