@@ -586,7 +586,7 @@ function startMidnightWatcher(){
 
 /* ==========================
    날짜 조회 / ◀ ▶ 하루 이동
-   - 오늘보다 미래 날짜는 조회하지 않음
+   - 과거/오늘/미래 날짜 모두 조회 및 입력 가능
    - 날짜를 바꿔도 현재 탭(currentTab)은 그대로 유지
 ========================== */
 let isHistoryMode = false;
@@ -597,9 +597,12 @@ const nextDateBtn = document.getElementById("nextDateBtn");
 
 function updateDateNavState(){
   if (!historyInput) return;
-  const realToday = isoToday();
-  historyInput.max = realToday;
-  nextDateBtn && (nextDateBtn.disabled = (historyInput.value || ISO_TODAY) >= realToday);
+
+  // 미래 날짜도 조회/입력할 수 있도록 제한을 두지 않습니다.
+  historyInput.removeAttribute("max");
+
+  if (prevDateBtn) prevDateBtn.disabled = false;
+  if (nextDateBtn) nextDateBtn.disabled = false;
 }
 
 function setHistoryMode(isoSelected){
@@ -620,9 +623,7 @@ async function moveHistoryDate(days){
   const d = dateFromIsoLocal(baseIso);
   d.setDate(d.getDate() + days);
 
-  let nextIso = isoFromDate(d);
-  const realToday = isoToday();
-  if (nextIso > realToday) nextIso = realToday;
+  const nextIso = isoFromDate(d);
 
   historyInput.value = nextIso;
   setHistoryMode(nextIso);
@@ -639,12 +640,7 @@ if (historyInput){
     let iso = historyInput.value;
     if (!iso) return;
 
-    const realToday = isoToday();
-    if (iso > realToday){
-      iso = realToday;
-      historyInput.value = iso;
-    }
-
+    // 과거/오늘/미래 날짜를 모두 그대로 허용합니다.
     setHistoryMode(iso);
     await rebindAll(currentTab);
   });
