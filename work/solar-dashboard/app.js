@@ -244,16 +244,20 @@ async function loadHistory(){
     })
   );
 
-  // 현재 연도처럼 운영 설비 3개만 존재하면 태양광1~3으로 간단히 표시합니다.
-  // 과거 연도에 철거 설비의 실적이 있으면 필요한 열만 자동 추가됩니다.
-  const labelFor = (e, idx) => {
-    const short = e.id === "gym-roof-a" ? "50.22"
-      : e.id === "gym-roof-b" ? "46.08"
-      : e.id === "auditorium-roof" ? "102.4"
-      : e.id === "parking-100" ? "100.44"
-      : e.id === "parking-256" ? "256"
-      : String(e.capacityKw || "");
-    return `<span class="history-solar-name">태양광${idx + 1}</span><small>${short} kW</small>`;
+  // 월별 표는 태양광 번호 대신 실제 설치위치와 용량으로 표시합니다.
+  const labelFor = (e) => {
+    const labels = {
+      "parking-100": { place: "옥외주차장", capacity: "100.44 kW" },
+      "gym-roof-a": { place: "체육관옥상A", capacity: "50.22 kW" },
+      "parking-256": { place: "옥외주차장", capacity: "256 kW" },
+      "auditorium-roof": { place: "강당옥상", capacity: "102.4 kW" },
+      "gym-roof-b": { place: "체육관옥상B", capacity: "46.08 kW" }
+    };
+    const info = labels[e.id] || {
+      place: e.label || "태양광",
+      capacity: `${e.capacityKw || ""} kW`
+    };
+    return `<span class="history-place">${info.place}</span><small>${info.capacity}</small>`;
   };
 
   const head = $("historyHead");
@@ -278,7 +282,7 @@ async function loadHistory(){
 
   head.innerHTML = `<tr>
     <th>발전월</th>
-    ${visibleEquipment.map((e,i) => `<th>${labelFor(e,i)}</th>`).join("")}
+    ${visibleEquipment.map(e => `<th>${labelFor(e)}</th>`).join("")}
     <th>합계</th>
   </tr>`;
 
