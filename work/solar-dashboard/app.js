@@ -67,15 +67,39 @@ function renderEquipmentInputs(){
 }
 
 function setUnlocked(value){
-  unlocked=value;
-  $("saveBtn").disabled=!value;
-  $("memo").disabled=!value;
-  $("writer").disabled=!value;
-  EQUIPMENT.forEach(e => $("input-"+e.id).disabled=!value);
-  document.querySelectorAll(".photo-card input[type=file], .photo-card button").forEach(el=>el.disabled=!value);
-  $("migrationBtn").disabled=!value || $("migrationBtn").dataset.done==="1";
-  $("unlockBtn").textContent=value?"🔓 입력 가능":"🔒 입력 잠금";
-  $("lockNotice").style.display=value?"none":"block";
+  unlocked = value;
+
+  const saveBtn = $("saveBtn");
+  const memo = $("memo");
+  const writer = $("writer");
+  const migrationBtn = $("migrationBtn");
+  const unlockBtn = $("unlockBtn");
+  const lockNotice = $("lockNotice");
+
+  if (saveBtn) saveBtn.disabled = !value;
+  if (memo) memo.disabled = !value;
+  if (writer) writer.disabled = !value;
+
+  EQUIPMENT.forEach(e => {
+    const input = $("input-" + e.id);
+    if (input) input.disabled = !value;
+  });
+
+  document
+    .querySelectorAll(".photo-card input[type=file], .photo-card button")
+    .forEach(el => { el.disabled = !value; });
+
+  if (migrationBtn) {
+    migrationBtn.disabled = !value || migrationBtn.dataset.done === "1";
+  }
+
+  if (unlockBtn) {
+    unlockBtn.textContent = value ? "🔓 입력 가능" : "🔒 입력 잠금";
+  }
+
+  if (lockNotice) {
+    lockNotice.style.display = value ? "none" : "block";
+  }
 }
 
 async function getInspection(month){
@@ -318,7 +342,27 @@ function initPassword(){
 }
 
 async function init(){
-  renderEquipmentInputs(); renderPhotoCards(); setupYearFilter(); initPassword(); setUnlocked(false);
+  const requiredIds = [
+    "equipmentInputs", "photoGrid", "historyYear", "passwordDialog",
+    "passwordForm", "unlockBtn", "readingMonth", "photoMonth",
+    "readingForm", "migrationBtn"
+  ];
+  const missingIds = requiredIds.filter(id => !$(id));
+  if (missingIds.length) {
+    console.error("[태양광 대시보드] index.html/app.js 버전 불일치:", missingIds);
+    const state = $("firebaseState");
+    if (state) {
+      state.textContent = "화면 파일 버전 불일치";
+      state.classList.add("bad");
+    }
+    return;
+  }
+
+  renderEquipmentInputs();
+  renderPhotoCards();
+  setupYearFilter();
+  initPassword();
+  setUnlocked(false);
   $("readingMonth").value=monthISO(); $("photoMonth").value=monthISO();
   $("readingMonth").addEventListener("change",async()=>{ await loadMonth(); $("photoMonth").value=$("readingMonth").value; await loadPhotos(); });
   $("photoMonth").addEventListener("change",loadPhotos);

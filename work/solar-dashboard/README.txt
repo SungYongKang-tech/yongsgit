@@ -23,3 +23,9 @@
 - Storage: solarHQ/inverterPhotos/...
 
 주의: 비밀번호 1111은 브라우저 코드에 포함된 간편 잠금입니다. 강한 보안이 필요하면 Firebase Authentication으로 변경하세요.
+
+
+[V4.1 수정]
+- setUnlocked()에서 DOM 요소가 없을 때 null.style 오류가 나지 않도록 방어코드 추가
+- index.html / app.js 파일 버전 불일치 검사 추가
+- styles.css, app.js에 캐시 무효화 쿼리 추가
