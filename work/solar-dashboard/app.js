@@ -206,15 +206,86 @@ function setupYearFilter(){
 }
 
 async function loadHistory(){
-  const year=$("historyYear").value;
-  const snap=await get(ref(db,`${BASE}/monthly`));
-  const data=snap.exists()?snap.val():{};
-  const rows=Object.entries(data).filter(([m])=>m.startsWith(year+"-")).sort((a,b)=>b[0].localeCompare(a[0]));
-  $("historyBody").innerHTML=rows.length?rows.map(([month,v])=>{
-    const vals=ALL_EQUIPMENT.map(e=>v[e.id]?.monthlyGeneration);
-    const total=v._meta?.monthlyTotal ?? vals.reduce((s,x)=>s+(Number.isFinite(Number(x))?Number(x):0),0);
-    return `<tr><td><b>${month}</b></td>${vals.map(x=>`<td>${fmt(x)}</td>`).join("")}<td><b>${fmt(total)}</b></td><td>${v._meta?.source==="xlsx-history"?"기존자료":"월검침"}</td></tr>`;
-  }).join(""):`<tr><td colspan="8" class="muted">${year}년 저장자료가 없습니다.</td></tr>`;
+  const year = $("historyYear").value;
+  const snap = await get(ref(db, `${BASE}/monthly`));
+  const data = snap.exists() ? snap.val() : {};
+
+  const rows = Object.entries(data)
+    .filter(([m]) => m.startsWith(year + "-"))
+    .sort((a,b) => a[0].localeCompare(b[0]));
+
+  // 선택 연도에 실제 발전량이 존재하는 설비만 표시합니다.
+  // 따라서 철거된 설비가 해당 연도에 발전하지 않았다면 표에서 자동으로 사라집니다.
+  const visibleEquipment = ALL_EQUIPMENT.filter(e =>
+    rows.some(([,v]) => {
+      const n = Number(v?.[e.id]?.monthlyGeneration);
+      return Number.isFinite(n) && Math.abs(n) > 0;
+    })
+  );
+
+  // 현재 연도처럼 운영 설비 3개만 존재하면 태양광1~3으로 간단히 표시합니다.
+  // 과거 연도에 철거 설비의 실적이 있으면 필요한 열만 자동 추가됩니다.
+  const labelFor = (e, idx) => {
+    const short = e.id === "gym-roof-a" ? "50.22"
+      : e.id === "gym-roof-b" ? "46.08"
+      : e.id === "auditorium-roof" ? "102.4"
+      : e.id === "parking-100" ? "100.44"
+      : e.id === "parking-256" ? "256"
+      : String(e.capacityKw || "");
+    return `<span class="history-solar-name">태양광${idx + 1}</span><small>${short} kW</small>`;
+  };
+
+  const head = $("historyHead");
+  const body = $("historyBody");
+  const foot = $("historyFoot");
+
+  if (!rows.length) {
+    head.innerHTML = `<tr><th>발전월</th><th>합계</th></tr>`;
+    body.innerHTML = `<tr><td colspan="2" class="muted">${year}년 저장자료가 없습니다.</td></tr>`;
+    foot.innerHTML = "";
+    return;
+  }
+
+  if (!visibleEquipment.length) {
+    head.innerHTML = `<tr><th>발전월</th><th>합계</th></tr>`;
+    body.innerHTML = rows.map(([month]) =>
+      `<tr><td><b>${Number(month.slice(5,7))}월</b></td><td>0</td></tr>`
+    ).join("");
+    foot.innerHTML = `<tr class="total-row"><th>합계</th><th>0</th></tr>`;
+    return;
+  }
+
+  head.innerHTML = `<tr>
+    <th>발전월</th>
+    ${visibleEquipment.map((e,i) => `<th>${labelFor(e,i)}</th>`).join("")}
+    <th>합계</th>
+  </tr>`;
+
+  const equipmentTotals = Object.fromEntries(visibleEquipment.map(e => [e.id, 0]));
+  let grandTotal = 0;
+
+  body.innerHTML = rows.map(([month,v]) => {
+    const vals = visibleEquipment.map(e => {
+      const n = Number(v?.[e.id]?.monthlyGeneration);
+      const value = Number.isFinite(n) ? n : 0;
+      equipmentTotals[e.id] += value;
+      return value;
+    });
+    const total = vals.reduce((s,n) => s + n, 0);
+    grandTotal += total;
+
+    return `<tr>
+      <td><b>${Number(month.slice(5,7))}월</b></td>
+      ${vals.map(x => `<td>${fmt(x)}</td>`).join("")}
+      <td><b>${fmt(total)}</b></td>
+    </tr>`;
+  }).join("");
+
+  foot.innerHTML = `<tr class="total-row">
+    <th>합계</th>
+    ${visibleEquipment.map(e => `<th>${fmt(equipmentTotals[e.id])}</th>`).join("")}
+    <th>${fmt(grandTotal)}</th>
+  </tr>`;
 }
 
 async function loadSummary(){
@@ -222,12 +293,12 @@ async function loadSummary(){
   const data=snap.exists()?snap.val():{};
   const entries=Object.entries(data).filter(([,v])=>Number.isFinite(Number(v?._meta?.monthlyTotal))).sort((a,b)=>b[0].localeCompare(a[0]));
   if(!entries.length){
-    $("latestTotal").textContent="-"; $("yearTotal").textContent="-"; $("latestMonth").textContent="-"; $("latestMonthSub").textContent="기존자료 미등록"; return;
+    $("latestTotal").textContent="-"; $("yearTotal").textContent="-"; $("latestMonth").textContent="-"; $("latestMonthSub").textContent="월 발전량 없음"; return;
   }
   const [latestMonth,latest]=entries[0];
   $("latestTotal").textContent=fmt(latest._meta.monthlyTotal);
   $("latestMonth").textContent=latestMonth;
-  $("latestMonthSub").textContent=latest._meta?.source==="xlsx-history"?"기존자료":"월검침 계산";
+  $("latestMonthSub").textContent="월 발전량";
   const year=latestMonth.slice(0,4);
   let yTotal=0,count=0;
   for(const [m,v] of entries){
@@ -343,7 +414,7 @@ function initPassword(){
 
 async function init(){
   const requiredIds = [
-    "equipmentInputs", "photoGrid", "historyYear", "passwordDialog",
+    "equipmentInputs", "photoGrid", "historyYear", "historyHead", "historyBody", "historyFoot", "passwordDialog",
     "passwordForm", "unlockBtn", "readingMonth", "photoMonth",
     "readingForm", "migrationBtn"
   ];
