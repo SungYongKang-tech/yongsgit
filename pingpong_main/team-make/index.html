@@ -199,6 +199,7 @@
     <div class="player-input-pair">
       <input type="text" id="newName" placeholder="이름" />
       <input type="number" id="newLevel" placeholder="부수" min="1" max="20" />
+      <input type="text" id="newOrganization" placeholder="상대기관 (예: 저작권위원회, LH)" style="width:180px;" />
     </div>
     <div class="button-group">
       <button onclick="addPlayer()">선수 추가</button>
@@ -270,48 +271,25 @@
       <h2>⚔️ 교류전 설정</h2>
 
       <div class="modal-section">
-        <h3>1️⃣ 우리팀 선택</h3>
-        <input type="text" id="ourTeamInput" oninput="renderExchangePlayerSelector()" placeholder="우리팀 이름을 입력 (예: 남동발전)" style="width:100%;padding:6px;font-size:14px;">
-        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
-          <button onclick="document.getElementById('ourTeamInput').value='남동발전'; renderExchangePlayerSelector()">남동발전</button>
-        </div>
-      </div>
-
-      <div class="modal-section">
-        <h3>2️⃣ 상대팀 선택</h3>
-        <input type="text" id="opponentTeamInput" oninput="renderExchangePlayerSelector()" placeholder="상대팀 이름을 입력" style="width:100%;padding:6px;font-size:14px;">
-        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
-          <button onclick="document.getElementById('opponentTeamInput').value='한국토지주택공사'; renderExchangePlayerSelector()">한국토지주택공사</button>
-          <button onclick="document.getElementById('opponentTeamInput').value='저작권위원회'; renderExchangePlayerSelector()">저작권위원회</button>
-        </div>
-      </div>
-
-      <div class="modal-section">
-        <h3>3️⃣ 팀 수 설정</h3>
-        <p style="margin:4px 0;">각 항목은 클릭 또는 직접 입력 가능합니다.</p>
-        <div>
-          <label>우리팀: <input type="number" id="ourCountInput" value="2" min="0" max="8" style="width:60px;"> 팀</label>
-        </div>
-        <div style="margin-top:10px;">
-          <label>상대팀: <input type="number" id="opponentCountInput" value="2" min="0" max="8" style="width:60px;"> 팀</label>
-        </div>
-        <div style="margin-top:10px;">
-          <label>혼합팀: <input type="number" id="mixedCountInput" value="0" min="0" max="8" style="width:60px;"> 팀</label>
-        </div>
-      </div>
-
-      <div class="modal-section">
-        <h3>4️⃣ 선수 소속 구분</h3>
+        <h3>1️⃣ 참가 기관</h3>
         <p style="margin:4px 0 8px;font-size:13px;line-height:1.5;">
-          참석 선수마다 <b>우리팀 / 상대팀</b> 소속을 지정하세요.
-          일반 교류전에서는 두 기관 선수가 서로 섞이지 않습니다.
+          기존 직원은 자동으로 <b>남동발전</b> 소속입니다. 새로 추가한 선수는 선수 추가 때 입력한 기관으로 자동 분류됩니다.
         </p>
-        <div id="exchangePlayerSelector" class="exchange-player-list"></div>
-        <div id="exchangeAssignSummary" class="exchange-summary">선수 소속을 지정해주세요.</div>
+        <div id="exchangeOrgSummary" style="background:#f7f9fc;border:1px solid #d7e1ef;border-radius:8px;padding:10px;font-size:13px;line-height:1.6;"></div>
       </div>
 
-      <div style="background:#fff8e1;border:1px solid #f0cc72;border-radius:8px;padding:9px;font-size:12px;line-height:1.5;">
-        ※ 혼합팀을 1팀 이상 선택한 경우에만 양 기관 선수 일부를 혼합팀으로 이동시켜 구성합니다.
+      <div class="modal-section">
+        <h3>2️⃣ 기관별 팀 수</h3>
+        <p style="margin:4px 0 8px;font-size:13px;line-height:1.5;">
+          예: 남동발전 1팀 + 저작권위원회 1팀 + LH 1팀이면 세 기관이 서로 한 번씩 경기합니다.
+        </p>
+        <div id="exchangeTeamCountArea"></div>
+      </div>
+
+      <div class="modal-section">
+        <h3>3️⃣ 선수 소속 확인</h3>
+        <div id="exchangePlayerSelector" class="exchange-player-list"></div>
+        <div id="exchangeAssignSummary" class="exchange-summary">선수 소속을 확인해주세요.</div>
       </div>
 
       <div style="text-align:center;margin-top:20px;">
@@ -428,9 +406,9 @@
     let selected = [];
     let latestTeams = [];
 
-    // 교류전: 선택 선수의 기관 소속(OUR / OPP)
+    // 교류전: 선택 선수와 기관별 팀 수
     let exchangePoolIdx = [];
-    let exchangeAffiliations = {};
+    let exchangeOrganizations = [];
 
     function recomputeTeamSums(team){
       team.sumLevel = team.members.reduce((s, p) => s + Number(p.level || 0), 0);
@@ -461,6 +439,7 @@
           name: (p?.name ?? "").trim(),
           level: Number(p?.bu ?? 0),      // ✅ bu -> level
           strength: Number(p?.strength ?? 0),
+          organization: "남동발전",
           new: false
         })).filter(p => p.name && p.level > 0);
 
@@ -468,7 +447,7 @@
 
         // LocalStorage 신규 선수 병합
         const saved = JSON.parse(localStorage.getItem("addedPlayers") || "[]");
-        saved.forEach(p => allPlayers.push({ ...p, new: true }));
+        saved.forEach(p => allPlayers.push({ ...p, organization: String(p.organization || "상대기관").trim(), new: true }));
 
         renderPlayers();
       } catch (err) {
@@ -500,7 +479,7 @@
         el.className = "player";
 
         el.innerHTML = `
-          ${p.name}(${p.level})
+          ${p.name}(${p.level})${p.new && p.organization ? ` · ${p.organization}` : ''}
           ${p.new ? `<button onclick="removeSingleAddedPlayer(${i})"
             style="margin-left:6px; font-size:12px; padding:2px 5px; background:#f44336; color:white; border:none; border-radius:4px; cursor:pointer;">✖</button>` : ''}
         `;
@@ -855,16 +834,22 @@
     function addPlayer() {
       const nameInput = document.getElementById("newName");
       const levelInput = document.getElementById("newLevel");
+      const orgInput = document.getElementById("newOrganization");
 
       const name = nameInput.value.trim();
       const level = parseInt(levelInput.value, 10);
+      const organization = String(orgInput?.value || "").trim();
 
       if (!name || isNaN(level) || level < 1 || level > 20) {
         alert("이름과 부수를 올바르게 입력해주세요. (부수는 1~20)");
         return;
       }
+      if (!organization) {
+        alert("새로 추가하는 선수는 상대 기관명을 입력해주세요. 예: 저작권위원회, LH");
+        return;
+      }
 
-      const newPlayer = { name, level, new: true };
+      const newPlayer = { name, level, organization, new: true };
       allPlayers.push(newPlayer);
 
       const stored = JSON.parse(localStorage.getItem("addedPlayers") || "[]");
@@ -873,6 +858,7 @@
 
       nameInput.value = "";
       levelInput.value = "";
+      orgInput.value = "";
       renderPlayers();
     }
 
@@ -917,8 +903,8 @@
 
         // 새 경기 시작: 팀/설정 저장 + 이전 대진/결과 초기화
         await set(ref(db, "teams"), firebaseData);
-        const isExchange = latestTeams.some(t => ["OUR", "OPP", "MIX"].includes(t.teamType));
-        const organizations = [...new Set(latestTeams.map(t => t.organization).filter(v => v && v !== "MIX"))];
+        const organizations = [...new Set(latestTeams.map(t => t.organization).filter(Boolean))];
+        const isExchange = organizations.length >= 2 || latestTeams.some(t => t.teamType === "ORG");
 
         await set(ref(db, "team_event_config"), {
           eventName,
@@ -1002,14 +988,26 @@
  *********************************************************/
 function createExchangeMatch() {
   exchangePoolIdx = selected.length ? [...selected] : allPlayers.map((_, i) => i);
-  exchangeAffiliations = {};
+  const poolPlayers = exchangePoolIdx.map(i => allPlayers[i]).filter(Boolean);
 
-  if (exchangePoolIdx.length < 2) {
+  if (poolPlayers.length < 2) {
     alert("선수가 2명 이상 있어야 합니다.");
     return;
   }
 
-  renderExchangePlayerSelector();
+  const missingOrg = poolPlayers.filter(p => !String(p.organization || "").trim());
+  if (missingOrg.length) {
+    alert(`기관이 지정되지 않은 선수가 있습니다.\n\n${missingOrg.map(p=>p.name).join(", ")}`);
+    return;
+  }
+
+  exchangeOrganizations = [...new Set(poolPlayers.map(p => String(p.organization).trim()))];
+  if (exchangeOrganizations.length < 2) {
+    alert("교류전은 최소 2개 기관이 필요합니다. 새 선수에 상대 기관명을 입력해주세요.");
+    return;
+  }
+
+  renderExchangeSetup();
   document.getElementById("exchangeModal").style.display = "flex";
 }
 
@@ -1017,243 +1015,138 @@ function closeExchangeModal() {
   document.getElementById("exchangeModal").style.display = "none";
 }
 
-function setExchangeAffiliation(playerIdx, side) {
-  exchangeAffiliations[playerIdx] = side;
-  renderExchangePlayerSelector();
-}
+function renderExchangeSetup() {
+  const summary = document.getElementById("exchangeOrgSummary");
+  const countArea = document.getElementById("exchangeTeamCountArea");
+  const selector = document.getElementById("exchangePlayerSelector");
+  const assignSummary = document.getElementById("exchangeAssignSummary");
+  if (!summary || !countArea || !selector || !assignSummary) return;
 
-function renderExchangePlayerSelector() {
-  const box = document.getElementById("exchangePlayerSelector");
-  const summary = document.getElementById("exchangeAssignSummary");
-  if (!box || !summary) return;
+  const grouped = {};
+  exchangeOrganizations.forEach(org => grouped[org] = []);
+  exchangePoolIdx.forEach(i => {
+    const p = allPlayers[i];
+    if (!p) return;
+    const org = String(p.organization || "").trim();
+    if (!grouped[org]) grouped[org] = [];
+    grouped[org].push(p);
+  });
 
-  const ourName = (document.getElementById("ourTeamInput")?.value || "우리팀").trim() || "우리팀";
-  const oppName = (document.getElementById("opponentTeamInput")?.value || "상대팀").trim() || "상대팀";
+  summary.innerHTML = exchangeOrganizations.map(org =>
+    `<div><b>${org}</b> · ${grouped[org]?.length || 0}명</div>`
+  ).join("");
 
-  box.innerHTML = exchangePoolIdx.map(idx => {
-    const p = allPlayers[idx];
-    if (!p) return "";
-    const side = exchangeAffiliations[idx] || "";
-    return `
-      <div class="exchange-player-row">
-        <span class="player-name">${p.name}(${p.level})</span>
-        <button type="button" class="exchange-side-btn our ${side === "OUR" ? "active" : ""}"
-          onclick="setExchangeAffiliation(${idx}, 'OUR')">${ourName}</button>
-        <button type="button" class="exchange-side-btn opp ${side === "OPP" ? "active" : ""}"
-          onclick="setExchangeAffiliation(${idx}, 'OPP')">${oppName}</button>
-      </div>`;
+  countArea.innerHTML = exchangeOrganizations.map(org => {
+    const n = grouped[org]?.length || 0;
+    const maxTeams = Math.max(1, Math.min(8, n));
+    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0;padding:8px;background:#fafafa;border-radius:8px;">
+      <span><b>${org}</b> (${n}명)</span>
+      <label><input type="number" class="exchange-org-count" data-org="${org}" value="1" min="1" max="${maxTeams}" style="width:58px;padding:5px;"> 팀</label>
+    </div>`;
   }).join("");
 
-  const ourCnt = exchangePoolIdx.filter(i => exchangeAffiliations[i] === "OUR").length;
-  const oppCnt = exchangePoolIdx.filter(i => exchangeAffiliations[i] === "OPP").length;
-  const noneCnt = exchangePoolIdx.length - ourCnt - oppCnt;
-  summary.innerHTML = `<b>${ourName}</b> ${ourCnt}명 &nbsp; / &nbsp; <b>${oppName}</b> ${oppCnt}명 &nbsp; / &nbsp; 미지정 ${noneCnt}명`;
+  selector.innerHTML = exchangeOrganizations.map(org => {
+    const players = grouped[org] || [];
+    return `<div style="margin-bottom:10px;padding:9px;border:1px solid #ddd;border-radius:8px;">
+      <div style="font-weight:800;margin-bottom:5px;">${org}</div>
+      <div style="font-size:13px;line-height:1.7;">${players.map(p => `${p.name}(${p.level})`).join(", ") || "선수 없음"}</div>
+    </div>`;
+  }).join("");
+
+  assignSummary.innerHTML = `총 ${exchangePoolIdx.length}명 · ${exchangeOrganizations.length}개 기관`;
 }
 
 function distributePlayersBalanced(players, teams) {
-  if (!teams.length) return players.slice();
-  const sorted = shuffle(players).slice().sort((a, b) => a.level - b.level);
-  const total = sorted.length;
-  const base = Math.floor(total / teams.length);
-  const extra = total % teams.length;
-  const maxPerTeam = teams.map((_, i) => base + (i < extra ? 1 : 0));
+  if (!teams.length) return;
+  const sorted = shuffle(players).slice().sort((a,b) => a.level - b.level);
 
-  sorted.forEach(p => {
-    const candidates = teams
-      .map((t, i) => ({ t, i }))
-      .filter(x => x.t.members.length < maxPerTeam[x.i]);
-    if (!candidates.length) return;
-
-    const minMembers = Math.min(...candidates.map(x => x.t.members.length));
-    const sameSize = candidates.filter(x => x.t.members.length === minMembers);
-    const target = sameSize.reduce((a, b) => {
-      const avgA = avgLevel(a.t), avgB = avgLevel(b.t);
-      if (avgA !== avgB) return avgA > avgB ? a : b;
-      return a.i < b.i ? a : b;
-    }).t;
-
-    target.members.push(p);
-    recomputeTeamSums(target);
-  });
-
-  return [];
-}
-
-function takeMixedPlayers(ourPlayers, oppPlayers, mixedCount, totalTeamCount) {
-  if (mixedCount <= 0) return { mixedPlayers: [], ourRemain: ourPlayers, oppRemain: oppPlayers };
-
-  const allTotal = ourPlayers.length + oppPlayers.length;
-  const targetMixed = Math.max(mixedCount * 2, Math.round(allTotal * mixedCount / Math.max(1, totalTeamCount)));
-  let wantOur = Math.floor(targetMixed / 2);
-  let wantOpp = targetMixed - wantOur;
-
-  wantOur = Math.min(wantOur, ourPlayers.length);
-  wantOpp = Math.min(wantOpp, oppPlayers.length);
-
-  // 한쪽이 부족하면 남는 자리만큼 반대쪽에서 보충
-  let shortage = targetMixed - wantOur - wantOpp;
-  if (shortage > 0) {
-    const addOur = Math.min(shortage, ourPlayers.length - wantOur);
-    wantOur += addOur; shortage -= addOur;
-  }
-  if (shortage > 0) {
-    const addOpp = Math.min(shortage, oppPlayers.length - wantOpp);
-    wantOpp += addOpp;
+  // 먼저 각 팀에 한 명씩 배정하여 빈 팀 평균 0 문제 방지
+  let cursor = 0;
+  for (; cursor < sorted.length && cursor < teams.length; cursor++) {
+    teams[cursor].members.push(sorted[cursor]);
+    recomputeTeamSums(teams[cursor]);
   }
 
-  const ourSorted = [...ourPlayers].sort((a,b) => a.level - b.level);
-  const oppSorted = [...oppPlayers].sort((a,b) => a.level - b.level);
-
-  // 강/약이 한쪽에만 몰리지 않도록 앞/뒤에서 번갈아 추출
-  function takeBalanced(list, cnt) {
-    const work = [...list];
-    const picked = [];
-    let front = true;
-    while (picked.length < cnt && work.length) {
-      picked.push(front ? work.shift() : work.pop());
-      front = !front;
+  for (; cursor < sorted.length; cursor++) {
+    const p = sorted[cursor];
+    let best = null;
+    let bestScore = Infinity;
+    for (const t of teams) {
+      const newCount = t.members.length + 1;
+      const newAvg = (t.sumLevel + Number(p.level || 0)) / newCount;
+      const counts = teams.map(x => x === t ? newCount : x.members.length);
+      const countGap = Math.max(...counts) - Math.min(...counts);
+      const avgs = teams.map(x => x === t ? newAvg : (x.members.length ? avgLevel(x) : newAvg));
+      const avgGap = Math.max(...avgs) - Math.min(...avgs);
+      const score = countGap * 100 + avgGap;
+      if (score < bestScore) { bestScore = score; best = t; }
     }
-    const names = new Set(picked.map(p => `${p.id ?? ''}|${p.name}|${p.level}`));
-    const remain = list.filter(p => !names.has(`${p.id ?? ''}|${p.name}|${p.level}`));
-    return { picked, remain };
+    best.members.push(p);
+    recomputeTeamSums(best);
   }
-
-  const a = takeBalanced(ourSorted, wantOur);
-  const b = takeBalanced(oppSorted, wantOpp);
-  return { mixedPlayers: shuffle([...a.picked, ...b.picked]), ourRemain: a.remain, oppRemain: b.remain };
 }
 
 function confirmExchangeMatch() {
-  const ourName = (document.getElementById("ourTeamInput").value || "우리팀").trim();
-  const oppName = (document.getElementById("opponentTeamInput").value || "상대팀").trim();
+  const poolPlayers = exchangePoolIdx.map(i => allPlayers[i]).filter(Boolean);
+  const grouped = {};
+  exchangeOrganizations.forEach(org => grouped[org] = []);
+  poolPlayers.forEach(p => {
+    const org = String(p.organization || "").trim();
+    if (!grouped[org]) grouped[org] = [];
+    grouped[org].push({ ...p, organization: org });
+  });
 
-  const ourCount = Number(document.getElementById("ourCountInput").value || 0);
-  const oppCount = Number(document.getElementById("opponentCountInput").value || 0);
-  const mixedCount = Number(document.getElementById("mixedCountInput").value || 0);
+  const counts = {};
+  document.querySelectorAll(".exchange-org-count").forEach(el => {
+    counts[el.dataset.org] = Number(el.value || 1);
+  });
 
-  if (!ourName || !oppName) {
-    alert("우리팀과 상대팀 이름을 모두 입력해주세요.");
-    return;
-  }
-  if (ourName === oppName) {
-    alert("우리팀과 상대팀 이름은 다르게 입력해주세요.");
-    return;
-  }
-  if (ourCount < 0 || oppCount < 0 || mixedCount < 0) {
-    alert("팀 수는 0 이상으로 입력해주세요.");
-    return;
-  }
-
-  const totalTeams = ourCount + oppCount + mixedCount;
-  if (totalTeams <= 0) {
-    alert("최소 1팀 이상 만들어야 합니다.");
-    return;
-  }
-
-  const unassigned = exchangePoolIdx.filter(i => !exchangeAffiliations[i]);
-  if (unassigned.length) {
-    const names = unassigned.map(i => allPlayers[i]?.name).filter(Boolean).join(", ");
-    alert(`소속이 지정되지 않은 선수가 있습니다.\n\n${names}`);
-    return;
-  }
-
-  let ourPlayers = exchangePoolIdx
-    .filter(i => exchangeAffiliations[i] === "OUR")
-    .map(i => ({ ...allPlayers[i], organization: ourName }))
-    .filter(Boolean);
-  let oppPlayers = exchangePoolIdx
-    .filter(i => exchangeAffiliations[i] === "OPP")
-    .map(i => ({ ...allPlayers[i], organization: oppName }))
-    .filter(Boolean);
-
-  if (ourCount > 0 && ourPlayers.length === 0) {
-    alert(`${ourName} 소속 선수를 1명 이상 지정해주세요.`);
-    return;
-  }
-  if (oppCount > 0 && oppPlayers.length === 0) {
-    alert(`${oppName} 소속 선수를 1명 이상 지정해주세요.`);
-    return;
-  }
-  if (mixedCount > 0 && (ourPlayers.length === 0 || oppPlayers.length === 0)) {
-    alert("혼합팀은 우리팀과 상대팀 선수가 모두 있어야 만들 수 있습니다.");
-    return;
+  for (const org of exchangeOrganizations) {
+    const n = grouped[org]?.length || 0;
+    const c = Number(counts[org] || 1);
+    if (c < 1 || c > n) {
+      alert(`${org}의 팀 수는 1~${n} 사이로 입력해주세요.`);
+      return;
+    }
   }
 
   const teams = [];
-  const ourTeams = [];
-  const oppTeams = [];
-  const mixTeams = [];
-
-  for (let i = 0; i < ourCount; i++) {
-    const t = { name: `${ourName} ${i + 1}팀`, teamType: "OUR", organization: ourName, members: [], sumLevel: 0, sum: 0 };
-    teams.push(t); ourTeams.push(t);
-  }
-  for (let i = 0; i < oppCount; i++) {
-    const t = { name: `${oppName} ${i + 1}팀`, teamType: "OPP", organization: oppName, members: [], sumLevel: 0, sum: 0 };
-    teams.push(t); oppTeams.push(t);
-  }
-  for (let i = 0; i < mixedCount; i++) {
-    const t = { name: `혼합 ${i + 1}팀`, teamType: "MIX", organization: "MIX", members: [], sumLevel: 0, sum: 0 };
-    teams.push(t); mixTeams.push(t);
+  for (const org of exchangeOrganizations) {
+    const orgTeams = [];
+    const count = counts[org];
+    for (let i = 0; i < count; i++) {
+      const name = count === 1 ? org : `${org} ${i + 1}팀`;
+      const t = { name, teamType: "ORG", organization: org, members: [], sumLevel: 0, sum: 0 };
+      teams.push(t); orgTeams.push(t);
+    }
+    distributePlayersBalanced(grouped[org], orgTeams);
   }
 
-  if (mixedCount > 0) {
-    const mixed = takeMixedPlayers(ourPlayers, oppPlayers, mixedCount, totalTeams);
-    ourPlayers = mixed.ourRemain;
-    oppPlayers = mixed.oppRemain;
-    distributePlayersBalanced(mixed.mixedPlayers, mixTeams);
-  }
-
-  // 핵심: 기관별 풀을 기관별 팀에만 배정
-  distributePlayersBalanced(ourPlayers, ourTeams);
-  distributePlayersBalanced(oppPlayers, oppTeams);
   teams.forEach(recomputeTeamSums);
-
   latestTeams = teams;
   assignTeamsRender(latestTeams);
 
   const eventNameEl = document.getElementById("eventNameInput");
-  if (eventNameEl) eventNameEl.value = `${ourName} vs ${oppName} 교류전`;
+  if (eventNameEl) eventNameEl.value = `${exchangeOrganizations.join(" vs ")} 교류전`;
 
-  // 6) (선택) 교류전 매치업 출력: 우리팀 vs 상대팀 1:1 매칭(팀 수 다르면 가능한 만큼)
   const scheduleBox = document.getElementById("matchSchedule");
   if (scheduleBox) {
-    const ourTeams = teams.filter(t => t.teamType === "OUR");
-    const oppTeams = teams.filter(t => t.teamType === "OPP");
-    const mixTeams = teams.filter(t => t.teamType === "MIX");
-
-    let html = `<div style="text-align:center; font-weight:900; margin:10px 0; color:#0d47a1;">교류전 매치업</div>`;
-
-    const pairCount = Math.min(ourTeams.length, oppTeams.length);
-    if (pairCount > 0) {
-      html += `<div style="display:flex;flex-direction:column;gap:6px;">`;
-      for (let i = 0; i < pairCount; i++) {
-        html += `
-          <div style="background:#fff;border:1px solid #e0e0e0;border-radius:10px;padding:10px;">
-            <b>${ourTeams[i].name}</b> vs <b>${oppTeams[i].name}</b>
-          </div>
-        `;
+    const pairings = [];
+    for (let i = 0; i < teams.length; i++) {
+      for (let j = i + 1; j < teams.length; j++) {
+        if (teams[i].organization === teams[j].organization) continue;
+        pairings.push([teams[i].name, teams[j].name]);
       }
-      html += `</div>`;
-    } else {
-      html += `<div style="background:#fff;border:1px solid #e0e0e0;border-radius:10px;padding:10px;">
-                우리팀/상대팀이 모두 있어야 매치업을 만들 수 있습니다. (혼합팀만 생성된 상태일 수 있어요)
-              </div>`;
     }
-
-    if (mixTeams.length) {
-      html += `<div style="margin-top:10px; font-size:13px; color:#444;">
-                혼합팀: ${mixTeams.map(t => t.name).join(", ")}
-              </div>`;
-    }
-
-    scheduleBox.innerHTML = html;
+    scheduleBox.innerHTML = `
+      <div style="text-align:center;font-weight:900;margin:10px 0;color:#0d47a1;">교류전 매치업</div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        ${pairings.map(([a,b]) => `<div style="background:#fff;border:1px solid #e0e0e0;border-radius:10px;padding:10px;"><b>${a}</b> vs <b>${b}</b></div>`).join("")}
+      </div>`;
   }
 
   closeExchangeModal();
 }
-
-   
 
     /*********************************************************
      * ✅ module 스코프 -> window 노출 (onclick용)
@@ -1282,7 +1175,6 @@ function confirmExchangeMatch() {
     window.closeExchangeModal = closeExchangeModal;
     window.confirmExchangeMatch = confirmExchangeMatch;
     window.setExchangeAffiliation = setExchangeAffiliation;
-    window.renderExchangePlayerSelector = renderExchangePlayerSelector;
 
 
    

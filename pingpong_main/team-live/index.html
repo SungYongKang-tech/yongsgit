@@ -551,32 +551,19 @@
 
     /* ---------------- 경기 조합 생성 ---------------- */
     function getTeamPairings() {
-      // 일반 단체전: 기존처럼 모든 팀 풀리그
       const isExchange = eventConfig?.eventType === "EXCHANGE" ||
-        teamNames.some(name => ["OUR", "OPP", "MIX"].includes(teamData[name]?.teamType));
+        new Set(teamNames.map(name => String(teamData[name]?.organization || "").trim()).filter(Boolean)).size >= 2;
 
-      if (!isExchange) {
-        const pairs = [];
-        for (let i = 0; i < teamNames.length; i++) {
-          for (let j = i + 1; j < teamNames.length; j++) {
-            pairs.push([teamNames[i], teamNames[j]]);
-          }
-        }
-        return pairs;
-      }
-
-      // 교류전: 같은 기관끼리는 절대 대진하지 않음
-      const ours = teamNames.filter(name => teamData[name]?.teamType === "OUR");
-      const opps = teamNames.filter(name => teamData[name]?.teamType === "OPP");
-      const mixes = teamNames.filter(name => teamData[name]?.teamType === "MIX");
       const pairs = [];
-
-      ours.forEach(a => opps.forEach(b => pairs.push([a, b])));
-
-      // 혼합팀은 혼합팀끼리 2팀 이상 있을 때만 별도 대진
-      for (let i = 0; i < mixes.length; i++) {
-        for (let j = i + 1; j < mixes.length; j++) {
-          pairs.push([mixes[i], mixes[j]]);
+      for (let i = 0; i < teamNames.length; i++) {
+        for (let j = i + 1; j < teamNames.length; j++) {
+          if (isExchange) {
+            const orgA = String(teamData[teamNames[i]]?.organization || "").trim();
+            const orgB = String(teamData[teamNames[j]]?.organization || "").trim();
+            // 교류전은 같은 기관 소속 팀끼리 자동 대진하지 않음
+            if (orgA && orgB && orgA === orgB) continue;
+          }
+          pairs.push([teamNames[i], teamNames[j]]);
         }
       }
       return pairs;
