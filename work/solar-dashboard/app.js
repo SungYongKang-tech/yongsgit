@@ -577,37 +577,79 @@ async function exportGenerationExcel(startMonth, endMonth){
   };
 
   const aoa = [];
-  aoa.push(["본사사옥 태양광 월별 발전량"]);
+  aoa.push(["본사사옥 태양광 월별 발전량(kWh)"]);
   aoa.push(["조회기간", `${startMonth} ~ ${endMonth}`]);
   aoa.push([]);
   aoa.push(["발전월", ...visibleEquipment.map(e => equipmentName[e.id] || e.label || e.id), "합계(kWh)"]);
 
   const equipmentTotals = Object.fromEntries(visibleEquipment.map(e => [e.id, 0]));
+  const yearTotals = {};
   let grandTotal = 0;
+  let currentYear = null;
+
+  const pushYearTotal = (year) => {
+    if(!year || !yearTotals[year]) return;
+    const y = yearTotals[year];
+    aoa.push([
+      `${year}년 합계`,
+      ...visibleEquipment.map(e => y.equipment[e.id] || 0),
+      y.total
+    ]);
+  };
 
   for(const [month, value] of rowsInRange){
+    const year = month.slice(0, 4);
+
+    if(currentYear && year !== currentYear){
+      pushYearTotal(currentYear);
+      aoa.push([]);
+    }
+    currentYear = year;
+
+    if(!yearTotals[year]){
+      yearTotals[year] = {
+        equipment: Object.fromEntries(visibleEquipment.map(e => [e.id, 0])),
+        total: 0
+      };
+    }
+
     const vals = visibleEquipment.map(e => {
       const n = Number(value?.[e.id]?.monthlyGeneration);
       const v = Number.isFinite(n) ? n : 0;
       equipmentTotals[e.id] += v;
+      yearTotals[year].equipment[e.id] += v;
       return v;
     });
+
     const total = vals.reduce((sum, n) => sum + n, 0);
     grandTotal += total;
+    yearTotals[year].total += total;
     aoa.push([month, ...vals, total]);
   }
 
+  pushYearTotal(currentYear);
   aoa.push([]);
-  aoa.push(["합계", ...visibleEquipment.map(e => equipmentTotals[e.id]), grandTotal]);
+  aoa.push(["전체 합계", ...visibleEquipment.map(e => equipmentTotals[e.id]), grandTotal]);
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws["!cols"] = [
-    { wch: 12 },
+    { wch: 14 },
     ...visibleEquipment.map(() => ({ wch: 22 })),
-    { wch: 15 }
+    { wch: 16 }
   ];
 
   ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: visibleEquipment.length + 1 } }];
+
+  // 모든 발전량 숫자는 천 단위 쉼표 + 소수점 1자리로 표시합니다.
+  const numericStartCol = 1;
+  const numericEndCol = visibleEquipment.length + 1;
+  for(let r = 4; r < aoa.length; r++){
+    for(let c = numericStartCol; c <= numericEndCol; c++){
+      const address = XLSX.utils.encode_cell({ r, c });
+      const cell = ws[address];
+      if(cell && cell.t === "n") cell.z = "#,##0.0";
+    }
+  }
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "월별 발전량");
