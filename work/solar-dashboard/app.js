@@ -339,27 +339,51 @@ async function loadSummary(){
     .filter(([month]) => /^\d{4}-\d{2}$/.test(month))
     .sort((a,b) => a[0].localeCompare(b[0]));
 
-  let allTimeTotal = 0;
-  let total2026 = 0;
-  let months2026 = 0;
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const yearlyTotals = {};
 
   for(const [month, value] of entries){
     const total = monthlyTotalOf(value);
     if(!Number.isFinite(total)) continue;
+    const year = month.slice(0, 4);
+    yearlyTotals[year] = (yearlyTotals[year] || 0) + total;
+  }
 
-    allTimeTotal += total;
+  // 2024년과 2025년 두 해의 연간 발전량 평균
+  const total2024 = Number(yearlyTotals["2024"]);
+  const total2025 = Number(yearlyTotals["2025"]);
+  const annualAverage = Number.isFinite(total2024) && Number.isFinite(total2025)
+    ? (total2024 + total2025) / 2
+    : null;
 
-    if(month.startsWith("2026-")){
-      total2026 += total;
-      months2026++;
+  // 올해 현재까지 누적 발전량
+  const currentYearTotal = Number(yearlyTotals[String(currentYear)]);
+
+  // 가장 최근 저장된 월을 이번 달 실적으로 표시하고 바로 전월과 비교
+  const latestEntry = entries.length ? entries[entries.length - 1] : null;
+  let latestMonthlyTotal = null;
+  let monthlyCompareText = "지난달 비교자료 없음";
+
+  if(latestEntry){
+    const [latestMonth, latestValue] = latestEntry;
+    latestMonthlyTotal = monthlyTotalOf(latestValue);
+
+    const prevMonth = previousMonthISO(latestMonth);
+    const prevValue = data[prevMonth];
+    const prevTotal = prevValue ? monthlyTotalOf(prevValue) : null;
+
+    if(Number.isFinite(latestMonthlyTotal) && Number.isFinite(prevTotal) && prevTotal !== 0){
+      const rate = ((latestMonthlyTotal - prevTotal) / prevTotal) * 100;
+      const sign = rate > 0 ? "+" : "";
+      monthlyCompareText = `지난달 대비 ${sign}${rate.toFixed(1)}%`;
     }
   }
 
-  const expected2026 = months2026 > 0 ? (total2026 / months2026) * 12 : null;
-
-  $("allTimeTotal").textContent = entries.length ? fmt(allTimeTotal) : "-";
-  $("total2026").textContent = months2026 ? fmt(total2026) : "-";
-  $("expected2026").textContent = Number.isFinite(expected2026) ? fmt(expected2026) : "-";
+  $("annualAverage").textContent = Number.isFinite(annualAverage) ? fmt(annualAverage, 0) : "-";
+  $("currentYearTotal").textContent = Number.isFinite(currentYearTotal) ? fmt(currentYearTotal, 0) : "-";
+  $("currentMonthTotal").textContent = Number.isFinite(latestMonthlyTotal) ? fmt(latestMonthlyTotal, 0) : "-";
+  $("monthlyCompare").textContent = monthlyCompareText;
   $("nextInspectionDate").textContent = getNextInspectionDate();
 }
 
@@ -577,79 +601,37 @@ async function exportGenerationExcel(startMonth, endMonth){
   };
 
   const aoa = [];
-  aoa.push(["본사사옥 태양광 월별 발전량(kWh)"]);
+  aoa.push(["본사사옥 태양광 월별 발전량"]);
   aoa.push(["조회기간", `${startMonth} ~ ${endMonth}`]);
   aoa.push([]);
   aoa.push(["발전월", ...visibleEquipment.map(e => equipmentName[e.id] || e.label || e.id), "합계(kWh)"]);
 
   const equipmentTotals = Object.fromEntries(visibleEquipment.map(e => [e.id, 0]));
-  const yearTotals = {};
   let grandTotal = 0;
-  let currentYear = null;
-
-  const pushYearTotal = (year) => {
-    if(!year || !yearTotals[year]) return;
-    const y = yearTotals[year];
-    aoa.push([
-      `${year}년 합계`,
-      ...visibleEquipment.map(e => y.equipment[e.id] || 0),
-      y.total
-    ]);
-  };
 
   for(const [month, value] of rowsInRange){
-    const year = month.slice(0, 4);
-
-    if(currentYear && year !== currentYear){
-      pushYearTotal(currentYear);
-      aoa.push([]);
-    }
-    currentYear = year;
-
-    if(!yearTotals[year]){
-      yearTotals[year] = {
-        equipment: Object.fromEntries(visibleEquipment.map(e => [e.id, 0])),
-        total: 0
-      };
-    }
-
     const vals = visibleEquipment.map(e => {
       const n = Number(value?.[e.id]?.monthlyGeneration);
       const v = Number.isFinite(n) ? n : 0;
       equipmentTotals[e.id] += v;
-      yearTotals[year].equipment[e.id] += v;
       return v;
     });
-
     const total = vals.reduce((sum, n) => sum + n, 0);
     grandTotal += total;
-    yearTotals[year].total += total;
     aoa.push([month, ...vals, total]);
   }
 
-  pushYearTotal(currentYear);
   aoa.push([]);
-  aoa.push(["전체 합계", ...visibleEquipment.map(e => equipmentTotals[e.id]), grandTotal]);
+  aoa.push(["합계", ...visibleEquipment.map(e => equipmentTotals[e.id]), grandTotal]);
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws["!cols"] = [
-    { wch: 14 },
+    { wch: 12 },
     ...visibleEquipment.map(() => ({ wch: 22 })),
-    { wch: 16 }
+    { wch: 15 }
   ];
 
   ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: visibleEquipment.length + 1 } }];
-
-  // 모든 발전량 숫자는 천 단위 쉼표 + 소수점 1자리로 표시합니다.
-  const numericStartCol = 1;
-  const numericEndCol = visibleEquipment.length + 1;
-  for(let r = 4; r < aoa.length; r++){
-    for(let c = numericStartCol; c <= numericEndCol; c++){
-      const address = XLSX.utils.encode_cell({ r, c });
-      const cell = ws[address];
-      if(cell && cell.t === "n") cell.z = "#,##0";
-    }
-  }
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "월별 발전량");
@@ -722,7 +704,7 @@ async function init(){
   const requiredIds = [
     "equipmentInputs", "photoGrid", "historyYear", "historyHead", "historyBody", "historyFoot", "passwordDialog",
     "passwordForm", "unlockBtn", "readingMonth", "photoMonth", "readingForm",
-    "allTimeTotal", "expected2026", "total2026", "nextInspectionDate",
+    "annualAverage", "currentYearTotal", "currentMonthTotal", "monthlyCompare", "nextInspectionDate",
     "exportExcelBtn", "excelDialog", "excelForm", "excelStartMonth", "excelEndMonth", "cancelExcel"
   ];
   const missingIds = requiredIds.filter(id => !$(id));
