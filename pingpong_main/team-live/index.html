@@ -280,6 +280,61 @@
       color:#fff;
     }
     .btn-score-bo5:hover{ background-color:#ef6c00; }
+
+
+    /* ===== 개인 성적 / 실시간 시상 ===== */
+    .personal-summary-title,
+    .awards-title {
+      text-align:center;
+      margin:22px 0 10px;
+      color:#0d47a1;
+    }
+    .awards-wrap {
+      width:100%;
+      max-width:640px;
+      margin:12px auto 0;
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:8px;
+    }
+    .award-item {
+      background:#fff;
+      border:1px solid #d9e2ec;
+      border-radius:9px;
+      padding:9px 10px;
+      min-width:0;
+    }
+    .award-main {
+      font-size:15px;
+      font-weight:800;
+      color:#222;
+      line-height:1.25;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .award-desc {
+      margin-top:3px;
+      font-size:10.5px;
+      color:#666;
+      line-height:1.2;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .award-status {
+      text-align:center;
+      font-size:11px;
+      color:#777;
+      margin:0 0 8px;
+    }
+    @media (max-width: 520px) {
+      .awards-wrap { grid-template-columns:1fr; gap:6px; }
+      .award-item { padding:8px 10px; }
+      .award-main { font-size:14px; }
+      .award-desc { font-size:10px; }
+    }
+
   </style>
 </head>
 
@@ -1659,11 +1714,56 @@
       if (fill) fill.style.width = `${pct}%`;
     }
 
-    /* ---------------- 순위 계산 ---------------- */
+    /* ---------------- 순위 / 개인성적 / 시상 계산 ---------------- */
+    function parsePlayerSide(text, teamName) {
+      const clean = String(text || "").trim();
+      if (!clean || clean === "미정") return [];
+      return clean.split("/").map(part => {
+        const m = part.trim().match(/^(.*?)\((\d+)\)$/);
+        const name = (m ? m[1] : part).trim();
+        let level = m ? Number(m[2]) : NaN;
+        if (!Number.isFinite(level)) {
+          const found = (teamData[teamName]?.players || []).find(p => String(p.name||"").trim() === name);
+          level = Number(found?.level ?? 999);
+        }
+        return { name, level, teamName };
+      }).filter(p => p.name && p.name !== "미정");
+    }
+
+    function stableAwardRandom(awardKey, player) {
+      const base = `${eventConfig?.eventName || "단체전"}|${awardKey}|${player.name}|${player.level}|${player.teamName}`;
+      let h = 2166136261;
+      for (let i=0; i<base.length; i++) {
+        h ^= base.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+      return (h >>> 0) / 4294967296;
+    }
+
+    function chooseTiedWinner(candidates, awardKey, alreadyAwarded) {
+      if (!candidates.length) return null;
+      let pool = candidates.slice();
+
+      // 1) 위에서 아직 상을 받지 않은 사람 우선
+      const fresh = pool.filter(p => !alreadyAwarded.has(`${p.teamName}::${p.name}`));
+      if (fresh.length) pool = fresh;
+
+      // 2) 하위부수 우선: 부수 숫자가 큰 선수 우선
+      const maxLevel = Math.max(...pool.map(p => Number(p.level || 0)));
+      pool = pool.filter(p => Number(p.level || 0) === maxLevel);
+
+      // 3) 그래도 동률이면 대회별 고정 랜덤 1명
+      pool.sort((a,b) => stableAwardRandom(awardKey, a) - stableAwardRandom(awardKey, b));
+      return pool[0] || null;
+    }
+
     function calculateTeamResults() {
       const cards = document.querySelectorAll(".match-card");
       const stats = {};
       const teams = new Set();
+      const people = {};
+      let totalRows = 0;
+      let completedRows = 0;
 
       cards.forEach(card => {
         const teamA = card.dataset.teamA;
@@ -1674,6 +1774,21 @@
 
       teams.forEach(t => stats[t] = { matchWin:0, matchLose:0, gameWin:0, gameLose:0, setDiff:0 });
 
+      function ensurePerson(p) {
+        const key = `${p.teamName}::${p.name}`;
+        if (!people[key]) {
+          people[key] = {
+            key, name:p.name, level:Number(p.level||999), teamName:p.teamName,
+            played:0, win:0, lose:0,
+            singlesWin:0, singlesLose:0,
+            doublesWin:0, doublesLose:0,
+            setFor:0, setAgainst:0, setDiff:0,
+            clutchWin:0, closeLose:0
+          };
+        }
+        return people[key];
+      }
+
       cards.forEach(card => {
         const teamA = card.dataset.teamA;
         const teamB = card.dataset.teamB;
@@ -1681,21 +1796,61 @@
 
         const rows = card.querySelectorAll("tbody tr");
         let wA=0, wB=0, sA=0, sB=0, completed=0;
+        totalRows += rows.length;
 
         rows.forEach(r => {
           const result = r.children[2].innerText.trim();
           if (!result.includes(":")) return;
           const [a,b] = result.split(":").map(Number);
           if (!Number.isFinite(a) || !Number.isFinite(b) || a === b) return;
+
           completed++;
+          completedRows++;
           if (a>b) wA++; else wB++;
           sA += a; sB += b;
+
+          const playerText = r.children[1].innerText.trim();
+          if (!playerText.includes(" vs ")) return;
+          const [leftTxt, rightTxt] = playerText.split(" vs ");
+          const left = parsePlayerSide(leftTxt, teamA);
+          const right = parsePlayerSide(rightTxt, teamB);
+          const isDoubles = left.length >= 2 || right.length >= 2 || r.children[0].innerText.includes("복");
+          const fullSet = (Math.max(a,b) === 2 && Math.min(a,b) === 1) ||
+                          (Math.max(a,b) === 3 && Math.min(a,b) === 2);
+
+          left.forEach(p => {
+            const st = ensurePerson(p);
+            st.played++;
+            st.setFor += a; st.setAgainst += b; st.setDiff += (a-b);
+            if (a>b) {
+              st.win++;
+              if (isDoubles) st.doublesWin++; else st.singlesWin++;
+              if (fullSet) st.clutchWin++;
+            } else {
+              st.lose++;
+              if (isDoubles) st.doublesLose++; else st.singlesLose++;
+              if (fullSet) st.closeLose++;
+            }
+          });
+          right.forEach(p => {
+            const st = ensurePerson(p);
+            st.played++;
+            st.setFor += b; st.setAgainst += a; st.setDiff += (b-a);
+            if (b>a) {
+              st.win++;
+              if (isDoubles) st.doublesWin++; else st.singlesWin++;
+              if (fullSet) st.clutchWin++;
+            } else {
+              st.lose++;
+              if (isDoubles) st.doublesLose++; else st.singlesLose++;
+              if (fullSet) st.closeLose++;
+            }
+          });
         });
 
         stats[teamA].gameWin += wA; stats[teamA].gameLose += wB; stats[teamA].setDiff += (sA-sB);
         stats[teamB].gameWin += wB; stats[teamB].gameLose += wA; stats[teamB].setDiff += (sB-sA);
 
-        // 해당 팀 대결의 모든 세부 경기가 끝났을 때만 단체전 승패 반영
         if (completed === rows.length && rows.length > 0) {
           if (wA > wB) { stats[teamA].matchWin++; stats[teamB].matchLose++; }
           else if (wB > wA) { stats[teamB].matchWin++; stats[teamA].matchLose++; }
@@ -1718,6 +1873,92 @@
         html += `<tr><td>${team}</td><td>${st.matchWin}승 ${st.matchLose}패</td><td>${gameDiff>0?"+":""}${gameDiff}</td><td>${st.setDiff>0?"+":""}${st.setDiff}</td><td>${idx+1}</td></tr>`;
       });
       html += '</tbody></table></div>';
+
+      const persons = Object.values(people).filter(p => p.played > 0);
+      const winRate = p => p.played ? p.win / p.played : 0;
+      const personRank = [...persons].sort((a,b)=>{
+        if (b.win !== a.win) return b.win-a.win;
+        if (winRate(b) !== winRate(a)) return winRate(b)-winRate(a);
+        if (b.setDiff !== a.setDiff) return b.setDiff-a.setDiff;
+        if (b.level !== a.level) return b.level-a.level; // 하위부수 우선
+        return stableAwardRandom("PERSON_RANK", a)-stableAwardRandom("PERSON_RANK", b);
+      });
+
+      if (persons.length) {
+        html += '<h3 class="personal-summary-title">👤 실시간 개인 성적</h3>';
+        html += '<div class="scroll-table"><table><thead><tr><th>선수</th><th>출전</th><th>전체</th><th>단식</th><th>복식</th><th>세트득실</th></tr></thead><tbody>';
+        personRank.forEach(p => {
+          html += `<tr><td>${p.name}(${p.level})</td><td>${p.played}</td><td>${p.win}승 ${p.lose}패</td><td>${p.singlesWin}승 ${p.singlesLose}패</td><td>${p.doublesWin}승 ${p.doublesLose}패</td><td>${p.setDiff>0?"+":""}${p.setDiff}</td></tr>`;
+        });
+        html += '</tbody></table></div>';
+
+        const alreadyAwarded = new Set();
+        const awards = [];
+        const mark = p => { if (p) alreadyAwarded.add(`${p.teamName}::${p.name}`); };
+        const displayP = p => p ? `${p.name}(${p.level})` : "-";
+
+        // 개인 1,2,3위: 승수 → 승률 → 세트득실, 완전 동률은 공통 규칙 적용
+        const remaining = persons.slice();
+        for (let rank=1; rank<=3 && remaining.length; rank++) {
+          let bestWin = Math.max(...remaining.map(p=>p.win));
+          let tied = remaining.filter(p=>p.win===bestWin);
+          let bestRate = Math.max(...tied.map(winRate));
+          tied = tied.filter(p=>winRate(p)===bestRate);
+          let bestSet = Math.max(...tied.map(p=>p.setDiff));
+          tied = tied.filter(p=>p.setDiff===bestSet);
+          const p = chooseTiedWinner(tied, `PERSON_${rank}`, alreadyAwarded);
+          if (!p) break;
+          const icon = rank===1 ? "🥇" : rank===2 ? "🥈" : "🥉";
+          awards.push({ title:`${icon} 개인 ${rank}위 : ${displayP(p)}`, desc:`개인전 승수·승률·세트득실 종합 ${rank}위` });
+          mark(p);
+          const ix = remaining.indexOf(p); if (ix>=0) remaining.splice(ix,1);
+        }
+
+        // MVP: 전체승 3점 + 단식승 1점 + 복식승 1점 + 접전승 1점 + 세트득실 0.2점
+        persons.forEach(p => p.mvpScore = p.win*3 + p.singlesWin + p.doublesWin + p.clutchWin + p.setDiff*0.2);
+        let top = Math.max(...persons.map(p=>p.mvpScore));
+        let p = chooseTiedWinner(persons.filter(x=>x.mvpScore===top), "MVP", alreadyAwarded);
+        if (p) { awards.push({ title:`⭐ MVP : ${displayP(p)}`, desc:"승리·단식·복식·접전승을 종합한 최고 활약 선수" }); mark(p); }
+
+        function addMaxAward(icon, name, field, desc, key, eligible = x=>true) {
+          const list = persons.filter(eligible);
+          if (!list.length) return;
+          const max = Math.max(...list.map(x=>Number(x[field]||0)));
+          if (max <= 0) return;
+          const w = chooseTiedWinner(list.filter(x=>Number(x[field]||0)===max), key, alreadyAwarded);
+          if (w) { awards.push({ title:`${icon} ${name} : ${displayP(w)}`, desc }); mark(w); }
+        }
+
+        addMaxAward("🎯", "단식왕", "singlesWin", "단식 승리가 가장 많은 선수", "SINGLES", x=>x.singlesWin+x.singlesLose>0);
+        addMaxAward("🤝", "복식왕", "doublesWin", "복식 승리가 가장 많은 선수", "DOUBLES", x=>x.doublesWin+x.doublesLose>0);
+
+        // 철벽상: 세트 실점 최소. 0점도 실제 경기에서 가능하므로 출전 1경기 이상이면 포함
+        const wallList = persons.filter(x=>x.played>0);
+        if (wallList.length) {
+          const minAgainst = Math.min(...wallList.map(x=>x.setAgainst));
+          const w = chooseTiedWinner(wallList.filter(x=>x.setAgainst===minAgainst), "IRON_WALL", alreadyAwarded);
+          if (w) { awards.push({ title:`🧱 철벽상 : ${displayP(w)}`, desc:"세트 실점이 가장 적은 선수" }); mark(w); }
+        }
+
+        addMaxAward("🔥", "승부사상", "clutchWin", "풀세트 접전 승리가 가장 많은 선수", "CLUTCH");
+        addMaxAward("😄", "아깝상", "closeLose", "풀세트 접전 패배가 가장 많은 선수", "CLOSE_LOSS");
+
+        // 단체전 우승팀은 제일 위에 표시. 아직 모든 경기가 끝나지 않았으면 '현재 1위'로 표시
+        if (sorted.length) {
+          const allDone = totalRows > 0 && completedRows === totalRows;
+          const champLabel = allDone ? "🏆 단체전 우승" : "🏆 현재 단체전 1위";
+          awards.unshift({ title:`${champLabel} : ${sorted[0][0]}`, desc: allDone ? "최종 단체전 순위 1위 팀" : "현재까지 단체전 순위가 가장 높은 팀" });
+        }
+
+        html += `<h3 class="awards-title">${totalRows > 0 && completedRows === totalRows ? "🎉 최종 시상" : "🎉 실시간 시상 예상"}</h3>`;
+        html += `<div class="award-status">${completedRows}/${totalRows}경기 완료 · 경기 결과에 따라 수상자는 바뀔 수 있습니다.</div>`;
+        html += '<div class="awards-wrap">';
+        awards.forEach(a => {
+          html += `<div class="award-item"><div class="award-main">${a.title}</div><div class="award-desc">${a.desc}</div></div>`;
+        });
+        html += '</div>';
+      }
+
       document.getElementById("rankingArea").innerHTML = html;
       updateProgress();
     }
