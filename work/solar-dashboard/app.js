@@ -647,7 +647,7 @@ async function exportGenerationExcel(startMonth, endMonth){
     for(let c = numericStartCol; c <= numericEndCol; c++){
       const address = XLSX.utils.encode_cell({ r, c });
       const cell = ws[address];
-      if(cell && cell.t === "n") cell.z = "#,##0.0";
+      if(cell && cell.t === "n") cell.z = "#,##0";
     }
   }
 
