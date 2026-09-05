@@ -13,11 +13,42 @@ const ORDER_API_IDS = new Set(['ust20000', 'ust20001', 'ust20002', 'ust20003']);
 const API_MIN_INTERVAL_MS = Number(process.env.US_API_MIN_INTERVAL_MS || 1100);
 const READ_RATE_LIMIT_RETRIES = Number(process.env.US_READ_RATE_LIMIT_RETRIES || 2);
 const READ_RATE_LIMIT_BACKOFF_MS = Number(process.env.US_READ_RATE_LIMIT_BACKOFF_MS || 1500);
+const ACCOUNT_SNAPSHOT_CACHE_MS = Number(process.env.US_ACCOUNT_SNAPSHOT_CACHE_MS || 15000);
 const nextAllowedAtByApiId = new Map();
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+const invalidQuoteSymbols = new Map();
+let invalidQuoteCacheDate = null;
+let accountSnapshotCache = null;
+let accountSnapshotCachedAt = 0;
+
+function nyDateKey() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  }).format(new Date());
 }
+
+function refreshInvalidQuoteCacheDate() {
+  const today = nyDateKey();
+  if (invalidQuoteCacheDate !== today) {
+    invalidQuoteSymbols.clear();
+    invalidQuoteCacheDate = today;
+  }
+  return today;
+}
+
+function invalidQuoteKey(exchange, symbol) {
+  return `${String(exchange || '').toUpperCase()}:${String(symbol || '').toUpperCase()}`;
+}
+
+function isInvalidQuoteSymbolError(error) {
+  const message = String(error?.message || error || '');
+  return message.includes('return_code=7') && (
+    message.includes('종목 정보가 없습니다') || message.includes('종목코드, 거래소구분')
+  );
+}
+
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
 function assertPaperMode() {
   if (MODE !== 'PAPER') throw new Error('SY Quant US client currently allows PAPER mode only');
@@ -45,59 +76,41 @@ function readToken() {
 
 async function waitForApiSlot(apiId) {
   validateRateSettings();
-
   const now = Date.now();
   const reservedAt = Math.max(now, nextAllowedAtByApiId.get(apiId) || 0);
   nextAllowedAtByApiId.set(apiId, reservedAt + API_MIN_INTERVAL_MS);
-
   const waitMs = reservedAt - now;
   if (waitMs > 0) await sleep(waitMs);
 }
 
 async function sendRequest({ apiId, apiPath, body, contYn, nextKey }) {
   await waitForApiSlot(apiId);
-
   const headers = {
     'Content-Type': 'application/json;charset=UTF-8',
     'authorization': 'Bearer ' + readToken(),
     'api-id': apiId
   };
-
   if (contYn !== null) headers['cont-yn'] = contYn;
   if (nextKey !== null) headers['next-key'] = nextKey;
 
   const response = await fetch(BASE_URL + apiPath, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body)
+    method: 'POST', headers, body: JSON.stringify(body)
   });
 
   const text = await response.text();
   let data;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    throw new Error('Kiwoom response is not valid JSON (HTTP ' + response.status + ')');
-  }
-
+  try { data = JSON.parse(text); }
+  catch { throw new Error('Kiwoom response is not valid JSON (HTTP ' + response.status + ')'); }
   return { response, data };
 }
 
 async function requestPage({ apiId, apiPath, body = {}, contYn = null, nextKey = null }) {
   assertPaperMode();
-
   const isOrderRequest = ORDER_API_IDS.has(apiId);
   const maxAttempts = isOrderRequest ? 1 : 1 + READ_RATE_LIMIT_RETRIES;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const { response, data } = await sendRequest({
-      apiId,
-      apiPath,
-      body,
-      contYn,
-      nextKey
-    });
-
+    const { response, data } = await sendRequest({ apiId, apiPath, body, contYn, nextKey });
     const returnCode = Number(data.return_code ?? 0);
     const rateLimited = response.status === 429 || returnCode === 5;
 
@@ -126,26 +139,50 @@ async function requestPage({ apiId, apiPath, body = {}, contYn = null, nextKey =
 async function getQuote(exchange, symbol) {
   const stexTp = String(exchange || '').toUpperCase();
   const stkCd = String(symbol || '').toUpperCase();
-
   if (!EXCHANGES.has(stexTp)) throw new Error('exchange must be NA, ND, or NY');
   if (!stkCd) throw new Error('symbol is required');
 
-  const { data } = await requestPage({
-    apiId: 'usa20100',
-    apiPath: '/api/us/mrkcond',
-    body: { stex_tp: stexTp, stk_cd: stkCd }
-  });
+  refreshInvalidQuoteCacheDate();
+  const cacheKey = invalidQuoteKey(stexTp, stkCd);
+  const cached = invalidQuoteSymbols.get(cacheKey);
+  if (cached) {
+    const error = new Error(`[INVALID_SYMBOL_CACHED] ${cacheKey} / ${cached.message}`);
+    error.code = 'INVALID_SYMBOL_CACHED';
+    error.cached = true;
+    error.exchange = stexTp;
+    error.symbol = stkCd;
+    throw error;
+  }
 
-  return data;
+  try {
+    const { data } = await requestPage({
+      apiId: 'usa20100', apiPath: '/api/us/mrkcond', body: { stex_tp: stexTp, stk_cd: stkCd }
+    });
+    return data;
+  } catch (error) {
+    if (isInvalidQuoteSymbolError(error)) {
+      const item = {
+        exchange: stexTp, symbol: stkCd, tradingDate: invalidQuoteCacheDate,
+        cachedAt: new Date().toISOString(), message: String(error?.message || error)
+      };
+      invalidQuoteSymbols.set(cacheKey, item);
+      console.warn('[US INVALID SYMBOL CACHE]', cacheKey, `/ ${invalidQuoteCacheDate}`, '/ 당일 추가 API 조회 차단');
+    }
+    throw error;
+  }
+}
+
+function getInvalidQuoteSymbolCacheStatus() {
+  refreshInvalidQuoteCacheDate();
+  return {
+    tradingDate: invalidQuoteCacheDate,
+    count: invalidQuoteSymbols.size,
+    symbols: Array.from(invalidQuoteSymbols.values())
+  };
 }
 
 async function getDeposit() {
-  const { data } = await requestPage({
-    apiId: 'ust21110',
-    apiPath: '/api/us/acnt',
-    body: {}
-  });
-
+  const { data } = await requestPage({ apiId: 'ust21110', apiPath: '/api/us/acnt', body: {} });
   return data;
 }
 
@@ -168,10 +205,7 @@ async function getUsdDeposit() {
 async function getHoldings({ exchange = '', symbol = '', maxPages = 10 } = {}) {
   const stexTp = String(exchange || '').toUpperCase();
   const stkCd = String(symbol || '').toUpperCase();
-
-  if (stexTp && !EXCHANGES.has(stexTp)) {
-    throw new Error('exchange must be empty, NA, ND, or NY');
-  }
+  if (stexTp && !EXCHANGES.has(stexTp)) throw new Error('exchange must be empty, NA, ND, or NY');
 
   const holdings = [];
   let contYn = null;
@@ -180,18 +214,12 @@ async function getHoldings({ exchange = '', symbol = '', maxPages = 10 } = {}) {
 
   for (let page = 0; page < maxPages; page += 1) {
     const { data, continuation } = await requestPage({
-      apiId: 'ust21070',
-      apiPath: '/api/us/acnt',
-      body: { stex_tp: stexTp, stk_cd: stkCd },
-      contYn,
-      nextKey
+      apiId: 'ust21070', apiPath: '/api/us/acnt',
+      body: { stex_tp: stexTp, stk_cd: stkCd }, contYn, nextKey
     });
-
     if (Array.isArray(data.result_list)) holdings.push(...data.result_list);
     lastData = data;
-
     if (continuation.contYn !== 'Y') break;
-
     contYn = 'Y';
     nextKey = continuation.nextKey || '';
   }
@@ -204,10 +232,62 @@ async function getHoldings({ exchange = '', symbol = '', maxPages = 10 } = {}) {
   };
 }
 
+function holdingAveragePrice(row) {
+  return Number(row?.frgn_stk_book_uv || 0);
+}
+
+function holdingMarketValue(row) {
+  const direct = Number(row?.evlt_amt || 0);
+  if (Number.isFinite(direct) && direct >= 0) return direct;
+  const qty = Number(row?.poss_qty || 0);
+  const price = Number(row?.now_pric || 0);
+  return Number.isFinite(qty) && Number.isFinite(price) ? qty * price : 0;
+}
+
+async function getAccountSnapshot({ force = false } = {}) {
+  const now = Date.now();
+  if (!force && accountSnapshotCache && now - accountSnapshotCachedAt < ACCOUNT_SNAPSHOT_CACHE_MS) {
+    return { ...accountSnapshotCache, cached: true };
+  }
+
+  const [usd, holdingsResult] = await Promise.all([
+    getUsdDeposit(),
+    getHoldings()
+  ]);
+
+  const holdings = (holdingsResult.holdings || []).filter(row => Number(row?.poss_qty || 0) > 0);
+  const holdingsValue = holdings.reduce((sum, row) => sum + holdingMarketValue(row), 0);
+  const bookValue = holdings.reduce((sum, row) => sum + Number(row?.frgn_stk_book_amt || 0), 0);
+  const totalAsset = Number(usd.deposit || 0) + holdingsValue;
+
+  const snapshot = {
+    currency: 'USD',
+    deposit: Number(usd.deposit || 0),
+    orderAvailable: Number(usd.orderAvailable || 0),
+    withdrawAvailable: Number(usd.withdrawAvailable || 0),
+    holdingsValue: Math.round(holdingsValue * 100) / 100,
+    holdingsBookValue: Math.round(bookValue * 100) / 100,
+    totalAsset: Math.round(totalAsset * 100) / 100,
+    holdingCount: holdings.length,
+    holdings,
+    source: 'KIWOOM_PAPER_ACCOUNT',
+    fetchedAt: new Date().toISOString(),
+    cached: false
+  };
+
+  accountSnapshotCache = snapshot;
+  accountSnapshotCachedAt = now;
+  return { ...snapshot };
+}
+
 module.exports = {
   requestPage,
   getQuote,
   getDeposit,
   getUsdDeposit,
-  getHoldings
+  getHoldings,
+  getAccountSnapshot,
+  holdingAveragePrice,
+  holdingMarketValue,
+  getInvalidQuoteSymbolCacheStatus
 };

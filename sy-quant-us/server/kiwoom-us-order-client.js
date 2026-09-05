@@ -8,7 +8,9 @@ const kiwoom = require('./kiwoom-us-client');
 const BASE_URL = String(process.env.KIWOOM_US_BASE_URL || '').replace(/\/$/, '');
 const MODE = String(process.env.TRADING_MODE || '').toUpperCase();
 const ORDER_ENABLED = String(process.env.US_ORDER_ENABLED || '').toLowerCase() === 'true';
-const MAX_ORDER_QTY = Number(process.env.US_MAX_ORDER_QTY || 100);
+// v1.6.8
+// 주문수량 자체에는 고정 100주 제한을 두지 않는다.
+// BUY 위험한도는 주문금액(US_MAX_ORDER_USD)으로 통제한다.
 const MAX_ORDER_USD = Number(process.env.US_MAX_ORDER_USD || 10000);
 
 const EXCHANGES = new Set(['NA', 'ND', 'NY']);
@@ -33,9 +35,6 @@ function assertOrderEnabled() {
 }
 
 function validateRiskSettings() {
-  if (!Number.isInteger(MAX_ORDER_QTY) || MAX_ORDER_QTY <= 0) {
-    throw new Error('US_MAX_ORDER_QTY must be a positive integer');
-  }
   if (!Number.isFinite(MAX_ORDER_USD) || MAX_ORDER_USD <= 0) {
     throw new Error('US_MAX_ORDER_USD must be a positive number');
   }
@@ -61,7 +60,6 @@ function normalizeOrder({ exchange, symbol, quantity, orderType = '00', price = 
   const qty = Number(quantity);
 
   if (!Number.isInteger(qty) || qty <= 0) throw new Error('quantity must be a positive integer');
-  if (qty > MAX_ORDER_QTY) throw new Error('quantity exceeds US_MAX_ORDER_QTY');
   if (!ORDER_TYPES.has(trdeTp)) {
     throw new Error('Kiwoom US PAPER trading currently allows limit orders only (orderType 00)');
   }
@@ -101,7 +99,8 @@ async function previewBuy(input) {
     referencePrice: order.price,
     estimatedNotional,
     orderAvailable: toNumber(usd.orderAvailable),
-    maxOrderQty: MAX_ORDER_QTY,
+    maxOrderQty: null,
+    quantityLimitMode: 'NOTIONAL_ONLY',
     maxOrderUsd: MAX_ORDER_USD,
     submissionEnabled: ORDER_ENABLED
   };
@@ -123,18 +122,19 @@ async function previewSell(input) {
   }
 
   const estimatedNotional = order.price * order.quantity;
-  if (estimatedNotional > MAX_ORDER_USD) {
-    throw new Error('estimated sell amount exceeds US_MAX_ORDER_USD');
-  }
 
+  // SELL은 보유수량 전량 청산을 막지 않는다.
+  // 매수 당시 $10,000 이하였더라도 상승 후 평가액이
+  // $10,000을 넘을 수 있으므로 매도금액 상한은 적용하지 않는다.
   return {
     side: 'SELL',
     ...order,
     referencePrice: order.price,
     estimatedNotional,
     sellableQuantity,
-    maxOrderQty: MAX_ORDER_QTY,
-    maxOrderUsd: MAX_ORDER_USD,
+    maxOrderQty: null,
+    quantityLimitMode: 'SELLABLE_QUANTITY',
+    maxOrderUsd: null,
     submissionEnabled: ORDER_ENABLED
   };
 }
@@ -279,7 +279,8 @@ function getOrderClientStatus() {
     baseUrl: BASE_URL,
     paperEnvironmentOk,
     orderEnabled: ORDER_ENABLED,
-    maxOrderQty: MAX_ORDER_QTY,
+    maxOrderQty: null,
+    quantityLimitMode: 'BUY_NOTIONAL_LIMIT / SELL_HOLDING_LIMIT',
     maxOrderUsd: MAX_ORDER_USD,
     allowedExchanges: [...EXCHANGES],
     allowedOrderTypes: [...ORDER_TYPES],

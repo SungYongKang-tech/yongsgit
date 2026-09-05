@@ -74,10 +74,6 @@ function requirePaperTestAcknowledgement(req) {
 }
 
 function buildUsStrategyDashboardSummary(portfolio = {}) {
-  const totalAsset = Number(portfolio.totalAsset || 0);
-  const totalProfitLoss = Number(portfolio.totalProfitLoss || 0);
-  const totalReturnRate = Number(portfolio.totalReturnRate || 0);
-  const unrealizedProfitLoss = Number(portfolio.unrealizedProfitLoss || 0);
   const settings = strategySettings.getSettings();
   const activity = activityStore.getDashboardActivity();
   const coreStatus = usCore.getCoreStatus();
@@ -85,8 +81,24 @@ function buildUsStrategyDashboardSummary(portfolio = {}) {
   const volumeStatus = usVolume.getVolumeStatus();
   const waveStatus = usWave.getWaveStatus();
 
+  const autoTraderStatus = paperAutoTrader.getStatus();
+  const account = autoTraderStatus?.kiwoomAccount || {};
+  const totalAsset = Number(autoTraderStatus?.totalAsset || portfolio.totalAsset || 0);
+  const totalProfitLoss = Number(autoTraderStatus?.netProfit || 0);
+  const totalReturnRate = Number(autoTraderStatus?.profitRate || 0);
+  const unrealizedProfitLoss = Number(autoTraderStatus?.unrealizedProfit || 0);
+  const strategyBudgets = autoTraderStatus?.strategies || {};
+
   const strategies = Object.values(settings.strategies).map(item => {
     const realizedProfit = Number(activity.realizedByStrategy?.[item.id] || 0);
+
+    const strategyBudget = Number(
+      strategyBudgets?.[item.id]?.budget || 0
+    );
+
+    const strategyProfitRate = strategyBudget > 0
+      ? Number(((realizedProfit / strategyBudget) * 100).toFixed(4))
+      : 0;
     const observerStatus = (item.id === 'CORE' || item.id === 'FAST' || item.id === 'VOLUME' || item.id === 'WAVE') && !item.implemented
       ? '관찰중 · BUY OFF'
       : null;
@@ -114,7 +126,7 @@ function buildUsStrategyDashboardSummary(portfolio = {}) {
       maxHoldings: Number(item.maxHoldings || 0),
       dailyMaxNewBuys: Number(item.dailyMaxNewBuys || 0),
       netProfit: realizedProfit,
-      profitRate: 0,
+      profitRate: strategyProfitRate,
       realizedProfit,
       unrealizedProfit: 0
     };
@@ -126,17 +138,17 @@ function buildUsStrategyDashboardSummary(portfolio = {}) {
     mode: MODE,
     currency: 'USD',
     overall: {
-      initialCapital: Number(portfolio.initialCapital || 0),
+      initialCapital: Number(autoTraderStatus?.startingCapital || autoTraderStatus?.paperCapital || portfolio.initialCapital || 0),
       currentAsset: totalAsset,
       totalAsset,
-      totalCash: Number(portfolio.totalCash || 0),
-      availableCash: Number(portfolio.availableCash || 0),
-      totalExposure: Number(portfolio.totalExposure || 0),
+      totalCash: Number(account.deposit || portfolio.totalCash || 0),
+      availableCash: Number(account.orderAvailable || portfolio.availableCash || 0),
+      totalExposure: Number(account.holdingsValue || portfolio.totalExposure || 0),
       netProfit: totalProfitLoss,
       profitRate: totalReturnRate,
       realizedProfit: totalProfitLoss - unrealizedProfitLoss,
       unrealizedProfit: unrealizedProfitLoss,
-      holdingCount: Number(portfolio.holdingCount || 0)
+      holdingCount: Number(account.holdingCount ?? portfolio.holdingCount ?? 0)
     },
     strategyControl: {
       masterBuyEnabled: Boolean(settings.masterBuyEnabled),
@@ -707,6 +719,16 @@ app.get('/api/us/deposit', async (req, res) => {
       orderAvailable: usd.orderAvailable,
       withdrawAvailable: usd.withdrawAvailable
     });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.get('/api/us/account-summary', async (req, res) => {
+  try {
+    const account = await kiwoom.getAccountSnapshot({ force: true });
+    await paperAutoTrader.refreshAccountSnapshot({ force: false });
+    res.json({ ok: true, mode: MODE, account });
   } catch (err) {
     sendError(res, err);
   }

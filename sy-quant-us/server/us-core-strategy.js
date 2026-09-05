@@ -26,19 +26,8 @@ const CORE_CONFIG = Object.freeze({
   minTradeValue: 5000000,
   readyScore: 65,
   watchScore: 45,
-
-  // CORE v1.1: 약세장에서는 완전차단/강화모드 2단계로 운용
-  qqqHardBlockChangeRate: -1.20,
+  qqqHardBlockChangeRate: -1.0,
   qqqHardBlockVwapGapRate: -0.40,
-  qqqHardBlockChangeRate: -1.20,
-  qqqHardBlockVwapGapRate: -0.40,
-  qqqWeakMarketChangeRate: -0.75,
-  weakMarketReadyScore: 70,
-  weakMarketMinTrendPersistence: 0.80,
-  weakMarketMinDayPositionRate: 70,
-  weakMarketMaxVwapGapRate: 1.80,
-  weakMarketMaxChangeRate: 5.50,
-
   dailyAverageLookback: 10,
 
   // v1.1 CORE entry-quality guards
@@ -471,30 +460,7 @@ async function analyzeCandidate(snapshot, qqq, session) {
   const score = Object.values(components).reduce((sum, value) => sum + value, 0);
 
   const blocks = [];
-  if (qqq.hardBlocked) blocks.push('QQQ 강한 약세');
-
-  const weakMarket =
-    !qqq.hardBlocked &&
-    toNumber(qqq.changeRate) <= CORE_CONFIG.qqqWeakMarketChangeRate;
-
-  if (weakMarket) {
-    if (score < CORE_CONFIG.weakMarketReadyScore) {
-      blocks.push('약세장 점수 부족');
-    }
-    if (minuteMetrics.trendPersistence < CORE_CONFIG.weakMarketMinTrendPersistence) {
-      blocks.push('약세장 추세 부족');
-    }
-    if (dayPositionRate < CORE_CONFIG.weakMarketMinDayPositionRate) {
-      blocks.push('약세장 위치 부족');
-    }
-    if (vwapGapRate > CORE_CONFIG.weakMarketMaxVwapGapRate) {
-      blocks.push('약세장 VWAP 추격');
-    }
-    if (openChangeRate > CORE_CONFIG.weakMarketMaxChangeRate) {
-      blocks.push('약세장 상승 추격');
-    }
-  }
-
+  if (qqq.hardBlocked) blocks.push('QQQ 약세');
   if (openChangeRate < CORE_CONFIG.minOpenChangeRate) blocks.push('시가대비 상승 부족');
   if (openChangeRate > CORE_CONFIG.maxChangeRate) blocks.push('상승 과열');
   if (dayPositionRate < CORE_CONFIG.minDayPositionRate) blocks.push('당일 위치 낮음');
@@ -556,13 +522,12 @@ async function analyzeCandidate(snapshot, qqq, session) {
     `추세 ${round(minuteMetrics.trendPersistence * 100, 0)}%`,
     `QQQ ${qqq.changeRate >= 0 ? '+' : ''}${round(qqq.changeRate)}%`
   ];
-  if (weakMarket) reasonParts.push('CORE 약세장 강화모드');
   if (firstReady && lateChaseRate > 0) {
     reasonParts.push(
       `최초READY ${round(firstReady.price, 4)} / 현재 +${round(lateChaseRate)}%`
     );
   }
-  if (blocks.length) reasonParts.push(blocks.slice(0, 3).join('/'));
+  if (blocks.length) reasonParts.push(blocks.slice(0, 2).join('/'));
   reasonParts.push('PAPER 자동주문 연결');
 
   return {

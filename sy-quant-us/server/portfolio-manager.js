@@ -5,7 +5,6 @@ const path = require('path');
 
 const kiwoom = require('./kiwoom-us-client');
 
-const INITIAL_CAPITAL = Number(process.env.US_INITIAL_CAPITAL || 100000);
 const AUTO_STATE_FILE = path.join(__dirname, 'us-paper-auto-state.json');
 
 function toNumber(value) {
@@ -24,6 +23,8 @@ function loadAutoState() {
     return {
       ok: true,
       positions: Array.isArray(parsed.positions) ? parsed.positions : [],
+      startingCapital: toNumber(parsed.startingCapital || parsed.paperCapital),
+      paperCapital: toNumber(parsed.paperCapital),
       updatedAt: parsed.updatedAt || null
     };
   } catch (error) {
@@ -39,6 +40,8 @@ function getRealizedProfitLossFromAutoState() {
 
   return {
     realizedProfitLoss,
+    startingCapital: toNumber(state.startingCapital),
+    paperCapital: toNumber(state.paperCapital),
     stateOk: state.ok,
     stateUpdatedAt: state.updatedAt || null,
     error: state.error || null
@@ -72,11 +75,8 @@ function normalizeHolding(row) {
 }
 
 async function getPortfolioSummary() {
-  if (!Number.isFinite(INITIAL_CAPITAL) || INITIAL_CAPITAL <= 0) {
-    throw new Error('US_INITIAL_CAPITAL must be a positive number');
-  }
-
-  const [usd, balance] = await Promise.all([
+  const [account, usd, balance] = await Promise.all([
+    kiwoom.getAccountSnapshot(),
     kiwoom.getUsdDeposit(),
     kiwoom.getHoldings()
   ]);
@@ -98,30 +98,39 @@ async function getPortfolioSummary() {
   const autoRealized = getRealizedProfitLossFromAutoState();
   const realizedProfitLoss = toNumber(autoRealized.realizedProfitLoss);
   const totalProfitLoss = realizedProfitLoss + unrealizedProfitLoss;
-  const totalAsset = INITIAL_CAPITAL + totalProfitLoss;
 
-  // 회계상 현금 = 총자산 - 현재 보유 평가금액.
-  // 실제 주문가능금액은 브로커 orderAvailable을 availableCash로 별도 보존한다.
-  const totalCash = Math.max(0, totalAsset - totalExposure);
-  const totalReturnRate = (totalProfitLoss / INITIAL_CAPITAL) * 100;
+  // MASTER 자본은 키움 모의계좌를 source-of-truth로 사용한다.
+  const initialCapital =
+    toNumber(autoRealized.startingCapital) > 0
+      ? toNumber(autoRealized.startingCapital)
+      : toNumber(account.totalAsset);
+
+  const totalAsset = toNumber(account.totalAsset);
+  const totalCash = toNumber(account.deposit);
+
+  // 계좌 전체 성과는 새 출발 시점의 고정 startingCapital 대비 현재 키움 총자산으로 계산한다.
+  const accountProfitLoss = totalAsset - initialCapital;
+  const totalReturnRate = initialCapital > 0
+    ? (accountProfitLoss / initialCapital) * 100
+    : 0;
 
   return {
     ok: true,
     accountName: 'SY Quant US PAPER',
     currency: 'USD',
-    initialCapital: INITIAL_CAPITAL,
+    initialCapital,
     totalCash,
     availableCash,
     totalExposure,
     totalPurchaseAmount,
     unrealizedProfitLoss,
     totalAsset,
-    totalProfitLoss,
+    totalProfitLoss: accountProfitLoss,
     totalReturnRate,
     holdingCount: holdings.length,
     holdings,
     source: {
-      accounting: 'AUTO_REALIZED_PLUS_BROKER_UNREALIZED',
+      accounting: 'KIWOOM_ACCOUNT_MASTER',
       brokerDeposit,
       brokerOrderAvailable: availableCash,
       autoStateFile: AUTO_STATE_FILE,
