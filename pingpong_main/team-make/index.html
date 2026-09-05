@@ -189,6 +189,50 @@
       font-size: 13px;
       text-align: center;
     }
+
+    /* 상대팀 간편 등록/선택 */
+    .org-register-row {
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    .org-choice-wrap {
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 6px;
+    }
+    .org-choice-label { font-size: 13px; color: #555; font-weight: 700; }
+    .org-choice-btn {
+      padding: 6px 10px;
+      font-size: 13px;
+      border-radius: 16px;
+      border: 1px solid #90a4ae;
+      background: #eceff1;
+      color: #37474f;
+    }
+    .org-choice-btn.active {
+      background: #7b1fa2;
+      color: white;
+      border-color: #7b1fa2;
+      box-shadow: 0 0 0 2px rgba(123,31,162,.12);
+    }
+    .player-main-line { display:flex; align-items:center; justify-content:center; gap:4px; }
+    .player-org-sub {
+      display:block;
+      margin-top:2px;
+      font-size:10px;
+      line-height:1.1;
+      color:#6a1b9a;
+      font-weight:700;
+      white-space:nowrap;
+    }
   </style>
 </head>
 
@@ -199,8 +243,18 @@
     <div class="player-input-pair">
       <input type="text" id="newName" placeholder="이름" />
       <input type="number" id="newLevel" placeholder="부수" min="1" max="20" />
-      <input type="text" id="newOrganization" placeholder="상대기관 (예: 저작권위원회, LH)" style="width:180px;" />
     </div>
+
+    <div class="org-register-row">
+      <button onclick="registerOpponentOrganization()" style="background-color:#7b1fa2;">＋ 상대팀 등록</button>
+      <button onclick="removeOpponentOrganization()" style="background-color:#757575;">상대팀 삭제</button>
+    </div>
+
+    <div class="org-choice-wrap">
+      <span class="org-choice-label">새 선수 소속:</span>
+      <div id="organizationButtons" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;"></div>
+    </div>
+
     <div class="button-group">
       <button onclick="addPlayer()">선수 추가</button>
       <button onclick="removeAddedPlayers()">추가 선수 삭제</button>
@@ -406,6 +460,10 @@
     let selected = [];
     let latestTeams = [];
 
+    // 새 선수는 상대기관 소속만 선택. 기존 Firebase members는 모두 남동발전.
+    let opponentOrganizations = JSON.parse(localStorage.getItem("opponentOrganizations") || "[]");
+    let selectedNewOrganization = "";
+
     // 교류전: 선택 선수와 기관별 팀 수
     let exchangePoolIdx = [];
     let exchangeOrganizations = [];
@@ -449,6 +507,13 @@
         const saved = JSON.parse(localStorage.getItem("addedPlayers") || "[]");
         saved.forEach(p => allPlayers.push({ ...p, organization: String(p.organization || "상대기관").trim(), new: true }));
 
+        // 예전에 등록했던 새 선수의 기관도 선택 버튼에 자동 복원
+        const fromPlayers = saved.map(p => String(p.organization || "").trim()).filter(Boolean);
+        opponentOrganizations = [...new Set([...opponentOrganizations, ...fromPlayers])];
+        localStorage.setItem("opponentOrganizations", JSON.stringify(opponentOrganizations));
+        if (!selectedNewOrganization && opponentOrganizations.length) selectedNewOrganization = opponentOrganizations[0];
+
+        renderOrganizationButtons();
         renderPlayers();
       } catch (err) {
         console.error("❌ Firebase 선수 로딩 실패:", err);
@@ -479,9 +544,12 @@
         el.className = "player";
 
         el.innerHTML = `
-          ${p.name}(${p.level})${p.new && p.organization ? ` · ${p.organization}` : ''}
-          ${p.new ? `<button onclick="removeSingleAddedPlayer(${i})"
-            style="margin-left:6px; font-size:12px; padding:2px 5px; background:#f44336; color:white; border:none; border-radius:4px; cursor:pointer;">✖</button>` : ''}
+          <span class="player-main-line">
+            <span>${p.name}(${p.level})</span>
+            ${p.new ? `<button onclick="removeSingleAddedPlayer(${i})"
+              style="margin-left:3px;font-size:11px;padding:1px 4px;background:#f44336;color:white;border:none;border-radius:4px;cursor:pointer;">✖</button>` : ''}
+          </span>
+          ${p.new && p.organization && p.organization !== "남동발전" ? `<small class="player-org-sub">${p.organization}</small>` : ''}
         `;
 
         el.onclick = (e) => {
@@ -829,23 +897,75 @@
     }
 
     /*********************************************************
+     * ✅ 상대팀 등록 / 선택
+     *********************************************************/
+    function renderOrganizationButtons() {
+      const box = document.getElementById("organizationButtons");
+      if (!box) return;
+
+      if (!opponentOrganizations.length) {
+        box.innerHTML = `<span style="font-size:12px;color:#888;">먼저 '상대팀 등록'을 눌러주세요.</span>`;
+        return;
+      }
+
+      box.innerHTML = opponentOrganizations.map(org => `
+        <button type="button" class="org-choice-btn ${selectedNewOrganization === org ? "active" : ""}"
+          onclick="selectNewOrganization('${org.replace(/\'/g, "\\'")}')">${org}</button>
+      `).join("");
+    }
+
+    function selectNewOrganization(org) {
+      selectedNewOrganization = String(org || "").trim();
+      renderOrganizationButtons();
+    }
+
+    function registerOpponentOrganization() {
+      const org = String(prompt("상대팀(기관명)을 입력하세요.\n예: 저작권위원회, LH, 한국전력") || "").trim();
+      if (!org) return;
+      if (org === "남동발전") {
+        alert("기존 직원은 자동으로 남동발전입니다. 상대팀만 등록해주세요.");
+        return;
+      }
+      if (!opponentOrganizations.includes(org)) opponentOrganizations.push(org);
+      selectedNewOrganization = org;
+      localStorage.setItem("opponentOrganizations", JSON.stringify(opponentOrganizations));
+      renderOrganizationButtons();
+    }
+
+    function removeOpponentOrganization() {
+      if (!opponentOrganizations.length) { alert("등록된 상대팀이 없습니다."); return; }
+      const list = opponentOrganizations.map((o,i)=>`${i+1}. ${o}`).join("\n");
+      const raw = prompt(`삭제할 상대팀 번호를 입력하세요.\n\n${list}`);
+      if (raw === null) return;
+      const idx = Number(raw) - 1;
+      if (!Number.isInteger(idx) || idx < 0 || idx >= opponentOrganizations.length) {
+        alert("올바른 번호를 입력해주세요."); return;
+      }
+      const org = opponentOrganizations[idx];
+      const inUse = allPlayers.some(p => p.new && p.organization === org);
+      if (inUse && !confirm(`${org} 소속으로 추가된 선수가 있습니다.\n팀 선택 목록에서만 삭제할까요? 선수의 기존 소속 정보는 유지됩니다.`)) return;
+      opponentOrganizations.splice(idx, 1);
+      if (selectedNewOrganization === org) selectedNewOrganization = opponentOrganizations[0] || "";
+      localStorage.setItem("opponentOrganizations", JSON.stringify(opponentOrganizations));
+      renderOrganizationButtons();
+    }
+
+    /*********************************************************
      * ✅ 선수 추가 / 삭제
      *********************************************************/
     function addPlayer() {
       const nameInput = document.getElementById("newName");
       const levelInput = document.getElementById("newLevel");
-      const orgInput = document.getElementById("newOrganization");
-
       const name = nameInput.value.trim();
       const level = parseInt(levelInput.value, 10);
-      const organization = String(orgInput?.value || "").trim();
+      const organization = String(selectedNewOrganization || "").trim();
 
       if (!name || isNaN(level) || level < 1 || level > 20) {
         alert("이름과 부수를 올바르게 입력해주세요. (부수는 1~20)");
         return;
       }
       if (!organization) {
-        alert("새로 추가하는 선수는 상대 기관명을 입력해주세요. 예: 저작권위원회, LH");
+        alert("먼저 '상대팀 등록'에서 팀명을 등록한 뒤, 새 선수 소속 팀을 선택해주세요.");
         return;
       }
 
@@ -858,7 +978,7 @@
 
       nameInput.value = "";
       levelInput.value = "";
-      orgInput.value = "";
+      // 같은 상대팀 선수를 연속 등록하기 쉽도록 소속 선택은 유지
       renderPlayers();
     }
 
@@ -1152,6 +1272,9 @@ function confirmExchangeMatch() {
      * ✅ module 스코프 -> window 노출 (onclick용)
      *********************************************************/
     window.addPlayer = addPlayer;
+    window.registerOpponentOrganization = registerOpponentOrganization;
+    window.removeOpponentOrganization = removeOpponentOrganization;
+    window.selectNewOrganization = selectNewOrganization;
     window.removeAddedPlayers = removeAddedPlayers;
     window.removeSingleAddedPlayer = removeSingleAddedPlayer;
 
