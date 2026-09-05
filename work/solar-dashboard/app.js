@@ -536,6 +536,133 @@ async function ensureHistoricalData(){
   return true;
 }
 
+function monthRange(startMonth, endMonth){
+  const [sy, sm] = startMonth.split("-").map(Number);
+  const [ey, em] = endMonth.split("-").map(Number);
+  const months = [];
+  let y = sy, m = sm;
+  while(y < ey || (y === ey && m <= em)){
+    months.push(`${y}-${String(m).padStart(2,"0")}`);
+    m++;
+    if(m > 12){ m = 1; y++; }
+  }
+  return months;
+}
+
+async function exportGenerationExcel(startMonth, endMonth){
+  if(!window.XLSX) throw new Error("엑셀 생성 라이브러리를 불러오지 못했습니다.");
+
+  const snap = await get(ref(db, `${BASE}/monthly`));
+  const data = snap.exists() ? snap.val() : {};
+  const months = monthRange(startMonth, endMonth);
+
+  const rowsInRange = months.map(month => [month, data[month] || null]);
+  const visibleEquipment = ALL_EQUIPMENT.filter(e =>
+    rowsInRange.some(([,v]) => {
+      const n = Number(v?.[e.id]?.monthlyGeneration);
+      return Number.isFinite(n) && Math.abs(n) > 0;
+    })
+  );
+
+  if(!rowsInRange.some(([,v]) => v)){
+    throw new Error("선택한 기간에 저장된 발전량 자료가 없습니다.");
+  }
+
+  const equipmentName = {
+    "parking-100": "옥외주차장 100.44 kW",
+    "gym-roof-a": "체육관옥상A 50.22 kW",
+    "parking-256": "옥외주차장 256 kW",
+    "auditorium-roof": "강당옥상 102.4 kW",
+    "gym-roof-b": "체육관옥상B 46.08 kW"
+  };
+
+  const aoa = [];
+  aoa.push(["본사사옥 태양광 월별 발전량"]);
+  aoa.push(["조회기간", `${startMonth} ~ ${endMonth}`]);
+  aoa.push([]);
+  aoa.push(["발전월", ...visibleEquipment.map(e => equipmentName[e.id] || e.label || e.id), "합계(kWh)"]);
+
+  const equipmentTotals = Object.fromEntries(visibleEquipment.map(e => [e.id, 0]));
+  let grandTotal = 0;
+
+  for(const [month, value] of rowsInRange){
+    const vals = visibleEquipment.map(e => {
+      const n = Number(value?.[e.id]?.monthlyGeneration);
+      const v = Number.isFinite(n) ? n : 0;
+      equipmentTotals[e.id] += v;
+      return v;
+    });
+    const total = vals.reduce((sum, n) => sum + n, 0);
+    grandTotal += total;
+    aoa.push([month, ...vals, total]);
+  }
+
+  aoa.push([]);
+  aoa.push(["합계", ...visibleEquipment.map(e => equipmentTotals[e.id]), grandTotal]);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [
+    { wch: 12 },
+    ...visibleEquipment.map(() => ({ wch: 22 })),
+    { wch: 15 }
+  ];
+
+  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: visibleEquipment.length + 1 } }];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "월별 발전량");
+
+  const fileName = `본사사옥_태양광_발전량_${startMonth}_${endMonth}.xlsx`;
+  XLSX.writeFile(wb, fileName);
+}
+
+function initExcelExport(){
+  const btn = $("exportExcelBtn");
+  const dialog = $("excelDialog");
+  const form = $("excelForm");
+  const start = $("excelStartMonth");
+  const end = $("excelEndMonth");
+  const error = $("excelError");
+
+  btn.addEventListener("click", () => {
+    const now = monthISO();
+    start.value = `${new Date().getFullYear()}-01`;
+    end.value = now;
+    error.textContent = "";
+    dialog.showModal();
+  });
+
+  $("cancelExcel").addEventListener("click", () => dialog.close());
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    error.textContent = "";
+
+    if(!start.value || !end.value){
+      error.textContent = "시작월과 종료월을 선택하세요.";
+      return;
+    }
+    if(start.value > end.value){
+      error.textContent = "시작월은 종료월보다 늦을 수 없습니다.";
+      return;
+    }
+
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const oldText = submitBtn.textContent;
+    try{
+      submitBtn.disabled = true;
+      submitBtn.textContent = "생성 중…";
+      await exportGenerationExcel(start.value, end.value);
+      dialog.close();
+    }catch(err){
+      error.textContent = `엑셀 생성 실패: ${err.message}`;
+    }finally{
+      submitBtn.disabled = false;
+      submitBtn.textContent = oldText;
+    }
+  });
+}
+
 function initPassword(){
   $("unlockBtn").addEventListener("click",()=>{
     if(unlocked){ setUnlocked(false); return; }
@@ -553,16 +680,14 @@ async function init(){
   const requiredIds = [
     "equipmentInputs", "photoGrid", "historyYear", "historyHead", "historyBody", "historyFoot", "passwordDialog",
     "passwordForm", "unlockBtn", "readingMonth", "photoMonth", "readingForm",
-    "allTimeTotal", "expected2026", "total2026", "nextInspectionDate"
+    "allTimeTotal", "expected2026", "total2026", "nextInspectionDate",
+    "exportExcelBtn", "excelDialog", "excelForm", "excelStartMonth", "excelEndMonth", "cancelExcel"
   ];
   const missingIds = requiredIds.filter(id => !$(id));
   if (missingIds.length) {
     console.error("[태양광 대시보드] index.html/app.js 버전 불일치:", missingIds);
-    const state = $("firebaseState");
-    if (state) {
-      state.textContent = "화면 파일 버전 불일치";
-      state.classList.add("bad");
-    }
+    const formMessage = $("formMessage");
+    if (formMessage) setMsg(formMessage, "화면 파일 버전 불일치", "error");
     return;
   }
 
@@ -570,6 +695,7 @@ async function init(){
   renderPhotoCards();
   setupYearFilter();
   initPassword();
+  initExcelExport();
   setUnlocked(false);
   $("readingMonth").value=monthISO(); $("photoMonth").value=monthISO();
   $("readingMonth").addEventListener("change",async()=>{ await loadMonth(); $("photoMonth").value=$("readingMonth").value; await loadPhotos(); });
@@ -577,11 +703,9 @@ async function init(){
   $("readingForm").addEventListener("submit",saveReading);
   try{
     await get(ref(db,BASE));
-    $("firebaseState").textContent="Firebase 정상"; $("firebaseState").classList.add("ok");
     await ensureHistoricalData();
     await Promise.all([loadMonth(),loadHistory(),loadSummary(),loadPhotos()]);
   }catch(err){
-    $("firebaseState").textContent="Firebase 연결 오류"; $("firebaseState").classList.add("bad");
     setMsg($("formMessage"),`Firebase 연결 오류: ${err.message}`,"error");
   }
 }
