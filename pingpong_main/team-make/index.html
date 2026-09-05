@@ -475,6 +475,30 @@
 
     const avgLevel = (t) => t.members.length ? (t.sumLevel / t.members.length) : 0;
 
+    // ✅ 자동배정 팀명: 가장 높은 부수(숫자가 가장 작은 선수) 이름 + "팀"
+    // 같은 부수면 전체 선수 입력순서가 빠른 선수 우선
+    function updateAutoTeamName(team) {
+      if (!team || team.namingMode !== "AUTO_PERSON") return;
+      if (!Array.isArray(team.members) || team.members.length === 0) return;
+
+      const leader = [...team.members].sort((a, b) => {
+        const levelDiff = Number(a.level || 999) - Number(b.level || 999);
+        if (levelDiff !== 0) return levelDiff;
+
+        const ai = allPlayers.indexOf(a);
+        const bi = allPlayers.indexOf(b);
+        if (ai !== bi) return ai - bi;
+
+        return String(a.name || "").localeCompare(String(b.name || ""), "ko");
+      })[0];
+
+      if (leader?.name) team.name = `${leader.name}팀`;
+    }
+
+    function refreshAutoTeamNames(teams) {
+      (teams || []).forEach(updateAutoTeamName);
+    }
+
     /*********************************************************
      * ✅ 선수 로드 (Firebase members)
      *********************************************************/
@@ -695,6 +719,7 @@
       // 팀 초기화
       const teams = Array.from({ length: teamCount }, (_, i) => ({
         name: `${i + 1}팀`,
+        namingMode: "AUTO_PERSON",
         members: [],
         sumLevel: 0,
         sum: 0
@@ -784,6 +809,9 @@
       // 렌더 호환 sum 세팅
       teams.forEach(recomputeTeamSums);
 
+      // ✅ 자동배정일 때만 사람 이름 기반 팀명 적용
+      refreshAutoTeamNames(teams);
+
       latestTeams = teams;
       assignTeamsRender(latestTeams);
     }
@@ -862,6 +890,7 @@
 
       recomputeTeamSums(teamA);
       recomputeTeamSums(teamB);
+      refreshAutoTeamNames(latestTeams);
 
       // 하이라이트 제거
       const prevLi = document.getElementById(autoSwapBuffer.liId);
@@ -893,6 +922,7 @@
 
       recomputeTeamSums(latestTeams[fromTeamIdx]);
       recomputeTeamSums(latestTeams[toTeamIdx]);
+      refreshAutoTeamNames(latestTeams);
 
       // 스왑중 표시 초기화
       if (autoSwapBuffer) {
@@ -909,6 +939,7 @@
 
       latestTeams[teamIdx].members.splice(playerIdx, 1);
       recomputeTeamSums(latestTeams[teamIdx]);
+      refreshAutoTeamNames(latestTeams);
 
       // 스왑중 표시 초기화
       if (autoSwapBuffer) {
