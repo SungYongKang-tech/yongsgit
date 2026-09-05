@@ -59,7 +59,7 @@
 
     .player-input-pair { display: flex; gap: 8px; align-items: center; }
     .player-input-pair input { padding: 6px; font-size: 14px; }
-    #newName { width: 100px; }
+    #newName { width: 100px; ime-mode: active; }
     #newLevel { width: 60px; }
     .button-group { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
     .button-group button { padding: 6px 12px; font-size: 14px; }
@@ -241,7 +241,7 @@
 
   <div class="input-wrap">
     <div class="player-input-pair">
-      <input type="text" id="newName" placeholder="이름" />
+      <input type="text" id="newName" placeholder="이름" lang="ko" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="next" />
       <input type="number" id="newLevel" placeholder="부수" min="1" max="20" />
     </div>
 
@@ -535,11 +535,35 @@
       }
     }
 
+    function getPlayerOrganization(p) {
+      return String(p?.organization || "남동발전").trim() || "남동발전";
+    }
+
+    function getOrganizationOrder(org) {
+      if (org === "남동발전") return -1;
+      const idx = opponentOrganizations.indexOf(org);
+      return idx >= 0 ? idx : 999;
+    }
+
+    function getSortedPlayerEntries() {
+      return allPlayers
+        .map((p, i) => ({ p, i, org: getPlayerOrganization(p) }))
+        .sort((a, b) => {
+          const ao = getOrganizationOrder(a.org);
+          const bo = getOrganizationOrder(b.org);
+          if (ao !== bo) return ao - bo;
+          if (a.org !== b.org) return a.org.localeCompare(b.org, "ko");
+          const levelDiff = Number(a.p.level || 99) - Number(b.p.level || 99);
+          if (levelDiff !== 0) return levelDiff;
+          return String(a.p.name || "").localeCompare(String(b.p.name || ""), "ko");
+        });
+    }
+
     function renderPlayers() {
       const playerList = document.getElementById("playerList");
       playerList.innerHTML = "";
 
-      allPlayers.forEach((p, i) => {
+      getSortedPlayerEntries().forEach(({ p, i }) => {
         const el = document.createElement("span");
         el.className = "player";
 
@@ -953,6 +977,20 @@
     /*********************************************************
      * ✅ 선수 추가 / 삭제
      *********************************************************/
+    // 이름 입력 후 Enter → 부수 입력, 부수 입력 후 Enter → 선수 추가
+    document.getElementById("newName")?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        document.getElementById("newLevel")?.focus();
+      }
+    });
+    document.getElementById("newLevel")?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        addPlayer();
+      }
+    });
+
     function addPlayer() {
       const nameInput = document.getElementById("newName");
       const levelInput = document.getElementById("newLevel");
@@ -980,6 +1018,7 @@
       levelInput.value = "";
       // 같은 상대팀 선수를 연속 등록하기 쉽도록 소속 선택은 유지
       renderPlayers();
+      nameInput.focus();
     }
 
     function removeAddedPlayers() {
