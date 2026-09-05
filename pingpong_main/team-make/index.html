@@ -178,7 +178,7 @@
     <button onclick="createExchangeMatch()">교류전 생성</button>
     <button onclick="resetAll()">전체 초기화</button>
     <button id="saveTeamImageButton" onclick="saveTeamsAsImage()">팀 이미지 저장</button>
-    <button onclick="uploadTeamsToFirebase()" style="background-color:#f57f17;">경기 시작</button>
+    <button onclick="openStartMatchModal()" style="background-color:#f57f17;">🏓 경기 시작</button>
   </div>
 
   <div class="teams" id="teams"></div>
@@ -268,6 +268,78 @@
     </div>
   </div>
 
+  <!-- 경기 시작 설정 모달 -->
+  <div class="modal-overlay" id="startMatchModal">
+    <div class="modal">
+      <button class="close-btn" onclick="closeStartMatchModal()">✖</button>
+      <h2>🏓 경기 시작 설정</h2>
+
+      <div class="modal-section">
+        <h3>대회명</h3>
+        <input id="eventNameInput" type="text" value="KOEN 단체전"
+          style="width:100%;box-sizing:border-box;padding:9px;border:1px solid #bbb;border-radius:6px;">
+      </div>
+
+      <div class="modal-section">
+        <h3>경기 구성</h3>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <label>단식
+            <select id="startSinglesCnt" style="padding:7px;">
+              <option value="1">1경기</option><option value="2">2경기</option>
+              <option value="3" selected>3경기</option><option value="4">4경기</option>
+              <option value="5">5경기</option><option value="6">6경기</option>
+            </select>
+          </label>
+          <label>복식
+            <select id="startDoublesCnt" style="padding:7px;">
+              <option value="0">0경기</option><option value="1">1경기</option>
+              <option value="2" selected>2경기</option><option value="3">3경기</option>
+              <option value="4">4경기</option><option value="5">5경기</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div class="modal-section">
+        <h3>세트 방식</h3>
+        <select id="startScoreMode" style="width:100%;padding:9px;">
+          <option value="1" selected>3판 2선승</option>
+          <option value="2">5판 3선승</option>
+        </select>
+      </div>
+
+      <div class="modal-section">
+        <h3>자동 대진 방식</h3>
+        <select id="startAutoMode" style="width:100%;padding:9px;">
+          <option value="0" selected>실력매칭 (강강 · 약약)</option>
+          <option value="1">조합매칭 (상·하위 혼합)</option>
+        </select>
+      </div>
+
+      <div class="modal-section">
+        <h3>탁구대 수</h3>
+        <select id="startTableCount" style="width:100%;padding:9px;">
+          <option value="1">1대</option>
+          <option value="2">2대</option>
+          <option value="3" selected>3대</option>
+          <option value="4">4대</option>
+          <option value="5">5대</option>
+          <option value="6">6대</option>
+          <option value="7">7대</option>
+          <option value="8">8대</option>
+        </select>
+      </div>
+
+      <div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;padding:10px;font-size:13px;line-height:1.5;">
+        경기 시작을 누르면 팀과 경기 설정을 저장하고 기존 대진/결과를 초기화한 뒤 단체전 진행 화면으로 이동합니다.
+      </div>
+
+      <div style="text-align:center;margin-top:18px;">
+        <button onclick="uploadTeamsToFirebase()" style="background:#f57f17;">🚀 저장하고 경기 시작</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 라이브러리 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
@@ -276,7 +348,7 @@
      * ✅ Firebase: 모듈 방식 "통일"
      *********************************************************/
     import { db, auth } from "../firebase.js";
-    import { ref, set, get } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+    import { ref, set, get, remove } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
     import { signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
 
     /* ---------------- 로그인(익명) ---------------- */
@@ -514,11 +586,15 @@
           .map((t, i) => ({ t, i }))
           .filter(x => x.t.members.length < maxPerTeam[x.i]);
 
-        // ✅ “강자(낮은 부수)”를 “현재 평균 부수 높은 팀(약팀)”에 넣기
-        const target = candidates.reduce((a, b) => {
+        // ✅ 먼저 인원 수가 적은 팀을 채우고, 같은 인원 수라면 평균 부수가 높은(약한) 팀 우선
+        // 빈 팀 평균이 0으로 계산되어 강자가 한 팀에 몰리던 문제 방지
+        const minMembers = Math.min(...candidates.map(x => x.t.members.length));
+        const sameSize = candidates.filter(x => x.t.members.length === minMembers);
+        const target = sameSize.reduce((a, b) => {
           const avgA = avgLevel(a.t);
           const avgB = avgLevel(b.t);
-          return avgA > avgB ? a : b; // 평균 부수 큰 팀을 선택
+          if (avgA !== avgB) return avgA > avgB ? a : b;
+          return a.i < b.i ? a : b;
         }).t;
 
         target.members.push(p);
@@ -757,11 +833,18 @@
     async function uploadTeamsToFirebase() {
       try {
         if (!latestTeams || latestTeams.length === 0) {
-          alert("⚠️ 팀이 먼저 생성되어야 업로드할 수 있습니다.");
+          alert("⚠️ 팀이 먼저 생성되어야 합니다.");
           return;
         }
 
         await requireAuth();
+
+        const eventName = (document.getElementById("eventNameInput")?.value || "KOEN 단체전").trim();
+        const singlesCnt = Number(document.getElementById("startSinglesCnt")?.value || 3);
+        const doublesCnt = Number(document.getElementById("startDoublesCnt")?.value || 2);
+        const scoreMode = Number(document.getElementById("startScoreMode")?.value || 1);
+        const autoMode = Number(document.getElementById("startAutoMode")?.value || 0);
+        const tableCount = Number(document.getElementById("startTableCount")?.value || 3);
 
         const firebaseData = {};
         latestTeams.forEach((team, idx) => {
@@ -770,16 +853,52 @@
           firebaseData[`team${idx + 1}`] = { teamName, players };
         });
 
+        // 새 경기 시작: 팀/설정 저장 + 이전 대진/결과 초기화
         await set(ref(db, "teams"), firebaseData);
+        await set(ref(db, "team_event_config"), {
+          eventName,
+          singlesCnt,
+          doublesCnt,
+          scoreMode,
+          autoMode,
+          tableCount,
+          autoGenerate: true,
+          startedAt: Date.now()
+        });
+        await remove(ref(db, "team_live_matches"));
 
-        setTimeout(() => {
-          window.location.href = "https://sensational-tulumba-65e97e.netlify.app/pingpong_main/team-live/";
-        }, 300);
+        window.location.href = "https://sensational-tulumba-65e97e.netlify.app/pingpong_main/team-live/";
 
       } catch (err) {
-        console.error("❌ 업로드 실패:", err);
-        alert("❌ Firebase 업로드 실패\n자세한 내용은 콘솔을 확인하세요.");
+        console.error("❌ 경기 시작 실패:", err);
+        alert("❌ 경기 시작 처리 실패\n자세한 내용은 콘솔을 확인하세요.");
       }
+    }
+
+    function openStartMatchModal() {
+      if (!latestTeams || latestTeams.length === 0) {
+        alert("먼저 팀을 생성해주세요.");
+        return;
+      }
+      document.getElementById("startMatchModal").style.display = "flex";
+    }
+
+    function closeStartMatchModal() {
+      document.getElementById("startMatchModal").style.display = "none";
+    }
+
+    function saveTeamsAsImage() {
+      const target = document.getElementById("teams");
+      if (!target || !target.children.length) {
+        alert("저장할 팀이 없습니다. 먼저 팀을 생성해주세요.");
+        return;
+      }
+      html2canvas(target, { scale: 2, useCORS: true, backgroundColor: "#f0f2f5" }).then(canvas => {
+        const link = document.createElement("a");
+        link.download = `단체전_팀구성_${new Date().toISOString().slice(0,10)}.png`;
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+      });
     }
 
     /*********************************************************
@@ -787,6 +906,8 @@
      *********************************************************/
     function resetAll() {
       selected = [];
+      latestTeams = [];
+      autoSwapBuffer = null;
       document.getElementById("teams").innerHTML = "";
       document.getElementById("matchSchedule").innerHTML = "";
       renderPlayers();
@@ -876,8 +997,14 @@ function confirmExchangeMatch() {
       .map((t, i) => ({ t, i }))
       .filter(x => x.t.members.length < maxPerTeam[x.i]);
 
-    // 평균 부수가 높은(=약한) 팀을 우선 선택
-    const target = candidates.reduce((a, b) => (avgLevel(a.t) > avgLevel(b.t) ? a : b)).t;
+    // 먼저 인원 수가 적은 팀을 채우고, 같은 인원 수라면 평균 부수가 높은(=약한) 팀 우선
+    const minMembers = Math.min(...candidates.map(x => x.t.members.length));
+    const sameSize = candidates.filter(x => x.t.members.length === minMembers);
+    const target = sameSize.reduce((a, b) => {
+      const avgA = avgLevel(a.t), avgB = avgLevel(b.t);
+      if (avgA !== avgB) return avgA > avgB ? a : b;
+      return a.i < b.i ? a : b;
+    }).t;
 
     target.members.push(p);
     target.sumLevel += Number(p.level || 0);
@@ -944,6 +1071,9 @@ function confirmExchangeMatch() {
     window.removeAutoPlayer = removeAutoPlayer;
 
     window.uploadTeamsToFirebase = uploadTeamsToFirebase;
+    window.openStartMatchModal = openStartMatchModal;
+    window.closeStartMatchModal = closeStartMatchModal;
+    window.saveTeamsAsImage = saveTeamsAsImage;
 
     window.resetAll = resetAll;
     window.openModal = openModal;
@@ -953,7 +1083,6 @@ function confirmExchangeMatch() {
     window.closeExchangeModal = closeExchangeModal;
     window.confirmExchangeMatch = confirmExchangeMatch;
 
-    window.startManualTeamAssign = startManualTeamAssign;
 
    
   </script>

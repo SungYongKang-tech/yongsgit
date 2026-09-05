@@ -214,6 +214,7 @@
 
     /* ❌ 삭제 버튼 */
     .delete-btn {
+      display: none;
       position: absolute;
       top: 4px;
       right: 6px;
@@ -226,6 +227,7 @@
       cursor: pointer;
       z-index: 10;
     }
+    body.admin-mode .delete-btn { display:block; }
     .delete-btn:hover { background: #b71c1c; }
 
     /* 선택형 버튼 시각 효과 */
@@ -251,6 +253,23 @@
       .quick-add-row .btn-add{ min-width: 52px; padding: 7px 8px; font-size: 14px; }
     }
 
+    /* ===== 참가자/관리자 모드 ===== */
+    .admin-panel { display:none !important; }
+    body.admin-mode .admin-panel { display:flex !important; }
+    .live-header {
+      max-width:640px; margin:0 auto 12px; background:#fff; border-radius:10px;
+      padding:12px; box-shadow:0 2px 6px rgba(0,0,0,.08); box-sizing:border-box;
+    }
+    .live-top-row { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .event-title { font-size:20px; font-weight:800; color:#0d47a1; }
+    .admin-toggle { background:#546e7a; padding:7px 10px; font-size:13px; min-width:auto; }
+    .progress-wrap { margin-top:10px; }
+    .progress-text { font-size:13px; color:#555; margin-bottom:5px; text-align:center; }
+    .progress-bar { height:10px; background:#e0e0e0; border-radius:999px; overflow:hidden; }
+    .progress-fill { height:100%; width:0%; background:#1976d2; transition:width .25s ease; }
+    .participant-note { text-align:center; font-size:12px; color:#777; margin-top:8px; }
+    body.admin-mode .participant-note { display:none; }
+
     /* ✅ 점수 버튼: 5판3승(주황) */
     .btn-score-bo5{
       font-size: 14px;
@@ -265,9 +284,21 @@
 </head>
 
 <body>
-  <h2>단체전 진행(made by Sung-Yong)</h2>
+  <div class="live-header">
+    <div class="live-top-row">
+      <div id="eventTitle" class="event-title">🏓 단체전 진행</div>
+      <button class="admin-toggle" onclick="toggleAdminMode()">⚙ 관리자</button>
+    </div>
+    <div class="progress-wrap">
+      <div id="progressText" class="progress-text">경기 준비 중</div>
+      <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+    </div>
+    <div class="participant-note">점수 입력은 경기 결과 칸을 누르세요.</div>
+  </div>
 
-  <div class="config">
+  <h2 style="display:none;">단체전 진행</h2>
+
+  <div class="config admin-panel">
     <!-- ✅ 경기 중 신규 선수 추가 -->
     <div class="btn-group quick-add-row" style="width:100%; max-width:640px;">
       <input id="addName" placeholder="이름"
@@ -360,8 +391,9 @@
        - 기존: matches
        - 변경: team_live_matches
        ========================================================= */
-    const MATCHES_KEY = "team_live_matches";  // ✅ 여기로 통일
+    const MATCHES_KEY = "team_live_matches";
     const TEAMS_KEY   = "teams";
+    const EVENT_CONFIG_KEY = "team_event_config";
 
     /* ---------------- 전역 상태 ---------------- */
     let teamsUnsub = null;
@@ -371,6 +403,7 @@
     let teamData = {};
 
     let autoMode = -1;
+    let eventConfig = {};
 
     // ✅ 점수 입력 방식: 1 = 3판2선승(파랑), 2 = 5판3선승(주황)
     window.__scoreMode = window.__scoreMode ?? 1;
@@ -404,8 +437,57 @@
 
     // ✅ 초기 인증 확보 + 초기 로드
     await requireAuth();
+    await loadEventConfig();
     await loadTeams();
     listenToMatchUpdates();
+    await autoStartPreparedMatch();
+
+    async function loadEventConfig() {
+      try {
+        const snap = await get(ref(db, EVENT_CONFIG_KEY));
+        eventConfig = snap.exists() ? (snap.val() || {}) : {};
+
+        const singlesEl = document.getElementById("singlesCnt");
+        const doublesEl = document.getElementById("doublesCnt");
+        if (singlesEl && Number.isFinite(Number(eventConfig.singlesCnt))) singlesEl.value = String(eventConfig.singlesCnt);
+        if (doublesEl && Number.isFinite(Number(eventConfig.doublesCnt))) doublesEl.value = String(eventConfig.doublesCnt);
+
+        if (Number(eventConfig.scoreMode) === 1 || Number(eventConfig.scoreMode) === 2) {
+          window.__scoreMode = Number(eventConfig.scoreMode);
+        }
+        if (Number(eventConfig.autoMode) === 0 || Number(eventConfig.autoMode) === 1) {
+          autoMode = Number(eventConfig.autoMode);
+        }
+
+        const title = document.getElementById("eventTitle");
+        if (title) title.textContent = `🏓 ${eventConfig.eventName || "단체전 진행"}`;
+      } catch (e) {
+        console.error("대회 설정 로드 실패:", e);
+      }
+    }
+
+    async function autoStartPreparedMatch() {
+      if (!eventConfig?.autoGenerate) return;
+      const snap = await get(ref(db, MATCHES_KEY));
+      if (snap.exists()) return;
+      if (teamNames.length < 2) return;
+
+      await autoMatch(true);
+      await update(ref(db, EVENT_CONFIG_KEY), { autoGenerate: false, generatedAt: Date.now() });
+      eventConfig.autoGenerate = false;
+    }
+
+    function toggleAdminMode() {
+      const btn = document.querySelector(".admin-toggle");
+      if (document.body.classList.contains("admin-mode")) {
+        document.body.classList.remove("admin-mode");
+        if (btn) btn.textContent = "⚙ 관리자";
+        return;
+      }
+      if (!checkPassword()) return;
+      document.body.classList.add("admin-mode");
+      if (btn) btn.textContent = "✕ 관리 닫기";
+    }
 
     /* ---------------- 팀 로드 ---------------- */
     async function loadTeams() {
@@ -498,19 +580,19 @@
 
           const key = `${teamNames[i]}_vs_${teamNames[j]}`;
           // ✅ matches/${key} → ${MATCHES_KEY}/${key}
-          updatesObj[`${MATCHES_KEY}/${key}`] = { teamA: teamNames[i], teamB: teamNames[j], matchList };
+          updatesObj[`${MATCHES_KEY}/${key}`] = { exchangeName: eventConfig.eventName || "", teamA: teamNames[i], teamB: teamNames[j], matchList };
         }
       }
       await update(ref(db), updatesObj);
     }
 
     /* ---------------- 자동 대진 생성 ---------------- */
-    async function autoMatch() {
+    async function autoMatch(skipPassword = false) {
       if (autoMode !== 0 && autoMode !== 1) {
         alert("자동 생성 방식을 먼저 선택해주세요.");
         return;
       }
-      if (!checkPassword()) return;
+      if (!skipPassword && !checkPassword()) return;
 
       const ok = await loadTeams();
       if (!ok || teamNames.length === 0) return;
@@ -597,7 +679,7 @@
 
           const key = `${teamA}_vs_${teamB}`;
           // ✅ matches/${key} → ${MATCHES_KEY}/${key}
-          updatesObj[`${MATCHES_KEY}/${key}`] = { teamA, teamB, matchList };
+          updatesObj[`${MATCHES_KEY}/${key}`] = { exchangeName: eventConfig.eventName || "", teamA, teamB, matchList };
         }
       }
 
@@ -1508,15 +1590,16 @@
 
         if (!matches) {
           document.getElementById("rankingArea").innerHTML = "";
-          document.querySelector("h2").innerText = "단체전 진행 (데이터 없음)";
+          const titleEl = document.getElementById("eventTitle");
+          if (titleEl) titleEl.innerText = `🏓 ${eventConfig.eventName || "단체전 진행"}`;
+          updateProgress();
           return;
         }
 
         const keys = Object.keys(matches);
-        const titleEl = document.querySelector("h2");
-
         const first = matches[keys[0]];
-        titleEl.innerText = first.exchangeName ? `🏓 ${first.exchangeName}` : "단체전 진행";
+        const titleEl = document.getElementById("eventTitle");
+        if (titleEl) titleEl.innerText = first.exchangeName ? `🏓 ${first.exchangeName}` : `🏓 ${eventConfig.eventName || "단체전 진행"}`;
 
         keys.forEach(key => {
           const m = matches[key];
@@ -1526,7 +1609,24 @@
         });
 
         calculateTeamResults();
+        updateProgress();
       });
+    }
+
+    function updateProgress() {
+      const rows = Array.from(document.querySelectorAll(".match-card tbody tr"));
+      const total = rows.length;
+      const done = rows.filter(r => {
+        const t = r.children?.[2]?.innerText?.trim() || "";
+        if (!t.includes(":")) return false;
+        const [a,b] = t.split(":").map(Number);
+        return Number.isFinite(a) && Number.isFinite(b) && a !== b;
+      }).length;
+      const pct = total ? Math.round(done / total * 100) : 0;
+      const text = document.getElementById("progressText");
+      const fill = document.getElementById("progressFill");
+      if (text) text.textContent = total ? `진행 ${done} / ${total}경기 · ${pct}%` : "경기 준비 중";
+      if (fill) fill.style.width = `${pct}%`;
     }
 
     /* ---------------- 순위 계산 ---------------- */
@@ -1542,7 +1642,7 @@
         teams.add(teamA); teams.add(teamB);
       });
 
-      teams.forEach(t => stats[t] = { win:0, lose:0, setDiff:0 });
+      teams.forEach(t => stats[t] = { matchWin:0, matchLose:0, gameWin:0, gameLose:0, setDiff:0 });
 
       cards.forEach(card => {
         const teamA = card.dataset.teamA;
@@ -1550,34 +1650,46 @@
         if (!teamA || !teamB) return;
 
         const rows = card.querySelectorAll("tbody tr");
-        let wA=0, wB=0, sA=0, sB=0;
+        let wA=0, wB=0, sA=0, sB=0, completed=0;
 
         rows.forEach(r => {
           const result = r.children[2].innerText.trim();
           if (!result.includes(":")) return;
           const [a,b] = result.split(":").map(Number);
-          if (Number.isNaN(a) || Number.isNaN(b)) return;
-
-          if (a>b) wA++; else if (b>a) wB++;
+          if (!Number.isFinite(a) || !Number.isFinite(b) || a === b) return;
+          completed++;
+          if (a>b) wA++; else wB++;
           sA += a; sB += b;
         });
 
-        stats[teamA].win += wA; stats[teamA].lose += wB; stats[teamA].setDiff += (sA-sB);
-        stats[teamB].win += wB; stats[teamB].lose += wA; stats[teamB].setDiff += (sB-sA);
+        stats[teamA].gameWin += wA; stats[teamA].gameLose += wB; stats[teamA].setDiff += (sA-sB);
+        stats[teamB].gameWin += wB; stats[teamB].gameLose += wA; stats[teamB].setDiff += (sB-sA);
+
+        // 해당 팀 대결의 모든 세부 경기가 끝났을 때만 단체전 승패 반영
+        if (completed === rows.length && rows.length > 0) {
+          if (wA > wB) { stats[teamA].matchWin++; stats[teamB].matchLose++; }
+          else if (wB > wA) { stats[teamB].matchWin++; stats[teamA].matchLose++; }
+        }
       });
 
       const sorted = Object.entries(stats).sort((x,y)=>{
-        if (y[1].win !== x[1].win) return y[1].win - x[1].win;
-        return y[1].setDiff - x[1].setDiff;
+        const A=x[1], B=y[1];
+        if (B.matchWin !== A.matchWin) return B.matchWin - A.matchWin;
+        const gameDiffA=A.gameWin-A.gameLose, gameDiffB=B.gameWin-B.gameLose;
+        if (gameDiffB !== gameDiffA) return gameDiffB-gameDiffA;
+        if (B.setDiff !== A.setDiff) return B.setDiff-A.setDiff;
+        return x[0].localeCompare(y[0], "ko");
       });
 
-      let html = '<h3 style="text-align:center">📊 팀별 경기결과 및 순위표</h3>';
-      html += '<div class="scroll-table"><table><thead><tr><th>팀명</th><th>승</th><th>패</th><th>세트득실</th><th>순위</th></tr></thead><tbody>';
+      let html = '<h3 style="text-align:center">📊 실시간 단체전 순위</h3>';
+      html += '<div class="scroll-table"><table><thead><tr><th>팀명</th><th>단체전</th><th>경기득실</th><th>세트득실</th><th>순위</th></tr></thead><tbody>';
       sorted.forEach(([team, st], idx)=>{
-        html += `<tr><td>${team}</td><td>${st.win}</td><td>${st.lose}</td><td>${st.setDiff}</td><td>${idx+1}</td></tr>`;
+        const gameDiff = st.gameWin - st.gameLose;
+        html += `<tr><td>${team}</td><td>${st.matchWin}승 ${st.matchLose}패</td><td>${gameDiff>0?"+":""}${gameDiff}</td><td>${st.setDiff>0?"+":""}${st.setDiff}</td><td>${idx+1}</td></tr>`;
       });
       html += '</tbody></table></div>';
       document.getElementById("rankingArea").innerHTML = html;
+      updateProgress();
     }
 
     /* ---------------- 이미지 저장 ---------------- */
@@ -1820,6 +1932,7 @@
 
     window.deleteMatch = deleteMatch;
     window.addPlayerQuick = addPlayerQuick;
+    window.toggleAdminMode = toggleAdminMode;
   </script>
 </body>
 </html>
