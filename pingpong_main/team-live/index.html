@@ -534,7 +534,10 @@
       let html = '<h3 style="text-align:center">📋 팀 구성 현황</h3><table><tr><th>팀명</th><th>팀원</th></tr>';
       teamNames.forEach(team => {
         const players = (teamData[team].players || []).map(p => `${p.name}(${p.level})`).join(", ");
-        html += `<tr><td>${team}</td><td>${players}</td></tr>`;
+        const org = teamData[team]?.organization;
+        const type = teamData[team]?.teamType;
+        const badge = (type === "OUR" || type === "OPP") && org ? `<div style="font-size:11px;color:#666;margin-top:2px;">${org}</div>` : "";
+        html += `<tr><td>${team}${badge}</td><td>${players}</td></tr>`;
       });
       html += "</table>";
       document.getElementById("teamListArea").innerHTML = html;
@@ -544,6 +547,39 @@
         sel.innerHTML = `<option value="">팀 선택</option>` +
           teamNames.map(t => `<option value="${t}">${t}</option>`).join("");
       }
+    }
+
+    /* ---------------- 경기 조합 생성 ---------------- */
+    function getTeamPairings() {
+      // 일반 단체전: 기존처럼 모든 팀 풀리그
+      const isExchange = eventConfig?.eventType === "EXCHANGE" ||
+        teamNames.some(name => ["OUR", "OPP", "MIX"].includes(teamData[name]?.teamType));
+
+      if (!isExchange) {
+        const pairs = [];
+        for (let i = 0; i < teamNames.length; i++) {
+          for (let j = i + 1; j < teamNames.length; j++) {
+            pairs.push([teamNames[i], teamNames[j]]);
+          }
+        }
+        return pairs;
+      }
+
+      // 교류전: 같은 기관끼리는 절대 대진하지 않음
+      const ours = teamNames.filter(name => teamData[name]?.teamType === "OUR");
+      const opps = teamNames.filter(name => teamData[name]?.teamType === "OPP");
+      const mixes = teamNames.filter(name => teamData[name]?.teamType === "MIX");
+      const pairs = [];
+
+      ours.forEach(a => opps.forEach(b => pairs.push([a, b])));
+
+      // 혼합팀은 혼합팀끼리 2팀 이상 있을 때만 별도 대진
+      for (let i = 0; i < mixes.length; i++) {
+        for (let j = i + 1; j < mixes.length; j++) {
+          pairs.push([mixes[i], mixes[j]]);
+        }
+      }
+      return pairs;
     }
 
     /* ---------------- 수동 대진 생성 ---------------- */
@@ -570,18 +606,21 @@
       const doubles = parseInt(document.getElementById("doublesCnt").value, 10);
 
       const updatesObj = {};
-      for (let i = 0; i < teamNames.length; i++) {
-        for (let j = i + 1; j < teamNames.length; j++) {
-          const matchList = [];
-          for (let s = 0; s < singles; s++)
-            matchList.push({ label: `${s + 1}단`, players: "미정 vs 미정", result: "-" });
-          for (let d = 0; d < doubles; d++)
-            matchList.push({ label: `${d + 1}복`, players: "미정/미정 vs 미정/미정", result: "-" });
+      const pairings = getTeamPairings();
+      if (!pairings.length) {
+        alert("생성할 수 있는 팀 대진이 없습니다. 교류전이라면 우리팀과 상대팀이 각각 1팀 이상인지 확인해주세요.");
+        return;
+      }
 
-          const key = `${teamNames[i]}_vs_${teamNames[j]}`;
-          // ✅ matches/${key} → ${MATCHES_KEY}/${key}
-          updatesObj[`${MATCHES_KEY}/${key}`] = { exchangeName: eventConfig.eventName || "", teamA: teamNames[i], teamB: teamNames[j], matchList };
-        }
+      for (const [teamA, teamB] of pairings) {
+        const matchList = [];
+        for (let s = 0; s < singles; s++)
+          matchList.push({ label: `${s + 1}단`, players: "미정 vs 미정", result: "-" });
+        for (let d = 0; d < doubles; d++)
+          matchList.push({ label: `${d + 1}복`, players: "미정/미정 vs 미정/미정", result: "-" });
+
+        const key = `${teamA}_vs_${teamB}`;
+        updatesObj[`${MATCHES_KEY}/${key}`] = { exchangeName: eventConfig.eventName || "", teamA, teamB, matchList };
       }
       await update(ref(db), updatesObj);
     }
@@ -628,10 +667,13 @@
       const doublesCnt = parseInt(document.getElementById("doublesCnt").value, 10);
 
       const updatesObj = {};
-      for (let i = 0; i < teamNames.length; i++) {
-        for (let j = i + 1; j < teamNames.length; j++) {
-          const teamA = teamNames[i], teamB = teamNames[j];
+      const pairings = getTeamPairings();
+      if (!pairings.length) {
+        alert("생성할 수 있는 팀 대진이 없습니다. 교류전이라면 우리팀과 상대팀이 각각 1팀 이상인지 확인해주세요.");
+        return;
+      }
 
+      for (const [teamA, teamB] of pairings) {
           const A_raw = JSON.parse(JSON.stringify(teamData[teamA].players || []));
           const B_raw = JSON.parse(JSON.stringify(teamData[teamB].players || []));
 
@@ -680,7 +722,6 @@
           const key = `${teamA}_vs_${teamB}`;
           // ✅ matches/${key} → ${MATCHES_KEY}/${key}
           updatesObj[`${MATCHES_KEY}/${key}`] = { exchangeName: eventConfig.eventName || "", teamA, teamB, matchList };
-        }
       }
 
       await update(ref(db), updatesObj);
