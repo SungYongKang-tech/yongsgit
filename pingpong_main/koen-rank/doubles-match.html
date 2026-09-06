@@ -666,17 +666,11 @@ function handicapAnnouncement(state){
   const handicap=handicapInfo(state);
   return handicap.side ? `${handicap.side}팀 ${handicap.points}점 핸디.` : "핸디 없음.";
 }
-function makeBaseCycle(firstServerKey,firstReceiverKey){
-  return [
-    [firstServerKey,firstReceiverKey],
-    [firstReceiverKey,partnerKey(firstServerKey)],
-    [partnerKey(firstServerKey),partnerKey(firstReceiverKey)],
-    [partnerKey(firstReceiverKey),firstServerKey]
-  ];
-}
 function setStartPair(state,setNumber){
-  const cycle=makeBaseCycle(state.firstServerKey,state.firstReceiverKey);
-  return cycle[(Number(setNumber || 1)-1)%4];
+  const oddSet=Number(setNumber || 1)%2===1;
+  return oddSet
+    ? [state.firstServerKey,state.firstReceiverKey]
+    : [state.firstReceiverKey,state.firstServerKey];
 }
 function isGameWon(a,b){
   return (a>=11 || b>=11) && Math.abs(a-b)>=2;
@@ -955,15 +949,17 @@ async function scorePoint(side){
           state.winnerSide=state.setWinsA>state.setWinsB ? "A" : "B";
           state.completedAt=Date.now();
         }else{
-          const previousServerKey=state.currentServerKey;
-          const previousReceiverKey=state.currentReceiverKey;
           state.setNumber=Number(state.setNumber||1)+1;
           const handicap=handicapInfo(state);
           state.scoreA=handicap.scoreA;
           state.scoreB=handicap.scoreB;
           state.decidingReceiveChanged=false;
-          state.currentServerKey=previousReceiverKey;
-          state.currentReceiverKey=partnerKey(previousServerKey);
+
+          // 세트 시작 서버/리시버는 최초 선택한 두 선수가 세트마다 역할을 교대한다.
+          // 예: 1세트 강성용→박수은, 2세트 박수은→강성용, 3세트 강성용→박수은
+          const pair=setStartPair(state,state.setNumber);
+          state.currentServerKey=pair[0];
+          state.currentReceiverKey=pair[1];
           state.servedCount=0;
         }
       }else{
