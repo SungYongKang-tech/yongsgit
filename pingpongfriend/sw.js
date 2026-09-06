@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takgu-friendly-v3';
+const CACHE_NAME = 'takgu-friendly-v4';
 const APP_SHELL = [
   './',
   './index.html',

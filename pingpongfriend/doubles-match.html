@@ -963,7 +963,6 @@ async function scorePoint(side){
       history.push(snapshotForUndo(state));
       state.history=history.slice(-80);
 
-      const totalBefore=Number(state.scoreA||0)+Number(state.scoreB||0);
       if(side==="A") state.scoreA=Number(state.scoreA||0)+1;
       else state.scoreB=Number(state.scoreB||0)+1;
 
@@ -991,15 +990,18 @@ async function scorePoint(side){
           state.servedCount=0;
         }
       }else{
-        const quota=totalBefore>=20 ? 1 : 2;
+        const totalScore=scoreA+scoreB;
+        const deuce=scoreA>=10 && scoreB>=10;
+        const shouldChangeServe=deuce || (totalScore>0 && totalScore%2===0);
+
         let nextServer=state.currentServerKey;
         let nextReceiver=state.currentReceiverKey;
-        let nextServed=Number(state.servedCount||0)+1;
 
-        if(nextServed>=quota){
+        // 10:10 전에는 두 팀 점수의 합이 짝수가 되는 순간(2,4,6...) 서브 체인지.
+        // 10:10 이후 듀스에서는 매 포인트마다 서브 체인지.
+        if(shouldChangeServe){
           nextServer=state.currentReceiverKey;
           nextReceiver=partnerKey(state.currentServerKey);
-          nextServed=0;
         }
 
         const decidingSet=Number(state.setNumber||1)===Number(state.bestOf||5);
@@ -1011,7 +1013,7 @@ async function scorePoint(side){
         }
         state.currentServerKey=nextServer;
         state.currentReceiverKey=nextReceiver;
-        state.servedCount=nextServed;
+        state.servedCount=deuce ? 0 : totalScore%2;
       }
       state.updatedAt=Date.now();
       return state;
