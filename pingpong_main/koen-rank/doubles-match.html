@@ -939,7 +939,6 @@ async function scorePoint(side){
       history.push(snapshotForUndo(state));
       state.history=history.slice(-80);
 
-      const totalBefore=Number(state.scoreA||0)+Number(state.scoreB||0);
       if(side==="A") state.scoreA=Number(state.scoreA||0)+1;
       else state.scoreB=Number(state.scoreB||0)+1;
 
@@ -956,26 +955,28 @@ async function scorePoint(side){
           state.winnerSide=state.setWinsA>state.setWinsB ? "A" : "B";
           state.completedAt=Date.now();
         }else{
+          const previousServerKey=state.currentServerKey;
+          const previousReceiverKey=state.currentReceiverKey;
           state.setNumber=Number(state.setNumber||1)+1;
           const handicap=handicapInfo(state);
           state.scoreA=handicap.scoreA;
           state.scoreB=handicap.scoreB;
           state.decidingReceiveChanged=false;
-          const pair=setStartPair(state,state.setNumber);
-          state.currentServerKey=pair[0];
-          state.currentReceiverKey=pair[1];
+          state.currentServerKey=previousReceiverKey;
+          state.currentReceiverKey=partnerKey(previousServerKey);
           state.servedCount=0;
         }
       }else{
-        const quota=totalBefore>=20 ? 1 : 2;
+        const totalAfter=scoreA+scoreB;
+        const deuceMode=scoreA>=10 && scoreB>=10;
+        const shouldChangeServe=deuceMode ? true : (totalAfter>0 && totalAfter%2===0);
         let nextServer=state.currentServerKey;
         let nextReceiver=state.currentReceiverKey;
-        let nextServed=Number(state.servedCount||0)+1;
+        let nextServed=0;
 
-        if(nextServed>=quota){
+        if(shouldChangeServe){
           nextServer=state.currentReceiverKey;
           nextReceiver=partnerKey(state.currentServerKey);
-          nextServed=0;
         }
 
         const decidingSet=Number(state.setNumber||1)===Number(state.bestOf||5);
