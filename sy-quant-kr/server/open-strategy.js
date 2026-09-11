@@ -77,6 +77,8 @@ const settings = {
   // OPEN 2.0: 장전 우선종목을 먼저 감시하고 일반검색은 보완용으로 순환
   openPriorityMaxCount: 20,
 openFallbackScanLimit: 40,
+// 09:00~09:10에는 HOT/집중후보 실시간 재확인을 우선해 일반검색 부하를 줄인다.
+openEarlyFallbackScanLimit: 20,
 openPriorityPriceDelayMs: 50,
 
 // 한 번의 OPEN 후보 수집이 길어져 다음 관찰을 막지 않도록 총 수집시간을 제한한다.
@@ -91,7 +93,7 @@ openFocusedCandidateMaxCount: 30,
 openFocusedPriceDelayMs: 50,
 
 // 새로운 종목 유입을 위해 60초마다 일반검색도 다시 실행
-openFullRescanIntervalMs: 30 * 1000,
+openFullRescanIntervalMs: 60 * 1000,
 // 09:12 이후에도 신규 종목 유입을 막지 않고 API 부하만 낮춘다.
 openLateFullRescanIntervalMs: 60 * 1000,
 
@@ -100,7 +102,7 @@ openPotentialEnabled: true,
 openPotentialMinScore: 7,
 openPotentialMaxCount: 30,
 // 상태에는 상위 20개를 유지하되 실제 현재가 재조회는 상위 10개만 수행
-openPotentialRecheckCount: 10,
+openPotentialRecheckCount: 5,
 openPotentialCheckIntervalMs: 5 * 1000,
 openPotentialMaxAgeSeconds: 900,
 // 키움 현재가 API 과호출 방지를 위한 종목 간 조회 간격
@@ -197,6 +199,14 @@ openStopLossRiskBufferRate: 0.30,
   openStagnationSeconds: 300,
   openMinProfitToStagnationSell: 0.8,
   openMaxHoldingMinutes: 60,
+
+  // 09:30 이후 약한 OPEN 종목 조기청산
+  // 장초반 실제 상승이 거의 없고 현재 손실인 종목만 정리하며,
+  // 강한 종목과 트레일링 진입 종목은 기존 보유 로직을 유지한다.
+  openWeakExitEnabled: true,
+  openWeakExitTime: "09:30",
+  openWeakExitMaxProfitRate: -0.30,
+  openWeakExitMaxHighestProfitRate: 1.00,
 
   // 트레일링 진입 종목은 더 오래 보유
 openTrailingMaxHoldingMinutes: 180,
@@ -3491,9 +3501,13 @@ async function fetchFallbackCandidates(state, scanContext = null) {
     remainingMs
   );
   const discoverBudgetMs = Math.max(2000, Math.min(6000, remainingMs - 1000));
+  const hhmm = getCurrentHHMM();
+  const fallbackScanLimit = hhmm < "09:10"
+    ? Number(settings.openEarlyFallbackScanLimit || 20)
+    : Number(settings.openFallbackScanLimit || 40);
   const data = await fetchJson(
     `${API_BASE}/api/discover?offset=${offset}` +
-    `&scanLimit=${settings.openFallbackScanLimit}` +
+    `&scanLimit=${fallbackScanLimit}` +
     `&limit=${settings.discoverLimit}` +
     `&source=open-discover` +
     `&budgetMs=${discoverBudgetMs}`,
@@ -5624,6 +5638,21 @@ function getOpenSellSignal(holding, price) {
   const holdSeconds = holdMinutes * 60;
   if (holdSeconds < Number(settings.openMinHoldingSeconds || 120)) {
     return null;
+  }
+
+  if (
+    settings.openWeakExitEnabled !== false &&
+    hhmm >= String(settings.openWeakExitTime || "09:30") &&
+    highestProfitRate < Number(settings.openWeakExitMaxHighestProfitRate || 1.0) &&
+    profitRate <= Number(settings.openWeakExitMaxProfitRate || -0.30)
+  ) {
+    return makeSignal(
+      "OPEN_WEAK_TIME_SELL",
+      `OPEN 09:30 약세청산 / 최고 ${highestProfitRate.toFixed(2)}% / ` +
+      `현재 ${profitRate.toFixed(2)}% / 기준 최고 < ` +
+      `${Number(settings.openWeakExitMaxHighestProfitRate || 1.0).toFixed(2)}% / ` +
+      `현재 <= ${Number(settings.openWeakExitMaxProfitRate || -0.30).toFixed(2)}%`
+    );
   }
 
   if (highestProfitRate >= settings.openTrailingStartRate && drawdownFromHigh <= -Math.abs(settings.openTrailingStopRate)) {

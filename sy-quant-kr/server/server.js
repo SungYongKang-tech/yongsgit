@@ -677,6 +677,7 @@ const REPORT_SELL_TYPES = new Set([
   "OPEN_TRAILING_SELL",
   "OPEN_STAGNATION_SELL",
   "OPEN_TIME_SELL",
+  "OPEN_WEAK_TIME_SELL",
   "CORE_STOP_LOSS",
   "CORE_FIRST_TAKE_PROFIT",
   "CORE_BREAK_EVEN_SELL",
@@ -690,6 +691,7 @@ const REPORT_SELL_TYPES = new Set([
 
   "WAVE_STOP_LOSS",
   "WAVE_STRUCTURE_STOP",
+  "WAVE_LOSS_DEFENSE_SELL",
   "WAVE_PROTECT_SELL",
   "WAVE_TRAILING_SELL",
   "WAVE_STRONG_TRAILING_SELL",
@@ -1675,7 +1677,7 @@ async function buildHotCandidates(limit) {
     `[HOT API 성능] 순위 ${(rankElapsedMs / 1000).toFixed(1)}초 / ` +
     `상세 ${(detailElapsedMs / 1000).toFixed(1)}초 / ` +
     `전체 ${(totalElapsedMs / 1000).toFixed(1)}초 / ` +
-    `병합원본 ${mergedAll.length}개 / 상세대상 ${merged.length}개 / 결과 ${items.length}개 / ` +
+    `병합원본 ${mergedAll.length}개 / 후보대상 ${merged.length}개 / 상세조회 ${Math.min(detailEnrichLimit, merged.length)}개 / 결과 ${items.length}개 / ` +
     `순위부분오류 ${errors.length}건`
   );
 
@@ -3172,7 +3174,9 @@ function getKiwoomPricePriority(sourceValue) {
 
 function getKiwoomPriceQueueMaxWaitMs(sourceValue) {
   const source = String(sourceValue || "core").toLowerCase();
-  if (["sell", "manual-sell", "risk", "fast-sell"].includes(source)) return 4500;
+  // 보유종목 위험관리 요청은 앞선 1건의 키움 요청이 5초 가까이 걸려도
+  // 큐에서 먼저 만료되지 않도록 충분한 대기시간을 준다.
+  if (["sell", "manual-sell", "risk", "fast-sell"].includes(source)) return 8000;
   if (source === "open") return 4500;
   // 일반검색은 기다리며 큐를 점유하지 말고 빠르게 양보한다.
   if (source === "open-discover") return 750;
@@ -6798,6 +6802,7 @@ app.get("/api/daily-summary", (req, res) => {
   "OPEN_TRAILING_SELL",
   "OPEN_STAGNATION_SELL",
   "OPEN_TIME_SELL",
+  "OPEN_WEAK_TIME_SELL",
 
   "CORE_STOP_LOSS",
   "CORE_FIRST_TAKE_PROFIT",
@@ -7264,6 +7269,7 @@ app.get("/api/today-trade-analysis", (req, res) => {
   "OPEN_TRAILING_SELL",
   "OPEN_STAGNATION_SELL",
   "OPEN_TIME_SELL",
+  "OPEN_WEAK_TIME_SELL",
 
   "CORE_STOP_LOSS",
   "CORE_FIRST_TAKE_PROFIT",

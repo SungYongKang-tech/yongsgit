@@ -9,7 +9,7 @@ const STATE_FILE = path.join(__dirname, "paper-state-wave.json");
 const HOT_HISTORY_FILE = path.join(__dirname, "hot-candidates-history.json");
 const OPEN_MARKET_FILE = path.join(__dirname, "open-market.json");
 
-const STRATEGY_VERSION = "1.6.0-MASTER";
+const STRATEGY_VERSION = "1.6.1-MASTER";
 const ANALYSIS_RULE_VERSION = "20260902-best-trigger-profit-engine-v11";
 const WATCH_CAP_DROP_REASON = "활성후보 상한 / 우선순위 밖";
 
@@ -29,19 +29,20 @@ const SETTINGS = {
   // 후보평가는 5분 주기를 유지하되 보유종목 현재가 위험관리는 1분마다 우선 확인한다.
   holdingCheckMs: 60 * 1000,
   // 서버에서 진행 중인 1건(최대 8초) 뒤 SELL 2건이 순차 실행돼도 먼저 포기하지 않는다.
-  holdingPriceTimeoutMs: 20 * 1000,
-  holdingPriceRetryCount: 1,
+  holdingPriceTimeoutMs: 15 * 1000,
+  holdingPriceRetryCount: 0,
   holdingPriceRetryDelayMs: 500,
   holdingPriceBatchSize: 2,
   holdingMaxQuoteAgeMs: 5 * 1000,
   candidateMaxQuoteAgeMs: 15 * 1000,
 
   // 장중에는 TRIGGER → READY → 고득점 WATCH를 우선 평가하되,
-  // 나머지 후보도 굶지 않도록 상위 8개 + 가장 오래 평가시도하지 않은 4개를 섞는다.
+  // 나머지 후보도 굶지 않도록 상위 6개 + 가장 오래 평가시도하지 않은 2개를 섞는다.
+  // 장중 API 혼잡을 줄이면서 TRIGGER/READY 우선순위는 유지한다.
   // TRIGGER는 다음 평가에서 재확인 후에만 매수한다.
-  liveEvaluationBatchSize: 12,
-  livePriorityBatchSize: 8,
-  liveRotationBatchSize: 4,
+  liveEvaluationBatchSize: 8,
+  livePriorityBatchSize: 6,
+  liveRotationBatchSize: 2,
 
   // 장 마감 후에는 활성 WATCH 전체를 1회 사전분석하고,
   // 다음 거래일 08:45 이후 장전자료 갱신 후 다시 1회 전체 재평가한다.
@@ -128,9 +129,17 @@ const SETTINGS = {
   firstTakeProfitRate: 4.0,
   firstTakeProfitRatio: 0.50,
 
-  // 매도: 작은 흔들림은 허용하고 파동 종료를 잡는다.
-  stopLossRate: -5.0,
+  // 매도: 작은 흔들림은 허용하되 손실이 커지기 전에 단계적으로 방어한다.
+  stopLossRate: -4.0,
   structureStopBufferRate: -1.5,
+
+  // 1거래일 이상 보유한 종목이 -2.5% 이하 손실이면서 MA5까지 이탈하면
+  // -4% 최종손절을 기다리지 않고 파동 실패로 판단해 조기 정리한다.
+  lossDefenseEnabled: true,
+  lossDefenseMinTradingDays: 1,
+  lossDefenseMaxProfitRate: -2.5,
+  lossDefenseMaxMa5Rate: 0.0,
+
   // 장기 시간청산 전에도 손실·추세약화·MA5 이탈이 겹치면 다음 갭 위험을 줄인다.
   weakTrendSellEnabled: true,
   weakTrendSellMinTradingDays: 1,
@@ -2258,6 +2267,33 @@ function applyHoldingPriceRisk(state, holding, priceData = {}) {
   return { sold: false, price, profitRate, maxProfitRate, drawdownFromHigh };
 }
 
+function getLossDefenseExitDecision(holdingDaysValue, priceRisk = {}, trend = {}) {
+  const holdingDays = toNumber(holdingDaysValue);
+  const profitRate = toNumber(priceRisk.profitRate);
+  const price = toNumber(priceRisk.price);
+  const ma5 = toNumber(trend.ma5);
+  const trendScore = toNumber(trend.score);
+  const ma5Rate = ma5 > 0 && price > 0
+    ? ((price - ma5) / ma5) * 100
+    : 999;
+
+  const shouldSell =
+    SETTINGS.lossDefenseEnabled === true &&
+    holdingDays >= SETTINGS.lossDefenseMinTradingDays &&
+    profitRate <= SETTINGS.lossDefenseMaxProfitRate &&
+    ma5 > 0 &&
+    ma5Rate <= SETTINGS.lossDefenseMaxMa5Rate;
+
+  return {
+    shouldSell,
+    holdingDays,
+    profitRate,
+    trendScore,
+    ma5,
+    ma5Rate
+  };
+}
+
 function getWeakTrendExitDecision(holdingDaysValue, priceRisk = {}, trend = {}) {
   const holdingDays = toNumber(holdingDaysValue);
   const profitRate = toNumber(priceRisk.profitRate);
@@ -2336,6 +2372,22 @@ async function checkHoldingSell(state, holding, options = {}) {
   const holdingDays = tradingDaysSince(dailyItems, holding.buyDate);
   holding.holdingTradingDays = holdingDays;
   holding.trendScore = trend.score;
+  const lossDefenseExit = getLossDefenseExitDecision(holdingDays, priceRisk, trend);
+  holding.ma5 = lossDefenseExit.ma5;
+  holding.ma5Rate = lossDefenseExit.ma5Rate;
+
+  if (lossDefenseExit.shouldSell) {
+    return paperSell(
+      state,
+      holding,
+      priceRisk.price,
+      "WAVE_LOSS_DEFENSE_SELL",
+      `손실방어 / 보유 ${holdingDays}거래일 / 수익 ${priceRisk.profitRate.toFixed(2)}% / ` +
+      `MA5 대비 ${lossDefenseExit.ma5Rate.toFixed(2)}% / ` +
+      `기준 수익 <= ${SETTINGS.lossDefenseMaxProfitRate.toFixed(2)}%`
+    );
+  }
+
   const weakTrendExit = getWeakTrendExitDecision(holdingDays, priceRisk, trend);
   holding.ma5 = weakTrendExit.ma5;
   holding.ma5Rate = weakTrendExit.ma5Rate;
