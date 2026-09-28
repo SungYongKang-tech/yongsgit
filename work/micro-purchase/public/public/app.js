@@ -1,30 +1,24 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import { getDatabase, ref, push, set, update, onValue, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
-
-const firebaseConfig = {
-  apiKey: "AIzaSyDnIJEWMU9G5GvZuBvUqFvGTlM5goy2fyw",
-  authDomain: "work-schedule-b3c4e.firebaseapp.com",
-  databaseURL: "https://work-schedule-b3c4e-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "work-schedule-b3c4e",
-  storageBucket: "work-schedule-b3c4e.firebasestorage.app",
-  messagingSenderId: "823965422017",
-  appId: "1:823965422017:web:05b9bb9fcabf93b2919f40"
-};
+import { firebaseConfig } from "./firebase-config.js";
 
 // 규정 그대로 운영: 6회째부터 사유 필수. 부서 내부방침으로 6회째를 완전 차단하려면 true로 변경.
 const STRICT_BLOCK_AFTER_5 = false;
 const DB_ROOT = "smallContract";
+const ACCESS_KEY = "microPurchaseAccessV1";
+const REQUESTER_KEY = "microPurchaseRequester";
+const ACCESS_TOKEN = "granted-1930";
+const PASSCODE = "1930";
 
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
 const db = getDatabase(app);
-setPersistence(auth, browserLocalPersistence).catch(console.error);
 
 const $ = (id) => document.getElementById(id);
 const loginView = $("loginView"), appView = $("appView");
 let records = [];
 let editingId = null;
+let editingOriginalRequester = "";
+let recordsUnsubscribe = null;
 
 function todayStr(){
   const d = new Date();
@@ -110,15 +104,18 @@ function refreshVendorStatus(){
 }
 
 function clearForm(){
-  editingId=null; $("formTitle").textContent="소액구매 등록"; $("saveBtn").textContent="저장";
+  editingId=null; editingOriginalRequester=""; $("formTitle").textContent="소액구매 등록"; $("saveBtn").textContent="저장";
+  $("requesterSelect").disabled = false;
+  const rememberedRequester = localStorage.getItem(REQUESTER_KEY) || "";
+  if (rememberedRequester) $("requesterSelect").value = rememberedRequester;
   $("purchaseDate").value=todayStr(); $("vendorName").value=""; $("businessNo").value=""; $("itemDetail").value=""; $("amount").value=""; $("safetyException").checked=false; $("repeatReason").value="";
-  $("rowNoPreview").textContent="순번 자동부여"; refreshPeriodUI(); renderLedger();
+  $("rowNoPreview").textContent="순번 자동부여"; updateRequesterBadge(); refreshPeriodUI(); renderLedger();
 }
 
 function validateForm(){
   const data={
     date:$("purchaseDate").value,
-    requester:$("requester").value.trim(),
+    requester: editingId ? editingOriginalRequester : $("requesterSelect").value,
     vendorName:$("vendorName").value.trim(),
     businessNo:digits($("businessNo").value),
     itemDetail:$("itemDetail").value.trim(),
@@ -126,7 +123,7 @@ function validateForm(){
     safetyException:$("safetyException").checked,
     repeatReason:$("repeatReason").value.trim()
   };
-  if(!data.date || !data.requester || !data.vendorName || !data.businessNo || !data.itemDetail || !data.amount) return {ok:false,msg:"날짜, 업체명, 사업자번호, 구매내역, 구매금액, 발주자를 모두 입력하세요."};
+  if(!data.date || !data.requester || !data.vendorName || !data.businessNo || !data.itemDetail || !data.amount) return {ok:false,msg:"날짜, 발주자, 업체명, 사업자번호, 구매내역, 구매금액을 모두 입력하세요."};
   if(data.businessNo.length!==10) return {ok:false,msg:"사업자번호는 숫자 10자리로 입력하세요."};
   const p=rulePeriod(data.date); const current=vendorCount(data.businessNo,data.date,editingId); const next=current+1;
   if(data.safetyException && !data.repeatReason) return {ok:false,msg:"안전·보건 예외 근거를 입력하세요."};
@@ -137,13 +134,13 @@ function validateForm(){
 
 async function saveRecord(){
   const v=validateForm(); if(!v.ok){ alert(v.msg); return; }
-  const data=v.data; const user=auth.currentUser;
+  const data=v.data; const actor = $("requesterSelect").value || data.requester || "공용비밀번호 사용자";
   try{
     if(editingId){
-      await update(ref(db,`${DB_ROOT}/records/${editingId}`),{...data,updatedAt:serverTimestamp(),updatedBy:user?.email||""});
+      await update(ref(db,`${DB_ROOT}/records/${editingId}`),{...data,updatedAt:serverTimestamp(),updatedBy:actor});
     }else{
       const r=push(ref(db,`${DB_ROOT}/records`));
-      await set(r,{...data,createdAt:serverTimestamp(),createdBy:user?.email||"",updatedAt:serverTimestamp(),updatedBy:user?.email||"",deleted:false});
+      await set(r,{...data,createdAt:serverTimestamp(),createdBy:actor,updatedAt:serverTimestamp(),updatedBy:actor,deleted:false});
     }
     clearForm();
   }catch(e){ console.error(e); alert("저장 중 오류가 발생했습니다: "+(e.message||e)); }
@@ -175,14 +172,16 @@ function renderLedger(){
 
 function editRecord(id){
   const r=records.find(x=>x.id===id); if(!r) return;
-  editingId=id; $("formTitle").textContent="소액구매 수정"; $("saveBtn").textContent="수정 저장";
-  $("purchaseDate").value=r.date||""; $("requester").value=r.requester||""; $("vendorName").value=r.vendorName||""; $("businessNo").value=r.businessNo||""; $("itemDetail").value=r.itemDetail||""; $("amount").value=Number(r.amount||0).toLocaleString("ko-KR"); $("safetyException").checked=r.countable===false || !!r.safetyException; $("repeatReason").value=r.repeatReason||"";
+  editingId=id; editingOriginalRequester=r.requester || ""; $("formTitle").textContent="소액구매 수정"; $("saveBtn").textContent="수정 저장";
+  $("requesterSelect").value = editingOriginalRequester;
+  $("requesterSelect").disabled = true;
+  $("purchaseDate").value=r.date||""; $("vendorName").value=r.vendorName||""; $("businessNo").value=r.businessNo||""; $("itemDetail").value=r.itemDetail||""; $("amount").value=Number(r.amount||0).toLocaleString("ko-KR"); $("safetyException").checked=r.countable===false || !!r.safetyException; $("repeatReason").value=r.repeatReason||"";
   $("rowNoPreview").textContent="기존 기록 수정"; refreshVendorStatus(); window.scrollTo({top:70,behavior:"smooth"});
 }
 async function deleteRecord(id){
   const r=records.find(x=>x.id===id); if(!r) return;
   if(!confirm(`${r.vendorName} / ${r.date} 내역을 삭제 표시할까요?\n실제 DB에서는 감사기록을 위해 남아있습니다.`)) return;
-  try{ await update(ref(db,`${DB_ROOT}/records/${id}`),{deleted:true,deletedAt:serverTimestamp(),deletedBy:auth.currentUser?.email||""}); }
+  try{ await update(ref(db,`${DB_ROOT}/records/${id}`),{deleted:true,deletedAt:serverTimestamp(),deletedBy:$("requesterSelect").value || "공용비밀번호 사용자"}); }
   catch(e){ alert("삭제 처리 중 오류: "+(e.message||e)); }
 }
 
@@ -220,17 +219,70 @@ $("amount").addEventListener("input",e=>{const n=parseAmount(e.target.value);e.t
 $("saveBtn").addEventListener("click",saveRecord); $("resetBtn").addEventListener("click",clearForm);
 $("vendorSearch").addEventListener("input",renderVendorQuick); $("filterText").addEventListener("input",renderLedger); $("filterFrom").addEventListener("change",renderLedger); $("filterTo").addEventListener("change",renderLedger); $("filterResetBtn").addEventListener("click",()=>{const p=rulePeriod($("purchaseDate").value||todayStr());$("filterFrom").value=p.start;$("filterTo").value=p.end;$("filterText").value="";renderLedger();}); $("excelBtn").addEventListener("click",exportExcel);
 
-$("loginBtn").addEventListener("click",async()=>{ $("loginMsg").textContent=""; try{await signInWithEmailAndPassword(auth,$("loginEmail").value.trim(),$("loginPassword").value);}catch(e){$("loginMsg").textContent="로그인 실패: 이메일/비밀번호를 확인하세요.";}});
-$("loginPassword").addEventListener("keydown",e=>{if(e.key==="Enter") $("loginBtn").click();});
-$("logoutBtn").addEventListener("click",()=>signOut(auth));
+function updateRequesterBadge(){
+  const name = $("requesterSelect").value;
+  $("currentUserBadge").textContent = name ? `발주자 · ${name}` : "발주자 선택";
+}
 
-onAuthStateChanged(auth,user=>{
-  loginView.classList.toggle("hidden",!!user); appView.classList.toggle("hidden",!user);
-  if(!user) return;
-  if(!$("requester").value && user.email) $("requester").value=user.email.split("@")[0];
-  $("purchaseDate").value=todayStr();
-  const p=rulePeriod(todayStr()); $("filterFrom").value=p.start; $("filterTo").value=p.end;
-  onValue(ref(db,`${DB_ROOT}/records`),snap=>{
-    const v=snap.val()||{}; records=Object.entries(v).map(([id,r])=>({id,...r})); refreshStats(); renderLedger(); renderVendorQuick(); refreshVendorStatus();
-  },err=>{console.error(err);alert("데이터베이스를 읽을 수 없습니다. Firebase Database Rules와 로그인 설정을 확인하세요.");});
+function startDataListener(){
+  if(recordsUnsubscribe) return;
+  recordsUnsubscribe = onValue(ref(db, `${DB_ROOT}/records`), snap => {
+    const v = snap.val() || {};
+    records = Object.entries(v).map(([id, r]) => ({ id, ...r }));
+    refreshStats(); renderLedger(); renderVendorQuick(); refreshVendorStatus();
+  }, err => {
+    console.error(err);
+    alert("데이터베이스를 읽을 수 없습니다. Firebase Database Rules에서 smallContract 경로 읽기/쓰기를 허용했는지 확인하세요.");
+  });
+}
+
+function unlockApp(){
+  loginView.classList.add("hidden");
+  appView.classList.remove("hidden");
+  $("purchaseDate").value = todayStr();
+  const rememberedRequester = localStorage.getItem(REQUESTER_KEY) || "";
+  if (rememberedRequester) $("requesterSelect").value = rememberedRequester;
+  updateRequesterBadge();
+  const p = rulePeriod(todayStr());
+  $("filterFrom").value = p.start;
+  $("filterTo").value = p.end;
+  startDataListener();
+  refreshPeriodUI();
+}
+
+function lockApp(){
+  localStorage.removeItem(ACCESS_KEY);
+  if(recordsUnsubscribe){ recordsUnsubscribe(); recordsUnsubscribe = null; }
+  records = [];
+  appView.classList.add("hidden");
+  loginView.classList.remove("hidden");
+  $("loginPassword").value = "";
+  $("loginMsg").textContent = "";
+  setTimeout(() => $("loginPassword").focus(), 0);
+}
+
+$("loginBtn").addEventListener("click", () => {
+  $("loginMsg").textContent = "";
+  if ($("loginPassword").value === PASSCODE) {
+    localStorage.setItem(ACCESS_KEY, ACCESS_TOKEN);
+    unlockApp();
+  } else {
+    $("loginMsg").textContent = "비밀번호가 맞지 않습니다.";
+    $("loginPassword").select();
+  }
 });
+$("loginPassword").addEventListener("keydown", e => { if (e.key === "Enter") $("loginBtn").click(); });
+$("logoutBtn").addEventListener("click", lockApp);
+$("requesterSelect").addEventListener("change", e => {
+  if(e.target.value) localStorage.setItem(REQUESTER_KEY, e.target.value);
+  else localStorage.removeItem(REQUESTER_KEY);
+  updateRequesterBadge();
+});
+
+if(localStorage.getItem(ACCESS_KEY) === ACCESS_TOKEN){
+  unlockApp();
+}else{
+  loginView.classList.remove("hidden");
+  appView.classList.add("hidden");
+  setTimeout(() => $("loginPassword").focus(), 0);
+}
