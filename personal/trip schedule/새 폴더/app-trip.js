@@ -46,15 +46,8 @@ window.addEventListener("unhandledrejection", (e) => {
 const tripId = new URLSearchParams(location.search).get("trip");
 
 if (!tripId) {
-  document.body.innerHTML = `
-    <div class="container">
-      <div class="card">
-        <h2>여행 링크를 확인해 주세요</h2>
-        <p class="small">이 주소에는 여행 정보가 없습니다.</p>
-        <p class="small">카카오톡에 공유된 원래 여행 링크를 다시 눌러 주세요.</p>
-      </div>
-    </div>
-  `;
+  alert("여행 정보가 없는 주소입니다.\n카카오톡 공지에 등록된 원래 링크를 다시 확인해 주세요.");
+  location.replace("index.html");
   throw new Error("trip 파라미터 없음");
 }
 
@@ -249,14 +242,11 @@ $("joinBtn")?.addEventListener("click", async () => {
 
 // -------------------- Share --------------------
 $("shareBtn")?.addEventListener("click", async () => {
-  // 현재 주소에 다른 파라미터가 붙어 있어도
-  // 항상 이 여행 하나만 가리키는 표준 공유주소를 생성한다.
-  const base = location.origin + location.pathname.replace(/trip\.html$/i, "");
-  const url = `${base}trip.html?trip=${encodeURIComponent(tripId)}`;
+  const url = location.href;
 
   try {
     await navigator.clipboard.writeText(url);
-    alert("이 여행의 공유 링크를 복사했습니다.\n카카오톡에 붙여넣기 하세요.");
+    alert("여행 링크를 복사했습니다.\n카카오톡에 붙여넣기 하세요.");
   } catch {
     prompt("아래 링크를 복사하세요.", url);
   }
@@ -271,16 +261,8 @@ async function loadTripMeta() {
   const tripSnap = await getDoc(tripRef);
 
   if (!tripSnap.exists()) {
-    const container = document.querySelector(".container");
-    if (container) {
-      container.innerHTML = `
-        <div class="card">
-          <h2>여행을 찾을 수 없습니다</h2>
-          <p class="small">삭제되었거나 잘못된 여행 링크입니다.</p>
-          <p class="small">카카오톡에 공유된 원래 링크를 다시 확인해 주세요.</p>
-        </div>
-      `;
-    }
+    alert("생성된 여행의 열기버튼을 눌러주세요");
+    location.replace("index.html");
     return false;
   }
 
