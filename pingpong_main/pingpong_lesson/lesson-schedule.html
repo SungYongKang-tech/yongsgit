@@ -62,7 +62,11 @@
     td:last-child, th:last-child{border-right:none}
 
     .cell{font-weight:850; line-height:1.35; white-space:normal; cursor:default; user-select:none;}
-    .admin .cell{ cursor:pointer; }
+    .admin .cell{ cursor:pointer; background-color:#eff6ff; touch-action:manipulation; }
+    .admin .cell:active{background-color:#dbeafe;}
+    .btn:disabled{opacity:.45;cursor:not-allowed;}
+    .modalError{display:none;color:#b91c1c;font-size:12px;font-weight:800;margin:8px 0;white-space:pre-wrap;}
+    .modalError.show{display:block;}
     .empty{color:rgba(100,116,139,.7); font-weight:700}
     .mut{color:var(--mut);font-weight:700;font-size:12px;margin-top:8px}
     .err{color:var(--red);font-weight:800}
@@ -70,7 +74,11 @@
     .modifiedText{ color:var(--blue); font-weight:950; }
     .modIcon{display:inline-block; margin-left:4px; font-size:10px; line-height:1; vertical-align:middle;}
     .absent{ color:var(--red); font-weight:950; }
-    .swapPick{outline:2px solid rgba(37,99,235,.45); outline-offset:-2px; background:rgba(37,99,235,.06);}
+    .swapPick{outline:3px solid #f59e0b;outline-offset:-3px;background:#fef3c7!important;}
+    .swapModeActive .cell{background:#fff7ed;cursor:crosshair;}
+    .swapStatus{display:none;padding:10px 12px;margin:0 0 9px;border-radius:10px;background:#eff6ff;color:#1e40af;font-size:13px;font-weight:800;white-space:pre-wrap;}
+    .swapStatus.show{display:block;}
+    .swapStatus.error{background:#fef2f2;color:#b91c1c;}
 
     .modalBack{
       position:fixed; inset:0;
@@ -116,6 +124,7 @@
       <span class="hint" id="hint">보기 모드</span>
     </div>
 
+    <div id="swapStatus" class="swapStatus" role="status" aria-live="polite"></div>
     <div class="tableWrap">
       <table aria-label="레슨 주간 시간표">
         <thead>
@@ -139,6 +148,7 @@
       <div class="row" style="margin-bottom:10px;">
         <select id="studentSelect"></select>
       </div>
+      <div id="modalError" class="modalError" role="alert"></div>
       <div class="row">
         <button class="btn on" id="btnAssign">배정</button>
         <button class="btn danger on" id="btnAbsent">불참</button>
@@ -198,6 +208,9 @@
     let adminMode = false;
     let swapMode = false;
     let swapPick = null;
+    let swapBusy = false;
+    let swapMessage = "";
+    let swapError = false;
 
     const wrap = $("wrap");
     const tbody = $("tbody");
@@ -208,6 +221,7 @@
     const btnSwap  = $("btnSwap");
     const btnReset = $("btnReset");
     const hint = $("hint");
+    const swapStatus = $("swapStatus");
 
     const modalBack = $("modalBack");
     const modalTitle = $("modalTitle");
@@ -218,18 +232,45 @@
     const btnCancel = $("btnCancel");
 
     let editingCell = null;
+    let saving = false;
+    let loadError = "";
+    const modalError = $("modalError");
+    function explainError(e){
+      const code = e?.code || "";
+      if(code.includes("permission-denied")) return "Firebase 저장 권한이 없습니다. database.rules.json의 lesson/overrides 쓰기 권한을 확인하세요. ("+code+")";
+      if(code.includes("invalid")) return "저장 경로 또는 입력값이 유효하지 않습니다. ("+code+")";
+      return `${e?.message || e || "알 수 없는 오류"}${code ? " ("+code+")" : ""}`;
+    }
+    function showModalError(e){ modalError.textContent = explainError(e); modalError.classList.add("show"); }
+    function setSaving(v){
+      saving = v;
+      [btnAssign,btnAbsent,btnClear].forEach(b=>b.disabled=v);
+      btnCancel.disabled=v;
+    }
+    async function runEdit(action){
+      if(!editingCell || saving) return;
+      const {time, day} = editingCell;
+      modalError.classList.remove("show");
+      setSaving(true);
+      try{
+        await action(time,day);
+        closeModal();
+      }catch(e){
+        console.error("레슨 편집 실패",e);
+        showModalError(e);
+      }finally{setSaving(false);}
+    }
 
     function studentName(uid){
-      return (students?.[uid]?.name || students?.[uid]?.displayName || students?.[uid]?.nm || "").trim();
+      const obj = students?.[uid];
+      return String(typeof obj === "string" ? obj : (obj?.name || obj?.displayName || obj?.nm || "")).trim();
     }
 
     function normalizeTimes(scheduleObj){
       const slots = scheduleObj?.slots || {};
-      const all = []
-        .concat(slots.morning || [])
-        .concat(slots.lunch || [])
-        .concat(slots.evening || []);
-      return all.filter(t => (t?.time || "").trim());
+      const values = v => Array.isArray(v) ? v : Object.values(v || {});
+      const all = [...values(slots.morning),...values(slots.lunch),...values(slots.evening)];
+      return all.filter(t => typeof t?.time === "string" && t.time.trim());
     }
 
     function buildTemplateAssignFromSchedule(scheduleObj){
@@ -295,10 +336,23 @@
     }
 
     function render(){
+      wrap.classList.toggle("admin", adminMode);
+      wrap.classList.toggle("swapModeActive", adminMode && swapMode);
+      btnSwap.disabled = !adminMode || !authed || swapBusy;
+      btnAdmin.disabled = swapBusy;
+      btnReset.disabled = !adminMode || !authed || swapBusy;
+      swapStatus.classList.toggle("show", adminMode && swapMode);
+      swapStatus.classList.toggle("error", swapError);
+      swapStatus.textContent = !swapMode ? "" : (swapMessage || "교체할 첫 번째 칸을 선택하세요.");
+      btnReset.disabled = !adminMode || !authed;
+      btnAdmin.classList.toggle("on", adminMode);
+      btnAdmin.textContent = adminMode ? "관리자 모드 종료" : "관리자 모드";
+      btnSwap.classList.toggle("on", swapMode);
+      hint.textContent = !adminMode ? "보기 모드" : (swapMode ? "교체: 셀 2개 선택" : "편집: 시간표 칸 터치");
       if(!authed){
         setHeader(DAYS_ALL);
-        renderMessage("로그인 중...", 6, "empty");
-        status.textContent = "Firebase 익명 로그인 중";
+        renderMessage(loadError ? `연결 실패: ${esc(loadError)}` : "로그인 중...", 6, loadError ? "err" : "empty");
+        status.textContent = loadError || "Firebase 익명 로그인 중";
         return;
       }
 
@@ -310,7 +364,7 @@
 
       if(times.length === 0){
         renderMessage("기본 레슨표(lesson/schedule)를 못 불러왔습니다.", colCount, "mut");
-        status.textContent = `week ${weekKey} · schedule/template 없음`;
+        status.textContent = loadError || `week ${weekKey} · 기본 레슨 데이터가 없습니다. lesson/schedule 확인`;
         return;
       }
 
@@ -345,70 +399,88 @@
         return `<tr><td><b>${esc(time)}</b></td>${tds}</tr>`;
       }).join("");
 
-      if(adminMode) bindCellClicks();
+      // 셀 클릭은 tbody에 이벤트 위임: 렌더링 반복 중에도 이벤트 연결 유지
 
       const studentCnt = Object.keys(students||{}).length;
       status.textContent =
         `week ${weekKey} · 시간 ${times.length}개 · 명단 ${studentCnt}명 · 명단경로: ${studentSourcePath || "(미탐지)"}`;
 
-      btnSwap.disabled = !adminMode;
-      btnReset.disabled = !adminMode;
-      btnAdmin.classList.toggle("on", adminMode);
-      btnSwap.classList.toggle("on", swapMode);
-      hint.textContent = !adminMode ? "보기 모드" : (swapMode ? "교체(SWAP): 셀 2개 클릭" : "편집: 셀 클릭");
+      if(loadError) status.textContent += ` · 오류: ${loadError}`;
     }
 
-    function bindCellClicks(){
-      document.querySelectorAll("td.cell").forEach(td=>{
-        td.onclick = async ()=>{
-          const time = td.dataset.time;
-          const day = td.dataset.day;
-          if(swapMode) return handleSwapClick(time, day);
-          openEditModal(time, day);
-        };
-      });
+    tbody.addEventListener("click", (e)=>{
+      if(!adminMode || !authed || saving || swapBusy) return;
+      const td = e.target.closest("td.cell");
+      if(!td || !tbody.contains(td)) return;
+      const {time,day} = td.dataset;
+      if(swapMode) void handleSwapClick(time,day);
+      else openEditModal(time,day);
+    });
+
+    function describeCell(time, day){
+      const value = getFinalVal(time, day);
+      const name = value === "__absent__" ? "불참" : (studentName(value) || "빈자리");
+      return `${dayLabel[day]} ${time} (${name})`;
     }
 
     async function handleSwapClick(time, day){
+      if(!swapMode || swapBusy) return;
+      swapError = false;
       if(!swapPick){
         swapPick = { time, day };
+        swapMessage = `① ${describeCell(time,day)} 선택됨\n② 교체할 두 번째 칸을 누르세요. (같은 칸을 다시 누르면 취소)`;
         render();
         return;
       }
       if(swapPick.time === time && swapPick.day === day){
         swapPick = null;
+        swapMessage = "선택 취소. 교체할 첫 번째 칸을 선택하세요.";
         render();
         return;
       }
-
       const a = { ...swapPick };
       const b = { time, day };
-      const va = getFinalVal(a.time, a.day);
-      const vb = getFinalVal(b.time, b.day);
-
-      // ✅ 문자열 경로 고정
-      const p1 = pathCell(weekKey, a.time, a.day);
-      const p2 = pathCell(weekKey, b.time, b.day);
-
-      try{
-        await update(ref(db), { [p1]: vb, [p2]: va });
-      }catch(e){
-        console.error(e);
-        alert("교체 저장 실패(콘솔 확인)");
-      }finally{
+      const va = getFinalVal(a.time,a.day);
+      const vb = getFinalVal(b.time,b.day);
+      if(va === vb){
+        swapMessage = "두 칸에 같은 사람이 배정되어 있어 교체해도 변화가 없습니다. 다른 칸을 선택하세요.";
         swapPick = null;
+        render();
+        return;
+      }
+      const oldA = describeCell(a.time,a.day);
+      const oldB = describeCell(b.time,b.day);
+      swapBusy = true;
+      swapMessage = `교체 저장 중...\n${oldA} ↔ ${oldB}`;
+      render();
+      try{
+        // 멀티패스 update를 사용하여 두 칸을 하나의 원자적 쓰기로 변경
+        const changes = {};
+        changes[pathCell(weekKey,a.time,a.day)] = vb;
+        changes[pathCell(weekKey,b.time,b.day)] = va;
+        await update(ref(db), changes);
+        swapPick = null;
+        swapMessage = `교체 저장 완료!\n${oldA} ↔ ${oldB}`;
+      }catch(e){
+        console.error("레슨 SWAP 저장 실패",e);
+        swapError = true;
+        swapMessage = `교체 실패: ${explainError(e)}\n첫 번째 칸 선택은 유지됩니다. 두 번째 칸을 다시 선택하세요.`;
+      }finally{
+        swapBusy = false;
         render();
       }
     }
 
     function openEditModal(time, day){
       editingCell = { time, day };
+      modalError.textContent = "";
+      modalError.classList.remove("show");
       modalTitle.textContent = `편집: ${time} · ${dayLabel[day]}`;
 
       const list = Object.entries(students || {})
         .map(([uid, obj]) => ({
           uid,
-          name: (obj?.name || obj?.displayName || obj?.nm || "").trim()
+          name: String((typeof obj === "string" ? obj : (obj?.name || obj?.displayName || obj?.nm || ""))).trim()
         }))
         .filter(x => x.name)
         .sort((a,b)=>a.name.localeCompare(b.name, "ko"));
@@ -421,10 +493,19 @@
       `;
 
       if(currentFinal && currentFinal !== "__absent__"){
+        if(!list.some(x=>x.uid === currentFinal)){
+          const option = document.createElement("option");
+          option.value = currentFinal;
+          option.textContent = `현재 배정 (${currentFinal}) - 명단에 없음`;
+          studentSelect.appendChild(option);
+        }
         studentSelect.value = currentFinal;
       }else{
         studentSelect.value = "";
       }
+      btnAssign.disabled = list.length === 0;
+      btnAbsent.disabled = false;
+      btnClear.disabled = false;
 
       modalBack.classList.add("show");
       modalBack.setAttribute("aria-hidden", "false");
@@ -460,19 +541,21 @@
         await remove(ref(db, p));
       }catch(e){
         console.error(e);
-        alert("초기화 실패(콘솔 확인)");
+        alert("초기화 실패: " + explainError(e));
       }
     }
 
     btnAdmin.onclick = ()=>{
       adminMode = !adminMode;
-      if(!adminMode){ swapMode = false; swapPick = null; }
+      if(!adminMode){ swapMode = false; swapPick = null; swapMessage = ""; swapError = false; }
       render();
     };
     btnSwap.onclick = ()=>{
       if(!adminMode) return;
       swapMode = !swapMode;
       swapPick = null;
+      swapMessage = "";
+      swapError = false;
       render();
     };
     btnReset.onclick = ()=> adminMode && resetWeek();
@@ -480,41 +563,16 @@
     btnCancel.onclick = ()=> closeModal();
     modalBack.addEventListener("click", (e)=>{ if(e.target === modalBack) closeModal(); });
 
-    btnAssign.onclick = async ()=>{
-      if(!editingCell) return;
-      const { time, day } = editingCell;
+    btnAssign.onclick = () => runEdit(async (time,day)=>{
       const uid = (studentSelect.value || "").trim();
-      try{
-        if(!uid) await clearOverride(time, day);
-        else await setOverride(time, day, uid);
-        closeModal();
-      }catch(e){
-        console.error(e);
-        alert("저장 실패(콘솔 확인)");
-      }
-    };
-    btnAbsent.onclick = async ()=>{
-      if(!editingCell) return;
-      const { time, day } = editingCell;
-      try{
-        await setOverride(time, day, "__absent__");
-        closeModal();
-      }catch(e){
-        console.error(e);
-        alert("불참 저장 실패(콘솔 확인)");
-      }
-    };
-    btnClear.onclick = async ()=>{
-      if(!editingCell) return;
-      const { time, day } = editingCell;
-      try{
-        await clearOverride(time, day);
-        closeModal();
-      }catch(e){
-        console.error(e);
-        alert("비우기 실패(콘솔 확인)");
-      }
-    };
+      if(!uid) throw new Error("배정할 학생을 선택해주세요. 기존 배정을 되돌리려면 '비우기(기본으로)'를 누르세요.");
+      await setOverride(time,day,uid);
+    });
+    btnAbsent.onclick = () => runEdit((time,day)=>setOverride(time,day,"__absent__"));
+    btnClear.onclick = () => runEdit((time,day)=>clearOverride(time,day));
+    document.addEventListener("keydown",(e)=>{
+      if(e.key === "Escape" && modalBack.classList.contains("show") && !saving) closeModal();
+    });
 
     async function attachStudentsListener(){
       for(const p of STUDENT_PATH_CANDIDATES){
@@ -554,11 +612,16 @@
         }, (err)=>{
           console.error(err);
           templateAssign = {};
+          loadError = "기본 시간표 읽기 실패: " + explainError(err);
           render();
         });
 
         onValue(ref(db, pathWeek(weekKey)), (snap)=>{
           overridesWeek = snap.exists() ? (snap.val() || {}) : {};
+          render();
+        }, (err)=>{
+          console.error("이번주 수정내역 읽기 실패",err);
+          loadError = "이번주 수정내역 읽기 실패: " + explainError(err);
           render();
         });
 
@@ -567,8 +630,8 @@
         render();
       }catch(e){
         console.error(e);
-        tbody.innerHTML = `<tr><td colspan="6" class="err">연결 오류: ${esc(e?.message||e)}</td></tr>`;
-        status.textContent = "Firebase 연결 오류(콘솔 확인)";
+        loadError = explainError(e);
+        render();
       }
     })();
   </script>

@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>레슨 주간 시간표</title>
+  <style>
+    :root{
+      --bg:#f6f7fb; --card:#fff; --bd:#e6e8ef;
+      --txt:#0f172a; --mut:#64748b; --r:16px;
+      --blue:#2563eb; --red:#b91c1c;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans KR",sans-serif;background:var(--bg);color:var(--txt)}
+    .wrap{max-width:980px;margin:0 auto;padding:12px}
+    h2{margin:6px 0 10px;font-size:16px;font-weight:900}
+
+    .topbar{display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:6px 0 10px;}
+    .btn{
+      appearance:none; border:1px solid rgba(15,23,42,.14);
+      background:#fff; color:var(--txt);
+      padding:9px 10px; border-radius:12px;
+      font-weight:900; font-size:13px;
+      box-shadow: 0 8px 18px rgba(15,23,42,.06);
+      cursor:pointer;
+    }
+    .btn.on{background:var(--blue); color:#fff; border-color:rgba(37,99,235,.35)}
+    .btn.danger{border-color:rgba(185,28,28,.25)}
+    .btn.danger.on{background:var(--red); color:#fff; border-color:rgba(185,28,28,.35)}
+    .hint{font-size:12px;color:var(--mut);font-weight:800}
+
+    .tableWrap{
+      background:var(--card);
+      border:1px solid var(--bd);
+      border-radius:var(--r);
+      overflow:auto;
+    }
+    table{width:100%; border-collapse:separate; border-spacing:0; table-layout:auto;}
+    th,td{
+      padding:12px 6px;
+      border-bottom:1px solid var(--bd);
+      border-right:1px solid var(--bd);
+      text-align:center;
+      font-size:13px;
+      vertical-align:top;
+      white-space:nowrap;
+    }
+    th{
+      position:sticky; top:0;
+      background:#f2f4f8;
+      font-weight:900;
+      z-index:2;
+    }
+    th:first-child{left:0; z-index:3; position:sticky; background:#eef2ff;}
+    td:first-child{
+      position:sticky; left:0; z-index:1;
+      background:#ffffff;
+      font-weight:900;
+      color:#0f172a;
+    }
+    tr:last-child td{border-bottom:none}
+    td:last-child, th:last-child{border-right:none}
+
+    .cell{font-weight:850; line-height:1.35; white-space:normal; cursor:default; user-select:none;}
+    .admin .cell{ cursor:pointer; }
+    .empty{color:rgba(100,116,139,.7); font-weight:700}
+    .mut{color:var(--mut);font-weight:700;font-size:12px;margin-top:8px}
+    .err{color:var(--red);font-weight:800}
+
+    .modifiedText{ color:var(--blue); font-weight:950; }
+    .modIcon{display:inline-block; margin-left:4px; font-size:10px; line-height:1; vertical-align:middle;}
+    .absent{ color:var(--red); font-weight:950; }
+    .swapPick{outline:2px solid rgba(37,99,235,.45); outline-offset:-2px; background:rgba(37,99,235,.06);}
+
+    .modalBack{
+      position:fixed; inset:0;
+      background:rgba(15,23,42,.45);
+      display:none;
+      align-items:center; justify-content:center;
+      padding:14px;
+      z-index:999;
+    }
+    .modalBack.show{display:flex}
+    .modal{
+      width:min(520px, 100%);
+      background:#fff;
+      border-radius:16px;
+      border:1px solid rgba(15,23,42,.12);
+      box-shadow:0 20px 60px rgba(0,0,0,.18);
+      padding:12px;
+    }
+    .modal h3{margin:4px 0 10px; font-size:15px; font-weight:950;}
+    .row{display:flex; gap:8px; align-items:center; flex-wrap:wrap}
+    select{
+      flex:1;
+      padding:11px 10px;
+      border-radius:12px;
+      border:1px solid rgba(15,23,42,.14);
+      font-weight:850;
+      min-width:220px;
+      background:#fff;
+    }
+    .modal .btn{box-shadow:none}
+    .mini{font-size:12px;color:var(--mut);font-weight:850;margin-top:8px}
+  </style>
+</head>
+
+<body>
+  <div class="wrap" id="wrap">
+    <h2>🎾 레슨 주간 시간표</h2>
+
+    <div class="topbar">
+      <button class="btn" id="btnAdmin">관리자 모드</button>
+      <button class="btn danger" id="btnSwap" disabled>교체(SWAP) 모드</button>
+      <button class="btn" id="btnReset" disabled>이번주 초기화(원래 레슨)</button>
+      <span class="hint" id="hint">보기 모드</span>
+    </div>
+
+    <div class="tableWrap">
+      <table aria-label="레슨 주간 시간표">
+        <thead>
+          <tr id="headRow">
+            <th>시간</th>
+            <th>월</th><th>화</th><th>수</th><th>목</th><th>금</th>
+          </tr>
+        </thead>
+        <tbody id="tbody">
+          <tr><td colspan="6" class="empty">불러오는 중...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mut" id="status"></div>
+  </div>
+
+  <div class="modalBack" id="modalBack" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true">
+      <h3 id="modalTitle">편집</h3>
+      <div class="row" style="margin-bottom:10px;">
+        <select id="studentSelect"></select>
+      </div>
+      <div class="row">
+        <button class="btn on" id="btnAssign">배정</button>
+        <button class="btn danger on" id="btnAbsent">불참</button>
+        <button class="btn" id="btnClear">비우기(기본으로)</button>
+        <button class="btn" id="btnCancel">닫기</button>
+      </div>
+      <div class="mini">
+        • “비우기(기본으로)”는 이번주 수정분만 지웁니다(원래 레슨표로 복귀).<br/>
+        • “교체(SWAP) 모드”에서는 셀 2개를 차례로 누르면 자동으로 자리 교체됩니다.
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { db, auth } from "../firebase.js";
+    import { ref, onValue, update, remove, get } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+    import { signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+
+    const STUDENT_PATH_CANDIDATES = ["lesson/students", "lesson/coaches"];
+
+    const PATH = {
+      schedule: "lesson/schedule",
+      overridesRoot: "lesson/overrides",
+    };
+
+    const DAYS_ALL = ["mon","tue","wed","thu","fri"];
+    const dayLabel = { mon:"월", tue:"화", wed:"수", thu:"목", fri:"금" };
+    const $ = (id)=>document.getElementById(id);
+
+    function esc(s){
+      return String(s ?? "")
+        .replaceAll("&","&amp;")
+        .replaceAll("<","&lt;")
+        .replaceAll(">","&gt;")
+        .replaceAll('"',"&quot;")
+        .replaceAll("'","&#039;");
+    }
+
+    function getWeekKey(date = new Date()){
+      const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+      const dayNum = d.getUTCDay() || 7;
+      d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+      const yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+      const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+      return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2,"0")}`;
+    }
+    const weekKey = getWeekKey();
+
+    let authed = false;
+
+    let students = {};
+    let studentSourcePath = "";
+
+    let templateAssign = {};
+    let overridesWeek = {};
+
+    let adminMode = false;
+    let swapMode = false;
+    let swapPick = null;
+
+    const wrap = $("wrap");
+    const tbody = $("tbody");
+    const headRow = $("headRow");
+    const status = $("status");
+
+    const btnAdmin = $("btnAdmin");
+    const btnSwap  = $("btnSwap");
+    const btnReset = $("btnReset");
+    const hint = $("hint");
+
+    const modalBack = $("modalBack");
+    const modalTitle = $("modalTitle");
+    const studentSelect = $("studentSelect");
+    const btnAssign = $("btnAssign");
+    const btnAbsent = $("btnAbsent");
+    const btnClear  = $("btnClear");
+    const btnCancel = $("btnCancel");
+
+    let editingCell = null;
+
+    function studentName(uid){
+      return (students?.[uid]?.name || students?.[uid]?.displayName || students?.[uid]?.nm || "").trim();
+    }
+
+    function normalizeTimes(scheduleObj){
+      const slots = scheduleObj?.slots || {};
+      const all = []
+        .concat(slots.morning || [])
+        .concat(slots.lunch || [])
+        .concat(slots.evening || []);
+      return all.filter(t => (t?.time || "").trim());
+    }
+
+    function buildTemplateAssignFromSchedule(scheduleObj){
+      const items = normalizeTimes(scheduleObj);
+      const out = {};
+      for(const t of items){
+        const time = (t.time || "").trim();
+        if(!time) continue;
+        if(!out[time]) out[time] = { mon:"", tue:"", wed:"", thu:"", fri:"" };
+        const a = t.assign || {};
+        out[time].mon = a.mon || "";
+        out[time].tue = a.tue || "";
+        out[time].wed = a.wed || "";
+        out[time].thu = a.thu || "";
+        out[time].fri = a.fri || "";
+      }
+      return out;
+    }
+
+    function getBaseVal(time, day){
+      return (templateAssign?.[time]?.[day] ?? "");
+    }
+    function getOverrideVal(time, day){
+      return (overridesWeek?.[time] && Object.prototype.hasOwnProperty.call(overridesWeek[time], day))
+        ? overridesWeek[time][day]
+        : undefined;
+    }
+    function getFinalVal(time, day){
+      const o = getOverrideVal(time, day);
+      if(o !== undefined) return o;
+      return getBaseVal(time, day);
+    }
+    function isModified(time, day){
+      const o = getOverrideVal(time, day);
+      if(o === undefined) return false;
+      return o !== getBaseVal(time, day);
+    }
+
+    function buildViewDays(times){
+      const hasFriAny = times.some(time=>{
+        const v = getFinalVal(time, "fri");
+        return v !== "" && v !== null && v !== undefined;
+      });
+      return hasFriAny ? DAYS_ALL.slice() : ["mon","tue","wed","thu"];
+    }
+
+    function setHeader(viewDays){
+      headRow.innerHTML = `<th>시간</th>${viewDays.map(d=>`<th>${dayLabel[d]}</th>`).join("")}`;
+    }
+
+    function renderMessage(msg, colCount, cls="mut"){
+      tbody.innerHTML = `<tr><td colspan="${colCount}" class="${cls}">${msg}</td></tr>`;
+    }
+
+    /* =========================
+       ✅ 핵심 수정: 경로를 항상 "문자열"로 만들기
+    ========================= */
+    function pathWeek(wk){
+      return `${String(PATH.overridesRoot)}/${String(wk)}`;
+    }
+    function pathCell(wk, time, day){
+      return `${String(PATH.overridesRoot)}/${String(wk)}/${String(time)}/${String(day)}`;
+    }
+
+    function render(){
+      if(!authed){
+        setHeader(DAYS_ALL);
+        renderMessage("로그인 중...", 6, "empty");
+        status.textContent = "Firebase 익명 로그인 중";
+        return;
+      }
+
+      const times = Object.keys(templateAssign || {}).sort((a,b)=>a.localeCompare(b));
+      const viewDays = buildViewDays(times);
+      const colCount = 1 + viewDays.length;
+
+      setHeader(viewDays);
+
+      if(times.length === 0){
+        renderMessage("기본 레슨표(lesson/schedule)를 못 불러왔습니다.", colCount, "mut");
+        status.textContent = `week ${weekKey} · schedule/template 없음`;
+        return;
+      }
+
+      wrap.classList.toggle("admin", adminMode);
+
+      tbody.innerHTML = times.map(time=>{
+        const tds = viewDays.map(day=>{
+          const finalVal = getFinalVal(time, day);
+          const modified = isModified(time, day);
+          const modIcon = modified ? `<span class="modIcon">🔵</span>` : "";
+          const pickCls = (swapPick && swapPick.time===time && swapPick.day===day) ? " swapPick" : "";
+
+          let cls = "cell" + pickCls;
+          let inner = "";
+
+          if(finalVal === "__absent__"){
+            cls += " absent";
+            inner = `불참${modIcon}`;
+          }else{
+            const nm = studentName(finalVal);
+            if(nm){
+              cls += modified ? " modifiedText" : "";
+              inner = `${esc(nm)}${modIcon}`;
+            }else{
+              inner = `<span class="empty">-</span>${modIcon}`;
+            }
+          }
+
+          return `<td class="${cls}" data-time="${esc(time)}" data-day="${day}">${inner}</td>`;
+        }).join("");
+
+        return `<tr><td><b>${esc(time)}</b></td>${tds}</tr>`;
+      }).join("");
+
+      if(adminMode) bindCellClicks();
+
+      const studentCnt = Object.keys(students||{}).length;
+      status.textContent =
+        `week ${weekKey} · 시간 ${times.length}개 · 명단 ${studentCnt}명 · 명단경로: ${studentSourcePath || "(미탐지)"}`;
+
+      btnSwap.disabled = !adminMode;
+      btnReset.disabled = !adminMode;
+      btnAdmin.classList.toggle("on", adminMode);
+      btnSwap.classList.toggle("on", swapMode);
+      hint.textContent = !adminMode ? "보기 모드" : (swapMode ? "교체(SWAP): 셀 2개 클릭" : "편집: 셀 클릭");
+    }
+
+    function bindCellClicks(){
+      document.querySelectorAll("td.cell").forEach(td=>{
+        td.onclick = async ()=>{
+          const time = td.dataset.time;
+          const day = td.dataset.day;
+          if(swapMode) return handleSwapClick(time, day);
+          openEditModal(time, day);
+        };
+      });
+    }
+
+    async function handleSwapClick(time, day){
+      if(!swapPick){
+        swapPick = { time, day };
+        render();
+        return;
+      }
+      if(swapPick.time === time && swapPick.day === day){
+        swapPick = null;
+        render();
+        return;
+      }
+
+      const a = { ...swapPick };
+      const b = { time, day };
+      const va = getFinalVal(a.time, a.day);
+      const vb = getFinalVal(b.time, b.day);
+
+      // ✅ 문자열 경로 고정
+      const p1 = pathCell(weekKey, a.time, a.day);
+      const p2 = pathCell(weekKey, b.time, b.day);
+
+      try{
+        await update(ref(db), { [p1]: vb, [p2]: va });
+      }catch(e){
+        console.error(e);
+        alert("교체 저장 실패(콘솔 확인)");
+      }finally{
+        swapPick = null;
+        render();
+      }
+    }
+
+    function openEditModal(time, day){
+      editingCell = { time, day };
+      modalTitle.textContent = `편집: ${time} · ${dayLabel[day]}`;
+
+      const list = Object.entries(students || {})
+        .map(([uid, obj]) => ({
+          uid,
+          name: (obj?.name || obj?.displayName || obj?.nm || "").trim()
+        }))
+        .filter(x => x.name)
+        .sort((a,b)=>a.name.localeCompare(b.name, "ko"));
+
+      const currentFinal = getFinalVal(time, day);
+
+      studentSelect.innerHTML = `
+        <option value="">(선택 안 함)</option>
+        ${list.map(x=>`<option value="${esc(x.uid)}">${esc(x.name)}</option>`).join("")}
+      `;
+
+      if(currentFinal && currentFinal !== "__absent__"){
+        studentSelect.value = currentFinal;
+      }else{
+        studentSelect.value = "";
+      }
+
+      modalBack.classList.add("show");
+      modalBack.setAttribute("aria-hidden", "false");
+    }
+
+    function closeModal(){
+      // ✅ aria-hidden 경고 방지: 모달 닫기 전 포커스 제거
+      if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
+
+      modalBack.classList.remove("show");
+      modalBack.setAttribute("aria-hidden", "true");
+      editingCell = null;
+    }
+
+    async function setOverride(time, day, value){
+      const p = pathCell(weekKey, time, day);
+      await update(ref(db), { [p]: value });
+    }
+
+    async function clearOverride(time, day){
+      const p = pathCell(weekKey, time, day);
+      await remove(ref(db, p));
+    }
+
+    async function resetWeek(){
+      if(!confirm("이번주 수정내용을 전부 초기화하고(삭제) 원래 레슨표로 돌아갈까요?")) return;
+
+      const p = pathWeek(weekKey);
+      // 디버그(필요하면 켜세요)
+      // console.log("reset path =", p, typeof p);
+
+      try{
+        await remove(ref(db, p));
+      }catch(e){
+        console.error(e);
+        alert("초기화 실패(콘솔 확인)");
+      }
+    }
+
+    btnAdmin.onclick = ()=>{
+      adminMode = !adminMode;
+      if(!adminMode){ swapMode = false; swapPick = null; }
+      render();
+    };
+    btnSwap.onclick = ()=>{
+      if(!adminMode) return;
+      swapMode = !swapMode;
+      swapPick = null;
+      render();
+    };
+    btnReset.onclick = ()=> adminMode && resetWeek();
+
+    btnCancel.onclick = ()=> closeModal();
+    modalBack.addEventListener("click", (e)=>{ if(e.target === modalBack) closeModal(); });
+
+    btnAssign.onclick = async ()=>{
+      if(!editingCell) return;
+      const { time, day } = editingCell;
+      const uid = (studentSelect.value || "").trim();
+      try{
+        if(!uid) await clearOverride(time, day);
+        else await setOverride(time, day, uid);
+        closeModal();
+      }catch(e){
+        console.error(e);
+        alert("저장 실패(콘솔 확인)");
+      }
+    };
+    btnAbsent.onclick = async ()=>{
+      if(!editingCell) return;
+      const { time, day } = editingCell;
+      try{
+        await setOverride(time, day, "__absent__");
+        closeModal();
+      }catch(e){
+        console.error(e);
+        alert("불참 저장 실패(콘솔 확인)");
+      }
+    };
+    btnClear.onclick = async ()=>{
+      if(!editingCell) return;
+      const { time, day } = editingCell;
+      try{
+        await clearOverride(time, day);
+        closeModal();
+      }catch(e){
+        console.error(e);
+        alert("비우기 실패(콘솔 확인)");
+      }
+    };
+
+    async function attachStudentsListener(){
+      for(const p of STUDENT_PATH_CANDIDATES){
+        try{
+          const snap = await get(ref(db, p));
+          if(snap.exists() && snap.val() && Object.keys(snap.val()).length){
+            studentSourcePath = p;
+            onValue(ref(db, p), (s)=>{
+              students = s.exists() ? (s.val() || {}) : {};
+              render();
+            }, (err)=>{
+              console.error(err);
+              students = {};
+              render();
+            });
+            return;
+          }
+        }catch(e){
+          console.warn("학생명단 get 실패:", p, e);
+        }
+      }
+      studentSourcePath = "(students/coaches 둘 다 없음 또는 권한없음)";
+      students = {};
+      render();
+    }
+
+    (async function init(){
+      try{
+        status.textContent = "Firebase 연결 중...";
+        await signInAnonymously(auth);
+        authed = true;
+
+        onValue(ref(db, PATH.schedule), (snap)=>{
+          const scheduleObj = snap.exists() ? (snap.val() || null) : null;
+          templateAssign = scheduleObj ? buildTemplateAssignFromSchedule(scheduleObj) : {};
+          render();
+        }, (err)=>{
+          console.error(err);
+          templateAssign = {};
+          render();
+        });
+
+        onValue(ref(db, pathWeek(weekKey)), (snap)=>{
+          overridesWeek = snap.exists() ? (snap.val() || {}) : {};
+          render();
+        });
+
+        await attachStudentsListener();
+
+        render();
+      }catch(e){
+        console.error(e);
+        tbody.innerHTML = `<tr><td colspan="6" class="err">연결 오류: ${esc(e?.message||e)}</td></tr>`;
+        status.textContent = "Firebase 연결 오류(콘솔 확인)";
+      }
+    })();
+  </script>
+</body>
+</html>
