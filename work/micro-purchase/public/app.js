@@ -33,6 +33,10 @@ function formatBiz(v){
   return `${d.slice(0,3)}-${d.slice(3,5)}-${d.slice(5)}`;
 }
 function formatMoney(v){ return Number(v || 0).toLocaleString("ko-KR") + "원"; }
+function formatShortDate(v){
+  const m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[1].slice(2)}.${m[2]}.${m[3]}` : String(v || "");
+}
 function parseAmount(v){ return Number(String(v || "").replace(/[^0-9]/g,"")) || 0; }
 function escapeHtml(s){ return String(s ?? "").replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
 
@@ -85,6 +89,107 @@ function refreshStats(){
   $("statVendors").textContent = `${map.size}개`;
   $("statReached").textContent = `${[...map.values()].filter(v=>v===5).length}개`;
   $("statOver").textContent = `${[...map.values()].filter(v=>v>=6).length}개`;
+}
+
+function currentPeriodVendorSummaries(){
+  const date = $("purchaseDate").value || todayStr();
+  const p = rulePeriod(date);
+  if(!p) return { period:null, vendors:[] };
+
+  const periodRecords = activeRecords().filter(r => inRange(r.date, p.start, p.end));
+  const counted = periodRecords.filter(r => r.countable !== false);
+  const byBiz = new Map();
+
+  counted.forEach(r => {
+    const biz = digits(r.businessNo);
+    if(!biz) return;
+    if(!byBiz.has(biz)) byBiz.set(biz, []);
+    byBiz.get(biz).push(r);
+  });
+
+  const vendors = [...byBiz.entries()].map(([biz, list]) => {
+    const ordered = [...list].sort(recordSort);
+    const latest = [...list].sort((a,b) =>
+      (b.date || "").localeCompare(a.date || "") ||
+      Number(b.createdAt || 0) - Number(a.createdAt || 0)
+    )[0];
+    const allForVendor = periodRecords.filter(r => digits(r.businessNo) === biz);
+    return {
+      businessNo: latest?.businessNo || ordered[0]?.businessNo || formatBiz(biz),
+      vendorName: latest?.vendorName || ordered[0]?.vendorName || "업체명 없음",
+      count: list.length,
+      amount: allForVendor.reduce((sum, r) => sum + Number(r.amount || 0), 0),
+      latestDate: latest?.date || "",
+      latestItem: latest?.itemDetail || ""
+    };
+  }).sort((a,b) => b.count - a.count || a.vendorName.localeCompare(b.vendorName, "ko"));
+
+  return { period:p, vendors };
+}
+
+function openStatModal(mode){
+  const { period, vendors } = currentPeriodVendorSummaries();
+  const title = $("statModalTitle");
+  const periodEl = $("statModalPeriod");
+  const body = $("statModalBody");
+
+  if(mode === "reached"){
+    title.textContent = "5회 도달 업체";
+  }else if(mode === "over"){
+    title.textContent = "6회 이상 업체";
+  }else{
+    title.textContent = "업체별 거래횟수";
+  }
+  periodEl.textContent = period ? period.label : "";
+
+  const list = mode === "reached"
+    ? vendors.filter(v => v.count === 5)
+    : mode === "over"
+      ? vendors.filter(v => v.count >= 6)
+      : vendors;
+  if(!list.length){
+    const emptyMessage = mode === "reached"
+      ? "현재 5회 도달 업체가 없습니다."
+      : mode === "over"
+        ? "현재 6회 이상 업체가 없습니다."
+        : "현재 관리기간 거래업체가 없습니다.";
+    body.innerHTML = `<div class="stat-empty">${emptyMessage}</div>`;
+  }else{
+    body.innerHTML = list.map((v, i) => `
+      <div class="stat-vendor-row">
+        <div class="stat-vendor-rank">${i+1}</div>
+        <div class="stat-vendor-main">
+          <div class="stat-vendor-name">${escapeHtml(v.vendorName)}</div>
+          <div class="stat-vendor-biz">${escapeHtml(v.businessNo)}</div>
+          <div class="stat-vendor-latest">최근 ${escapeHtml(v.latestDate)} · ${escapeHtml(v.latestItem)}</div>
+        </div>
+        <div class="stat-vendor-side">
+          <span class="badge ${v.count>=6?'danger':v.count===5?'warn':'ok'}">${v.count}회</span>
+          <span class="stat-vendor-amount">${formatMoney(v.amount)}</span>
+        </div>
+      </div>`).join("");
+  }
+
+  $("statModal").classList.remove("hidden");
+  document.body.classList.add("modal-open");
+  $("statModalClose").focus();
+}
+
+function closeStatModal(){
+  $("statModal").classList.add("hidden");
+  document.body.classList.remove("modal-open");
+}
+
+function bindStatCard(id, mode){
+  const el = $(id);
+  if(!el) return;
+  el.addEventListener("click", () => openStatModal(mode));
+  el.addEventListener("keydown", e => {
+    if(e.key === "Enter" || e.key === " "){
+      e.preventDefault();
+      openStatModal(mode);
+    }
+  });
 }
 
 function refreshVendorStatus(){
@@ -153,7 +258,7 @@ function renderLedger(){
     return [r.vendorName,r.businessNo,r.itemDetail,r.requester,r.repeatReason].join(" ").toLowerCase().includes(q);
   }).sort(recordSort);
   const body=$("ledgerBody");
-  if(!list.length){ body.innerHTML='<tr><td colspan="10">조건에 맞는 내역이 없습니다.</td></tr>'; return; }
+  if(!list.length){ body.innerHTML='<tr><td colspan="9" class="ledger-empty">조건에 맞는 내역이 없습니다.</td></tr>'; return; }
   body.innerHTML=list.map((r,i)=>{
     const cnt=recordPeriodCount(r); let badge='<span class="badge gray">제도 전/예외</span>';
     if(r.countable===false) badge='<span class="badge gray">안전·보건 예외</span>';
@@ -161,9 +266,18 @@ function renderLedger(){
     else if(cnt===5) badge='<span class="badge warn">5회 도달</span>';
     else if(cnt!=null) badge='<span class="badge ok">정상</span>';
     const countText = r.countable===false ? "예외" : (cnt==null?"-":`${cnt}회`);
+    const reasonText = r.repeatReason ? ` · 사유: ${r.repeatReason}` : "";
+    const itemTitle = `${r.itemDetail || ""}${reasonText}`;
     return `<tr>
-      <td>${i+1}</td><td>${escapeHtml(r.date)}</td><td><b>${escapeHtml(r.vendorName)}</b></td><td>${escapeHtml(r.businessNo)}</td><td>${escapeHtml(r.itemDetail)}${r.repeatReason?`<div style="margin-top:4px;color:#7b5415;font-size:.78rem">사유: ${escapeHtml(r.repeatReason)}</div>`:""}</td><td class="amount">${formatMoney(r.amount)}</td><td>${escapeHtml(r.requester)}</td><td>${countText}</td><td>${badge}</td>
-      <td><button class="btn small ghost" data-edit="${r.id}">수정</button> <button class="btn small danger" data-del="${r.id}">삭제</button></td>
+      <td class="ledger-no">${i+1}</td>
+      <td class="ledger-date">${escapeHtml(formatShortDate(r.date))}</td>
+      <td class="ledger-vendor" title="${escapeHtml(`${r.vendorName} · ${r.businessNo}`)}"><b>${escapeHtml(r.vendorName)}</b><span class="vendor-biz-inline"> · ${escapeHtml(r.businessNo)}</span></td>
+      <td class="ledger-item" title="${escapeHtml(itemTitle)}"><span>${escapeHtml(r.itemDetail)}</span>${r.repeatReason?`<span class="ledger-reason"> · 사유: ${escapeHtml(r.repeatReason)}</span>`:""}</td>
+      <td class="amount ledger-amount">${formatMoney(r.amount)}</td>
+      <td class="ledger-requester">${escapeHtml(r.requester)}</td>
+      <td class="ledger-count">${countText}</td>
+      <td class="ledger-status">${badge}</td>
+      <td class="ledger-manage"><div class="manage-actions"><button class="btn small ghost" data-edit="${r.id}">수정</button><button class="btn small danger" data-del="${r.id}">삭제</button></div></td>
     </tr>`;
   }).join("");
   body.querySelectorAll("[data-edit]").forEach(b=>b.addEventListener("click",()=>editRecord(b.dataset.edit)));
@@ -260,6 +374,13 @@ function lockApp(){
   $("loginMsg").textContent = "";
   setTimeout(() => $("loginPassword").focus(), 0);
 }
+
+bindStatCard("statVendorsCard", "vendors");
+bindStatCard("statReachedCard", "reached");
+bindStatCard("statOverCard", "over");
+$("statModalClose").addEventListener("click", closeStatModal);
+$("statModal").addEventListener("click", e => { if(e.target === $("statModal")) closeStatModal(); });
+document.addEventListener("keydown", e => { if(e.key === "Escape" && !$("statModal").classList.contains("hidden")) closeStatModal(); });
 
 $("loginBtn").addEventListener("click", () => {
   $("loginMsg").textContent = "";
