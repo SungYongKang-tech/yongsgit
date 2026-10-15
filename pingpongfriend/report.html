@@ -91,13 +91,32 @@ function buildTeamStats(){
     return stats[name];
   };
   (Array.isArray(meta.teams)?meta.teams:[]).forEach(ensureTeam);
-  Object.values(matches||{}).forEach(m=>{
+  Object.values(memberInfo).forEach(p=>ensureTeam(p.team));
+
+  // 이전 버전의 경기에는 winnerTeams / loserTeams가 없을 수 있습니다.
+  // 현재 선수 명단과 다른 경기의 저장된 팀 정보도 함께 참조합니다.
+  const knownTeams=new Map();
+  Object.entries(memberInfo).forEach(([name,p])=>{if(p.team)knownTeams.set(name,p.team)});
+  const records=Object.values(matches||{});
+  for(const m of records){
     const {winners,losers}=getNames(m);
-    const winnerTeams=winners.map((name,index)=>String(m?.winnerTeams?.[index]||m?.teamByName?.[name]||memberInfo[name]?.team||"").trim());
-    const loserTeams=losers.map((name,index)=>String(m?.loserTeams?.[index]||m?.teamByName?.[name]||memberInfo[name]?.team||"").trim());
+    for(const [names,teams] of [[winners,m?.winnerTeams],[losers,m?.loserTeams]]){
+      names.forEach((name,index)=>{
+        const team=String((Array.isArray(teams)?teams[index]:null)||m?.teamByName?.[name]||"").trim();
+        if(team&&!knownTeams.has(name))knownTeams.set(name,team);
+      });
+    }
+  }
+  const resolveTeam=(m,name,index,side)=>String(
+    (Array.isArray(side==="winner"?m?.winnerTeams:m?.loserTeams)?(side==="winner"?m.winnerTeams:m.loserTeams)[index]:null)
+    ||m?.teamByName?.[name]||memberInfo[name]?.team||knownTeams.get(name)||""
+  ).trim();
+  records.forEach(m=>{
+    const {winners,losers}=getNames(m);
+    const winnerTeams=winners.map((name,index)=>resolveTeam(m,name,index,"winner"));
+    const loserTeams=losers.map((name,index)=>resolveTeam(m,name,index,"loser"));
     if(!winners.length||!losers.length||winnerTeams.some(team=>!team)||loserTeams.some(team=>!team)){excludedMatches++;return}
     const uniqueWinners=[...new Set(winnerTeams)]; const uniqueLosers=[...new Set(loserTeams)];
-    if(!uniqueWinners.length||!uniqueLosers.length){excludedMatches++;return}
     includedMatches++;
     winners.forEach((name,index)=>ensureTeam(winnerTeams[index])?.players.add(name));
     losers.forEach((name,index)=>ensureTeam(loserTeams[index])?.players.add(name));
@@ -155,7 +174,7 @@ function renderSummary(arr,official){
 }
 function renderTeamStats(){
   const {rows,includedMatches,excludedMatches}=buildTeamStats(); $("teamCount").textContent=`${rows.length}팀`;
-  if(!rows.length){$("teamGrid").innerHTML='<div class="empty" style="grid-column:1/-1">등록된 팀 정보가 없습니다.</div>';$("teamNote").textContent="";return}
+  if(!rows.length){$("teamGrid").innerHTML='<div class="empty" style="grid-column:1/-1">등록된 팀 정보가 없습니다.</div>';$("teamNote").textContent="과거 경기의 선수 소속팀 정보가 저장되지 않아 팀별 성적을 계산할 수 없습니다. 경기 결과와 개인별 성적은 그대로 표시됩니다.";return}
   $("teamGrid").innerHTML=rows.map(team=>`<div class="teamCard">
     <div class="teamCardTop"><div class="teamName">${escapeHtml(team.name)}</div><div class="teamRate">${formatRate(team.rate)}<small>팀 승률</small></div></div>
     <div class="teamRecord">
