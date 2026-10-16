@@ -4,6 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>품질기초 무조건 따라하기</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <meta name="theme-color" content="#1451a7" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="품질기초" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+  <link rel="icon" type="image/png" href="./icons/favicon.png" />
   <!-- 카카오톡 등 링크 공유 미리보기 -->
   <meta name="description" content="품질입회검사, 자재구매규격서, 품질검사 절차 등 품질 기초 업무자료와 필수 체크리스트를 확인하세요." />
   <meta property="og:type" content="website" />
@@ -602,15 +609,53 @@ nav a:hover {
 .quality-menu .quality-check-link { border-left-color:#7393c3; font-size:clamp(15px,3.5vw,19px); padding-left:20px; }
 .quality-menu .quality-check-link::before { content:'○'; color:#2563eb; font-weight:700; }
 
+
+/* PDF 우선보기 화면 */
+#pdf-viewer[hidden], #pdf-frame[hidden], #pdf-external[hidden] { display:none !important; }
+#pdf-viewer { position:fixed; inset:0; z-index:2000; background:#fff; display:flex; flex-direction:column; }
+.pdf-toolbar { display:flex; align-items:center; gap:10px; padding:12px; background:#eef4ff; border-bottom:1px solid #cbd5e1; }
+.pdf-toolbar strong { flex:1; font-size:16px; line-height:1.3; word-break:keep-all; }
+.pdf-toolbar button, .pdf-toolbar a { border:0; border-radius:8px; background:#2563eb; color:white; padding:9px 12px; font-size:14px; text-decoration:none; white-space:nowrap; cursor:pointer; }
+#pdf-status { font-size:13px; color:#475569; padding:8px 12px; }
+#pdf-frame { flex:1; width:100%; min-height:0; border:0; background:#f1f5f9; }
+
 </style>
 
 
 
  <script>
-function qualityPdfPending(event){
+async function openQualityPdf(event, link){
   event.preventDefault();
-  alert("PDF 파일은 추후 연결할 예정입니다.");
+  const url = link.getAttribute('data-pdf');
+  const title = link.textContent.trim();
+  const status = document.getElementById('pdf-status');
+  const viewer = document.getElementById('pdf-viewer');
+  const frame = document.getElementById('pdf-frame');
+  const external = document.getElementById('pdf-external');
+  document.getElementById('pdf-title').textContent = title;
+  viewer.hidden = false;
+  frame.removeAttribute('src');
+  frame.hidden = true;
+  external.hidden = true;
+  status.textContent = 'PDF 파일을 확인하고 있습니다…';
+  document.body.style.overflow = 'hidden';
+  try {
+    const response = await fetch(url, { method:'HEAD', cache:'no-store' });
+    if (!response.ok) throw new Error('PDF가 아직 등록되지 않았습니다.');
+    frame.src = url + '#toolbar=1';
+    frame.hidden = false;
+    external.href = url;
+    external.hidden = false;
+    status.textContent = '미리보기가 보이지 않으면 「브라우저에서 열기」를 눌러주세요.';
+  } catch (error) {
+    status.textContent = 'PDF 파일이 아직 등록되지 않았습니다. 나중에 다시 확인해 주세요.';
+  }
   return false;
+}
+function closeQualityPdf(){
+  document.getElementById('pdf-viewer').hidden = true;
+  document.getElementById('pdf-frame').removeAttribute('src');
+  document.body.style.overflow = '';
 }
 
 function openPage(id){
@@ -767,19 +812,19 @@ function startGuide(){
 
     <nav id="nav-menu" class="quality-menu" style="display:none;">
     <ul>
-      <li><a class="quality-link" href="#" onclick="return qualityPdfPending(event)"><span class="quality-number">①</span><span>품질입회검사 업무절차 및 착안사항</span></a></li>
-      <li><a class="quality-link" href="#" onclick="return qualityPdfPending(event)"><span class="quality-number">②</span><span>자재구매규격서 작성방법</span></a></li>
-      <li><a class="quality-link" href="#" onclick="return qualityPdfPending(event)"><span class="quality-number">③</span><span>품질문서 검토 및 품질검사 절차</span></a></li>
-      <li><a class="quality-link" href="#" onclick="return qualityPdfPending(event)"><span class="quality-number">④</span><span>정비적격기업 처리절차 및 평가기준</span></a></li>
-      <li><a class="quality-link" href="#" onclick="return qualityPdfPending(event)"><span class="quality-number">⑤</span><span>지침서 작성방법 및 유효성평가,<br>재개정 방법</span></a></li>
-      <li><a class="quality-link" href="#" onclick="return qualityPdfPending(event)"><span class="quality-number">⑥</span><span>NCR, CAR 발행 및 업무처리방법</span></a></li>
-      <li><a class="quality-link" href="#" onclick="return qualityPdfPending(event)"><span class="quality-number">⑦</span><span>Code & Standard 활용방법</span></a></li>
+      <li><a class="quality-link" href="#" onclick="return openQualityPdf(event, this)" data-pdf="pdf/01_품질입회검사.pdf"><span class="quality-number">①</span><span>품질입회검사 업무절차 및 착안사항</span></a></li>
+      <li><a class="quality-link" href="#" onclick="return openQualityPdf(event, this)" data-pdf="pdf/02_자재구매규격서.pdf"><span class="quality-number">②</span><span>자재구매규격서 작성방법</span></a></li>
+      <li><a class="quality-link" href="#" onclick="return openQualityPdf(event, this)" data-pdf="pdf/03_품질문서검토.pdf"><span class="quality-number">③</span><span>품질문서 검토 및 품질검사 절차</span></a></li>
+      <li><a class="quality-link" href="#" onclick="return openQualityPdf(event, this)" data-pdf="pdf/04_정비적격기업.pdf"><span class="quality-number">④</span><span>정비적격기업 처리절차 및 평가기준</span></a></li>
+      <li><a class="quality-link" href="#" onclick="return openQualityPdf(event, this)" data-pdf="pdf/05_지침서작성.pdf"><span class="quality-number">⑤</span><span>지침서 작성방법 및 유효성평가, 재개정 방법</span></a></li>
+      <li><a class="quality-link" href="#" onclick="return openQualityPdf(event, this)" data-pdf="pdf/06_NCR_CAR.pdf"><span class="quality-number">⑥</span><span>NCR, CAR 발행 및 업무처리방법</span></a></li>
+      <li><a class="quality-link" href="#" onclick="return openQualityPdf(event, this)" data-pdf="pdf/07_Code_Standard.pdf"><span class="quality-number">⑦</span><span>Code & Standard 활용방법</span></a></li>
     </ul>
     <div class="quality-check-title">※ Check Sheet</div>
     <ul>
-      <li><a class="quality-link quality-check-link" href="#" onclick="return qualityPdfPending(event)">입회검사자 공장검사 수행가이드</a></li>
-      <li><a class="quality-link quality-check-link" href="#" onclick="return qualityPdfPending(event)">기자재 구매 품질관리업무 자가진단표<br>(발주부서용)</a></li>
-      <li><a class="quality-link quality-check-link" href="#" onclick="return qualityPdfPending(event)">기자재 품질관리 필수체크리스트(계약자용)</a></li>
+      <li><a class="quality-link quality-check-link" href="#" onclick="return openQualityPdf(event, this)" data-pdf="pdf/08_공장검사가이드.pdf">입회검사자 공장검사 수행가이드</a></li>
+      <li><a class="quality-link quality-check-link" href="#" onclick="return openQualityPdf(event, this)" data-pdf="pdf/09_자가진단표.pdf">기자재 구매 품질관리업무 자가진단표(발주부서용)</a></li>
+      <li><a class="quality-link quality-check-link" href="#" onclick="return openQualityPdf(event, this)" data-pdf="pdf/10_필수체크리스트.pdf">기자재 품질관리 필수체크리스트(계약자용)</a></li>
     </ul>
   </nav>
 
@@ -788,5 +833,26 @@ function startGuide(){
 
   <main id="main-content" style="display:none;"></main>
 
+
+  <!-- 항목 클릭 시 PDF 먼저 보기 (파일명 유지하여 pdf 폴더에 업로드) -->
+  <div id="pdf-viewer" role="dialog" aria-modal="true" aria-labelledby="pdf-title" hidden>
+    <div class="pdf-toolbar">
+      <button type="button" onclick="closeQualityPdf()">← 목록</button>
+      <strong id="pdf-title"></strong>
+      <a id="pdf-external" target="_blank" rel="noopener noreferrer" hidden>브라우저에서 열기</a>
+    </div>
+    <div id="pdf-status" aria-live="polite"></div>
+    <iframe id="pdf-frame" title="PDF 미리보기" hidden></iframe>
+  </div>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(err => {
+          console.warn('웹앱 오프라인 기능을 등록하지 못했습니다.', err);
+        });
+      });
+    }
+  </script>
 </body>
 </html>
