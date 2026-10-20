@@ -31,6 +31,9 @@ h2{font-size:18px;text-align:center;color:#1e3a8a;margin:16px 0 10px;font-weight
 .headerTitleWrap{display:flex;align-items:center;justify-content:center;gap:10px;max-width:680px;margin:0 auto 6px}
 .headerTitleWrap h1{margin:0}
 .headerQrLink{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid #dbeafe;border-radius:14px;background:#f8fbff;text-decoration:none;color:inherit;box-shadow:0 4px 12px rgba(37,99,235,.08)}
+.headerInstallBtn{border:1px solid #bfdbfe;border-radius:12px;background:#2563eb;color:#fff;padding:11px 9px;font-size:13px;font-weight:900;cursor:pointer;white-space:nowrap;min-height:43px}
+.headerInstallBtn.installed{background:#e2e8f0;color:#475569;border-color:#cbd5e1}
+@media(max-width:520px){.headerInstallBtn{font-size:11px;padding:8px 5px;min-height:38px}.headerTitleWrap h1{font-size:16px}}
 .headerQrLink:hover{border-color:#93c5fd;transform:translateY(-1px)}
 .headerQrImg{width:54px;height:54px;border-radius:10px;background:#fff;display:block;flex:0 0 54px}
 .headerQrText{display:flex;flex-direction:column;align-items:flex-start;line-height:1.12;text-align:left}
@@ -119,12 +122,12 @@ main{max-width:960px;margin:0 auto;padding:10px 8px 50px}
   <img src="./splash-9x16.png" alt="탁구 친선경기" />
   <div class="splashShade"></div>
 </div>
-<button id="installPwaBtn" type="button" aria-label="탁구 친선경기 앱 설치">📲 앱 설치</button>
+
 <div id="iosInstallModal" aria-hidden="true">
   <div class="iosInstallCard" role="dialog" aria-modal="true" aria-labelledby="iosInstallTitle">
     <img class="iosInstallIcon" src="./apple-touch-icon.png" alt="탁구 친선경기 앱 아이콘" />
     <h2 id="iosInstallTitle" class="iosInstallTitle">홈 화면에 설치하기</h2>
-    <div class="iosInstallText">
+    <div id="installGuideText" class="iosInstallText">
       1. Safari 아래쪽의 <b>공유</b> 버튼을 누릅니다.<br>
       2. 메뉴에서 <b>홈 화면에 추가</b>를 선택합니다.<br>
       3. 오른쪽 위의 <b>추가</b>를 누르면 앱처럼 실행됩니다.
@@ -153,6 +156,7 @@ main{max-width:960px;margin:0 auto;padding:10px 8px 50px}
         <span class="headerQrUrl">sensational-tulumba-65e97e.netlify.app</span>
       </span>
     </button>
+    <button id="headerInstallBtn" class="headerInstallBtn" type="button">📲 앱 설치</button>
   </div>
   <div class="headerNav">
     <button id="showMainBtn" class="btn primary">경기입력</button>
@@ -932,57 +936,53 @@ init()
 
 <script>
 let deferredPwaPrompt = null;
-const installBtn = document.getElementById('installPwaBtn');
+const installBtn = document.getElementById('headerInstallBtn');
 const iosModal = document.getElementById('iosInstallModal');
 const iosClose = document.getElementById('iosInstallClose');
-const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
-const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-
+const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isAndroid = /android/i.test(navigator.userAgent);
+const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 function updateInstallButton(){
-  if (isStandalone) { installBtn?.classList.remove('show'); return; }
-  if (deferredPwaPrompt || isIos) installBtn?.classList.add('show');
+  if (!installBtn) return;
+  installBtn.textContent = isStandalone() ? '✓ 설치 완료' : '📲 앱 설치';
+  installBtn.classList.toggle('installed', isStandalone());
 }
-
+function openInstallGuide(){
+  const guide = document.getElementById('installGuideText');
+  const title = document.getElementById('iosInstallTitle');
+  if (isIos) {
+    title.textContent = '아이폰 · 아이패드 설치';
+    guide.innerHTML = '1. <b>Safari</b>에서 이 페이지를 엽니다.<br>2. <b>공유</b> 버튼(□↑)을 누릅니다.<br>3. <b>홈 화면에 추가</b>를 선택합니다.<br>4. 오른쪽 위의 <b>추가</b>를 누릅니다.';
+  } else if (isAndroid) {
+    title.textContent = '안드로이드 설치 방법';
+    guide.innerHTML = '1. <b>Chrome</b>에서 이 페이지를 엽니다.<br>2. 오른쪽 위 <b>⋮ 메뉴</b>를 누릅니다.<br>3. <b>앱 설치</b> 또는 <b>홈 화면에 추가</b>를 선택합니다.<br>4. 화면 안내에 따라 설치합니다.';
+  } else {
+    title.textContent = '홈 화면에 추가하기';
+    guide.innerHTML = '휴대폰에서 이 페이지를 연 뒤 브라우저 메뉴의 <b>앱 설치</b> 또는 <b>홈 화면에 추가</b>를 이용하세요.';
+  }
+  iosModal?.classList.add('open');
+  iosModal?.setAttribute('aria-hidden','false');
+}
 window.addEventListener('beforeinstallprompt', event => {
   event.preventDefault();
   deferredPwaPrompt = event;
   updateInstallButton();
 });
-
 installBtn?.addEventListener('click', async () => {
+  if (isStandalone()) return;
   if (deferredPwaPrompt) {
-    deferredPwaPrompt.prompt();
-    try { await deferredPwaPrompt.userChoice; } catch(_) {}
+    const promptEvent = deferredPwaPrompt;
     deferredPwaPrompt = null;
-    installBtn.classList.remove('show');
-    return;
-  }
-  if (isIos) {
-    iosModal?.classList.add('open');
-    iosModal?.setAttribute('aria-hidden','false');
-  }
+    try { await promptEvent.prompt(); await promptEvent.userChoice; } catch (error) { console.warn('설치 안내 오류', error); openInstallGuide(); }
+    updateInstallButton();
+  } else openInstallGuide();
 });
-
-iosClose?.addEventListener('click', () => {
-  iosModal?.classList.remove('open');
-  iosModal?.setAttribute('aria-hidden','true');
+iosClose?.addEventListener('click', () => { iosModal?.classList.remove('open'); iosModal?.setAttribute('aria-hidden','true'); });
+iosModal?.addEventListener('click', event => { if (event.target === iosModal) iosClose?.click(); });
+window.addEventListener('appinstalled', () => { deferredPwaPrompt = null; updateInstallButton(); });
+if ('serviceWorker' in navigator) window.addEventListener('load', () => {
+  navigator.serviceWorker.register('./sw.js').catch(error => console.warn('SW 등록 실패', error));
 });
-iosModal?.addEventListener('click', event => {
-  if (event.target === iosModal) iosClose?.click();
-});
-
-window.addEventListener('appinstalled', () => {
-  deferredPwaPrompt = null;
-  installBtn?.classList.remove('show');
-});
-
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js')
-      .then(() => updateInstallButton())
-      .catch(error => console.warn('SW 등록 실패', error));
-  });
-}
 updateInstallButton();
 </script>
 
