@@ -285,7 +285,7 @@ console.log("✅ authDomain =", db.app?.options?.authDomain);
 
   import {
     ref, onValue, push, remove, get, set, update,
-    query, orderByChild, equalTo
+    query, orderByChild, equalTo, runTransaction
   } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
 
   import {
@@ -381,207 +381,143 @@ async function getPlayerElo(name){
   };
 }
 
-async function saveEloForSingleMatch(matchId, match){
-  if(match.mode !== "single") return;
+// ELO와 경기 원본을 동일한 잠금 아래 원자적으로 기록합니다.
+// 다른 사용자가 동시에 경기 입력/취소할 때 기존 점수를 덮어쓰지 않도록 보호합니다.
+const DELETE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const ELO_LOCK_TTL_MS = 30000;
+const eloLockRef = ref(db, "config/eloWriteLock");
 
+async function withEloLock(work){
+  const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const result = await runTransaction(eloLockRef, current => {
+    if(current && Number(current.expiresAt || 0) > Date.now()) return;
+    return {token, expiresAt: Date.now() + ELO_LOCK_TTL_MS};
+  }, {applyLocally:false});
+  if(!result.committed || result.snapshot.val()?.token !== token){
+    throw new Error("다른 경기 결과를 처리 중입니다. 잠시 후 다시 시도해 주세요.");
+  }
+  try { return await work(); }
+  finally {
+    try {
+      await runTransaction(eloLockRef, current =>
+        current?.token === token ? null : undefined,
+        {applyLocally:false}
+      );
+    } catch(e) { console.warn("ELO 잠금 해제 실패 (자동 만료 예정):", e); }
+  }
+}
+
+async function saveEloForSingleMatch(matchId, match){
   const pA = match.namesA?.[0];
   const pB = match.namesB?.[0];
-  if(!pA || !pB) return;
+  if(!pA || !pB || pA === pB) throw new Error("단식 선수 정보가 올바르지 않습니다.");
 
   const a = await getPlayerElo(pA);
   const b = await getPlayerElo(pB);
-
-  const beforeA = Number(a.elo || initialEloByBu(getPlayerLevel(pA)));
-  const beforeB = Number(b.elo || initialEloByBu(getPlayerLevel(pB)));
-
+  const beforeA = Number(a.elo ?? initialEloByBu(getPlayerLevel(pA)));
+  const beforeB = Number(b.elo ?? initialEloByBu(getPlayerLevel(pB)));
   const levelA = getPlayerLevel(pA);
-const levelB = getPlayerLevel(pB);
+  const levelB = getPlayerLevel(pB);
+  const handicapCompensation = getHandicapCompensation(levelA, levelB);
+  let calcA = beforeA;
+  let calcB = beforeB;
+  if(levelA < levelB) calcA -= handicapCompensation;
+  else if(levelB < levelA) calcB -= handicapCompensation;
 
-const handicapCompensation =
-  getHandicapCompensation(levelA, levelB);
-
-let calcA = beforeA;
-let calcB = beforeB;
-
-// 숫자가 작은 부수가 상위 부수
-// 실제 핸디 효과만큼 상위 부수의 계산용 ELO를 낮춤
-if (levelA < levelB) {
-  calcA -= handicapCompensation;
-} else if (levelB < levelA) {
-  calcB -= handicapCompensation;
-}
-  
   const gamesA = Number(a.games || 0);
   const gamesB = Number(b.games || 0);
-
   const scoreA = match.winnerSide === "A" ? 1 : 0;
-
   const k = Math.min(getK(gamesA), getK(gamesB));
-
-const change = Math.round(
-  k * (scoreA - expectedScore(calcA, calcB))
-);
-
-const changeA = change;
-const changeB = -change;
-
+  const changeA = Math.round(k * (scoreA - expectedScore(calcA, calcB)));
+  const changeB = -changeA;
   const afterA = beforeA + changeA;
   const afterB = beforeB + changeB;
+  const now = Date.now();
 
-  await set(ref(db, `eloRatings/${pA}`), {
-    name: pA,
-    elo: afterA,
-    games: gamesA + 1,
-    wins: Number(a.wins || 0) + (scoreA === 1 ? 1 : 0),
-    losses: Number(a.losses || 0) + (scoreA === 0 ? 1 : 0),
-    updatedAt: Date.now()
-  });
-
-  await set(ref(db, `eloRatings/${pB}`), {
-    name: pB,
-    elo: afterB,
-    games: gamesB + 1,
-    wins: Number(b.wins || 0) + (scoreA === 0 ? 1 : 0),
-    losses: Number(b.losses || 0) + (scoreA === 1 ? 1 : 0),
-    updatedAt: Date.now()
-  });
-
-  await set(ref(db, `eloLogs/${matchId}`), {
-    matchId,
-    mode: "single",
-    pA,
-    pB,
-    winner: scoreA === 1 ? pA : pB,
-    loser: scoreA === 1 ? pB : pA,
-    beforeA,
-    beforeB,
-    afterA,
-    afterB,
-    changeA,
-    changeB,
-    winnerChange: scoreA === 1 ? changeA : changeB,
-    loserChange: scoreA === 1 ? changeB : changeA,
-    createdAt: match.createdAt,
-    monthKey: match.monthKey
-  });
+  // 한 번의 다중 경로 update로 경기, ELO, 로그를 함께 반영합니다.
+  const writes = {};
+  writes[`matches/${matchId}`] = match;
+  writes[`eloRatings/${pA}`] = {
+    name:pA, elo:afterA, games:gamesA+1,
+    wins:Number(a.wins || 0) + (scoreA === 1 ? 1 : 0),
+    losses:Number(a.losses || 0) + (scoreA === 0 ? 1 : 0), updatedAt:now
+  };
+  writes[`eloRatings/${pB}`] = {
+    name:pB, elo:afterB, games:gamesB+1,
+    wins:Number(b.wins || 0) + (scoreA === 0 ? 1 : 0),
+    losses:Number(b.losses || 0) + (scoreA === 1 ? 1 : 0), updatedAt:now
+  };
+  writes[`eloLogs/${matchId}`] = {
+    matchId, mode:"single", pA, pB,
+    winner:scoreA === 1 ? pA : pB,
+    loser:scoreA === 1 ? pB : pA,
+    beforeA, beforeB, afterA, afterB,
+    changeA, changeB,
+    winnerChange:scoreA === 1 ? changeA : changeB,
+    loserChange:scoreA === 1 ? changeB : changeA,
+    createdAt:match.createdAt, monthKey:match.monthKey
+  };
+  await update(ref(db), writes);
 }
 
-async function rebuildAllElo(){
-  const snap = await get(matchRef);
-  const data = snap.val() || {};
-
-  const elo = {};
-  const games = {};
-  const wins = {};
-  const losses = {};
-
-  const matches = Object.entries(data)
-    .map(([id, m]) => ({ id, ...m }))
-    .filter(m => m && m.mode === "single")
-    .filter(m => (m.namesA || [])[0] && (m.namesB || [])[0])
-    .filter(m => m.winnerSide === "A" || m.winnerSide === "B")
-    .sort((a,b) => Number(a.createdAt || 0) - Number(b.createdAt || 0));
-
-  function ensure(name){
-    if(elo[name] == null){
-      elo[name] = initialEloByBu(getPlayerLevel(name));
-      games[name] = 0;
-      wins[name] = 0;
-      losses[name] = 0;
-    }
+// 기존 rebuildAllElo() 제거: 오래된 원본 경기가 정리된 뒤 재계산하면
+// 선수별 누적 ELO 및 경기 수가 소실되는 문제를 막습니다.
+async function safelyDeleteMatch(id){
+  const matchSnap = await get(ref(db, `matches/${id}`));
+  if(!matchSnap.exists()) throw new Error("이미 삭제되었거나 존재하지 않는 경기입니다.");
+  const match = matchSnap.val();
+  const ts = Number(match.createdAt || 0);
+  if(!ts || Date.now()-ts > DELETE_WINDOW_MS || ts > Date.now()+60000){
+    throw new Error("경기 입력 후 7일이 지나 삭제할 수 없습니다.");
+  }
+  if(match.mode !== "single"){
+    await remove(ref(db, `matches/${id}`));
+    return;
   }
 
-  const newLogs = {};
+  const logSnap = await get(ref(db, `eloLogs/${id}`));
+  if(!logSnap.exists()) throw new Error("이 경기의 ELO 로그가 없어 안전한 복구가 불가능합니다.");
+  const log = logSnap.val();
+  const pA = match.namesA?.[0];
+  const pB = match.namesB?.[0];
+  if(log.mode !== "single" || log.pA !== pA || log.pB !== pB ||
+     log.winner !== (match.winnerSide === "A" ? pA : pB) ||
+     Number(log.createdAt) !== ts){
+    throw new Error("경기 기록과 ELO 로그가 일치하지 않아 삭제를 중단합니다.");
+  }
 
-  matches.forEach(m => {
-    const pA = m.namesA[0];
-    const pB = m.namesB[0];
-
-    ensure(pA);
-    ensure(pB);
-
-    const beforeA = elo[pA];
-    const beforeB = elo[pB];
-
-   const levelA = getPlayerLevel(pA);
-const levelB = getPlayerLevel(pB);
-
-const handicapCompensation =
-  getHandicapCompensation(levelA, levelB);
-
-let calcA = beforeA;
-let calcB = beforeB;
-
-if (levelA < levelB) {
-  calcA -= handicapCompensation;
-} else if (levelB < levelA) {
-  calcB -= handicapCompensation;
-}
-
-    const scoreA = m.winnerSide === "A" ? 1 : 0;
-
- const k = Math.min(getK(games[pA]), getK(games[pB]));
-
-const change = Math.round(
-  k * (scoreA - expectedScore(calcA, calcB))
-);
-
-const changeA = change;
-const changeB = -change;
-    const afterA = beforeA + changeA;
-    const afterB = beforeB + changeB;
-
-    elo[pA] = afterA;
-    elo[pB] = afterB;
-
-    games[pA]++;
-    games[pB]++;
-
-    if(scoreA === 1){
-      wins[pA]++;
-      losses[pB]++;
-    }else{
-      wins[pB]++;
-      losses[pA]++;
-    }
-
-    newLogs[m.id] = {
-      matchId: m.id,
-      mode: "single",
-      pA,
-      pB,
-      winner: scoreA === 1 ? pA : pB,
-      loser: scoreA === 1 ? pB : pA,
-      beforeA,
-      beforeB,
-      afterA,
-      afterB,
-      changeA,
-      changeB,
-      winnerChange: scoreA === 1 ? changeA : changeB,
-      loserChange: scoreA === 1 ? changeB : changeA,
-      createdAt: m.createdAt,
-      monthKey: m.monthKey || ""
-    };
+  const [aSnap,bSnap,logsSnap] = await Promise.all([
+    get(ref(db, `eloRatings/${pA}`)),
+    get(ref(db, `eloRatings/${pB}`)),
+    get(ref(db, "eloLogs"))
+  ]);
+  if(!aSnap.exists() || !bSnap.exists()) throw new Error("선수 ELO 정보를 찾지 못했습니다.");
+  const a=aSnap.val(), b=bSnap.val();
+  const logs=logsSnap.val() || {};
+  const lastFor = name => Object.entries(logs)
+    .filter(([,entry]) => entry?.mode === "single" && (entry.pA === name || entry.pB === name))
+    .sort((x,y) => Number(y[1].createdAt || 0)-Number(x[1].createdAt || 0) || y[0].localeCompare(x[0]))[0]?.[0];
+  if(lastFor(pA) !== id || lastFor(pB) !== id){
+    throw new Error("두 선수 중 한 명이라도 이후 단식 경기를 진행하여 이 경기는 삭제할 수 없습니다.");
+  }
+  if(Number(a.elo) !== Number(log.afterA) || Number(b.elo) !== Number(log.afterB)){
+    throw new Error("현재 ELO와 경기 종료 점수가 달라 삭제를 중단합니다.");
+  }
+  const winA = log.winner === pA;
+  const nextA = {name:pA,elo:Number(log.beforeA),games:Number(a.games)-1,
+    wins:Number(a.wins)-(winA?1:0),losses:Number(a.losses)-(winA?0:1),updatedAt:Date.now()};
+  const nextB = {name:pB,elo:Number(log.beforeB),games:Number(b.games)-1,
+    wins:Number(b.wins)-(winA?0:1),losses:Number(b.losses)-(winA?1:0),updatedAt:Date.now()};
+  if([nextA,nextB].some(x=>[x.games,x.wins,x.losses,x.elo].some(v=>!Number.isFinite(v)||v<0))){
+    throw new Error("기존 ELO 누적 자료가 일치하지 않아 삭제를 중단합니다.");
+  }
+  await update(ref(db), {
+    [`matches/${id}`]:null,
+    [`eloLogs/${id}`]:null,
+    [`eloRatings/${pA}`]:nextA,
+    [`eloRatings/${pB}`]:nextB
   });
-
-  const newRatings = {};
-  Object.keys(elo).forEach(name => {
-    newRatings[name] = {
-      name,
-      elo: Math.round(elo[name]),
-      games: games[name],
-      wins: wins[name],
-      losses: losses[name],
-      updatedAt: Date.now()
-    };
-  });
-
-  await set(ref(db, "eloRatings"), newRatings);
-  await set(ref(db, "eloLogs"), newLogs);
 }
-
-window.rebuildAllElo = rebuildAllElo;
 
 // ===== 제목 캐시 + 업데이트 =====
 const titleRef = ref(db, "config/title");
@@ -669,27 +605,28 @@ get(titleRef).then(snap => {
 
   cleanupStaleLiveMatches();
 
- window.deleteMatch = async (id) => {
-  try {
-    await ensureAuthReady();
-
-    const pwSnap = await get(deletePwRef);
-    const pw = pwSnap.exists() ? String(pwSnap.val()).trim() : "";
-
-    const input = prompt("삭제 비밀번호 4자리를 입력하세요.");
-    if (input === null) return;
-    if (String(input).trim() !== pw) return toast("비밀번호가 올바르지 않습니다");
-    if (!confirm("정말 이 경기결과를 삭제하시겠습니까?")) return;
-
-    await remove(ref(db, "matches/" + id));
-await rebuildAllElo();
-
-toast("경기결과 삭제 완료 / ELO 재계산 완료");
-  } catch (e) {
-    console.error("❌ deleteMatch error:", e);
-    alert("삭제 실패: " + (e?.message || e));
-  }
-};
+  window.deleteMatch = async (id) => {
+    try {
+      await ensureAuthReady();
+      const snap=await get(ref(db, `matches/${id}`));
+      if(!snap.exists()) return toast("이미 삭제된 경기입니다");
+      const when=Number(snap.val()?.createdAt || 0);
+      if(!when || Date.now()-when>DELETE_WINDOW_MS){
+        return alert("입력 후 7일이 지난 경기는 삭제할 수 없습니다.");
+      }
+      const pwSnap=await get(deletePwRef);
+      const pw=pwSnap.exists()?String(pwSnap.val()).trim():"";
+      const input=prompt("삭제 비밀번호 4자리를 입력하세요.");
+      if(input===null) return;
+      if(String(input).trim()!==pw) return toast("비밀번호가 올바르지 않습니다");
+      if(!confirm("이 경기를 취소하시겠습니까?\n단식은 두 선수의 후속 경기가 없을 때만 ELO를 복구합니다.")) return;
+      await withEloLock(()=>safelyDeleteMatch(id));
+      toast("경기 취소 완료 / 누적 ELO 보존");
+    } catch(e){
+      console.error("❌ deleteMatch error:",e);
+      alert("삭제 불가: " + (e?.message || String(e)));
+    }
+  };
 
   // ✅ 부수별 색상
   const LEVEL_COLORS = {
@@ -768,29 +705,27 @@ toast("경기결과 삭제 완료 / ELO 재계산 완료");
   $("#startDouble").onclick=startDoubleMatch;
 
   async function saveMatch(winner, extra={}){
-  await ensureAuthReady();   // ✅ 추가
-    if(!(sel.length===2 || sel.length===4)){ toast("2명 또는 4명을 선택하세요"); return; }
-    const mode=(sel.length===2)?"single":"double";
-    const a=sel.slice(0,sel.length/2).map(p=>p.name);
-    const b=sel.slice(sel.length/2).map(p=>p.name);
-
-    const obj={
-      mode,
-      monthKey:getMonthKey(),  // ✅ 저장 시 monthKey 포함
-      namesA:a,
-      namesB:b,
-      winnerSide:winner,
-      createdAt:Date.now(),
-      ...extra
-    };
-
-    const newRef = push(matchRef);
-await set(newRef, obj);
-await saveEloForSingleMatch(newRef.key, obj);
-
-toast("경기결과 저장 완료");
-    sel=[]; renderChips(); updateTeams();
-    return newRef.key;
+    try{
+      await ensureAuthReady();
+      if(!(sel.length===2 || sel.length===4)){toast("2명 또는 4명을 선택하세요");return;}
+      const mode=(sel.length===2)?"single":"double";
+      const a=sel.slice(0,sel.length/2).map(p=>p.name);
+      const b=sel.slice(sel.length/2).map(p=>p.name);
+      const obj={mode,monthKey:getMonthKey(),namesA:a,namesB:b,
+        winnerSide:winner,createdAt:Date.now(),...extra};
+      const newRef=push(matchRef);
+      if(mode==="single"){
+        await withEloLock(()=>saveEloForSingleMatch(newRef.key,obj));
+      } else {
+        await set(newRef,obj);
+      }
+      toast("경기결과 저장 완료");
+      sel=[]; renderChips(); updateTeams();
+      return newRef.key;
+    }catch(e){
+      console.error("❌ saveMatch error:",e);
+      alert("경기 저장 실패: " + (e?.message || String(e)));
+    }
   }
 
   function randomRoomCode(){
@@ -1049,13 +984,14 @@ toast("경기결과 저장 완료");
         ? `<span class="log-win">${b} <span style="color:#ef4444;font-weight:700;">(승)</span></span>`
         : `<span>${b}</span>`;
 
+      const deletable = Number(m.createdAt) > 0 && Date.now()-Number(m.createdAt) <= DELETE_WINDOW_MS;
       logs.insertAdjacentHTML("beforeend", `
         <div class="log-item">
           <span class="log-time">${time} [${m.mode==="double" ? "복식" : "단식"}]</span>
           <div class="log-match">
             ${aHtml}  vs  ${bHtml}
           </div>
-          <button class="delete-btn" onclick="deleteMatch('${m.id}')">🗑️</button>
+          ${deletable ? `<button class="delete-btn" onclick="deleteMatch('${m.id}')" title="7일 이내 경기 취소">🗑️</button>` : ""}
         </div>
       `);
     });
