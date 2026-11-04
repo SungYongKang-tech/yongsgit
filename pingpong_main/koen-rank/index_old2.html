@@ -1,0 +1,1249 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>🏓 경기결과 입력</title>
+<style>
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
+:root {
+  --ink:#0f172a; --muted:#64748b; --card:#fff; --bg:#f5f7fb;
+  --accent:#2563eb; --ok:#16a34a; --danger:#ef4444;
+  --shadow:0 8px 28px rgba(0,0,0,.08);
+}
+body {
+  margin:0;
+  font-family:"Pretendard","Noto Sans KR",sans-serif;
+  font-weight:600;
+  background:var(--bg);
+  color:var(--ink);
+}
+header {
+  background:#fff;
+  border-bottom:1px solid #e5e7eb;
+  position:sticky; top:0; z-index:10;
+}
+.header-inner {
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  padding:12px 0;
+}
+h1 {
+  margin:2px 0 8px;
+  font-size:clamp(20px,4vw,24px);
+  color:var(--accent);
+  font-weight:700;
+}
+.row {
+  display:flex; flex-wrap:wrap; gap:8px;
+  align-items:center; justify-content:center;
+}
+.btn {
+  border:1px solid #ccc; border-radius:8px; padding:6px 10px;
+  font-size:14px; cursor:pointer; background:#fff; transition:.2s; font-weight:600;
+}
+.btn.primary {background:var(--accent); color:#fff; border-color:var(--accent);}
+.btn.ok {background:var(--ok); color:#fff; border-color:var(--ok);}
+.btn.danger {background:var(--danger); color:#fff; border-color:var(--danger);}
+.btn.play {background:#7c3aed; color:#fff; border-color:#7c3aed;}
+.wrap {max-width:960px; margin:0 auto; padding:14px 16px;}
+
+.chip {
+  border:1px solid #ccc;
+  border-radius:8px;
+  padding:4px 6px;
+  font-size:16px;
+  background:#fff;
+  color:#111;
+  cursor:pointer;
+  font-weight:600;
+}
+.chip.selected {
+  border:1px solid var(--accent) !important;
+  background:#efef07 !important;
+}
+@media (max-width:640px){
+  .chip {
+    font-size:16px !important;
+    padding:2px 2px !important;
+  }
+}
+
+#logs {
+  margin-top:20px;
+  background:#fff;
+  border-radius:12px;
+  box-shadow:var(--shadow);
+  padding:12px;
+}
+.log-item {
+  border-bottom:1px solid #e5e7eb; padding:10px 4px; position:relative;
+}
+.log-item:last-child {border-bottom:none;}
+.log-time {
+  font-size:15px;
+  color:#334155;
+  display:block;
+  margin-bottom:4px;
+  font-weight:700;
+}
+.log-match {font-size:16px; font-weight:600;}
+.log-win {color:#2563eb; font-weight:700;}
+.delete-btn {
+  position:absolute; right:8px; top:6px; font-size:16px; border:none;
+  background:transparent; color:#9ca3af; cursor:pointer; transition:.2s;
+}
+.delete-btn:hover {color:#ef4444; transform:scale(1.1);}
+.toast {
+  position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
+  background:#111827; color:#fff; padding:9px 14px; border-radius:10px;
+  opacity:0; transition:.25s;
+  font-size:15px; font-weight:600;
+}
+.toast.show {opacity:1;}
+@media (max-width:640px){
+  .chip{font-size:16px; padding:2px 6px;}
+  .btn{font-size:13px; padding:5px 8px;}
+  .log-match{font-size:15px;}
+  .log-time{font-size:14px;}
+}
+
+#teamDisplay {
+  margin-top: 24px;
+  margin-bottom: 16px;
+  text-align: center;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+#matchButtons {
+  display: none;
+  align-items:center;
+  justify-content:center;
+  flex-wrap:wrap;
+  gap:10px;
+  margin-top: 12px;
+  margin-bottom: 22px;
+}
+#matchButtons .btn {
+  margin: 0;
+  padding: 8px 16px;
+  font-size: 16px;
+}
+#startDouble {display:none;}
+
+/* ✅ 사용법 모달창 */
+.modal {
+  display: none;
+  position: fixed;
+  z-index: 100;
+  left: 0; top: 0;
+  width: 100%; height: 100%;
+  background: rgba(0,0,0,0.4);
+  justify-content: center;
+  align-items: center;
+}
+.modal-content {
+  background: #fff;
+  border-radius: 14px;
+  padding: 20px;
+  max-width: 340px;
+  width: 80%;
+  text-align: left;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.2);
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.modal-content h2 {
+  font-size: 18px;
+  color: #1e3a8a;
+  margin-bottom: 10px;
+  text-align:center;
+}
+.modal-content ul {
+  list-style:none;
+  padding-left:0;
+  margin:0;
+  color:#1f2937;
+  font-size:15px;
+  line-height:1.6;
+}
+.modal-content li::before { content:"• "; color:#2563eb; }
+.result-summary {
+  margin:14px 0;
+  padding:14px;
+  border-radius:12px;
+  background:#f8fafc;
+  border:1px solid #e2e8f0;
+  text-align:center;
+  line-height:1.7;
+}
+.result-summary .winner {color:#7c3aed; font-size:18px; font-weight:800;}
+.result-actions {display:flex; gap:8px; justify-content:center;}
+@media (max-width:640px){
+  .modal-content{font-size:14px;padding:16px;}
+  #matchButtons .btn {flex:1 1 calc(33.333% - 8px); padding:8px 5px; font-size:14px;}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="header-inner">
+    <h1 id="pageTitle">🏓 경기결과 입력</h1>
+    <div class="row">
+      <a href="monthly-report.html" class="btn primary">통합 전적</a>
+      <a href="monthly-report2.html" class="btn primary">ELO 랭킹</a>
+      <button id="todayBtn" class="btn primary">오늘의 전적</button>
+      <a href="./doubles-match.html?role=display&auto=1" class="btn play">패드 전광판</a>
+      <button id="helpBtn" class="btn">ℹ 사용법</button>
+      <button id="homeBtn" class="btn">📱 바로가기 추가</button>
+       <!-- ✅ 추가 -->
+  <a href="/pingpong_main/rules.html" class="btn">📘 탁구 규정</a>
+    </div>
+
+    <!-- ✅ 오늘의 전적 팝업 -->
+    <div id="todayResults"
+      style="display:none; position:fixed; top:50%; left:50%;
+             transform:translate(-50%,-50%);
+             width:90%; max-width:420px;
+             background:#fff;
+             border-radius:16px;
+             box-shadow:0 8px 28px rgba(0,0,0,0.2);
+             padding:20px 20px 24px;
+             z-index:200;">
+
+      <button id="closeToday"
+        style="position:absolute; top:10px; right:12px;
+               background:transparent; border:none;
+               font-size:22px; color:#9ca3af;
+               cursor:pointer; transition:.2s;">✖</button>
+
+      <h3 style="text-align:center; color:#2563eb; margin-top:0; margin-bottom:12px;">📊 오늘의 전적</h3>
+      <div id="todayList"
+        style="font-size:16px; line-height:1.8; font-weight:600; text-align:center; color:#111;">
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div id="chips" class="row" style="margin-top:10px;"></div>
+  <div id="teamDisplay"></div>
+
+  <div id="matchButtons">
+    <button id="winA" class="btn ok">A팀 승</button>
+    <button id="winB" class="btn danger">B팀 승</button>
+    <button id="startDouble" class="btn play">경기 진행</button>
+  </div>
+
+  <div id="logs"></div>
+</main>
+
+<div id="toast" class="toast">저장되었습니다</div>
+
+<div id="helpModal" class="modal">
+  <div class="modal-content">
+    <h2>📘 경기결과 입력 사용법</h2>
+<ul>
+  <li>1️⃣ 칩을 눌러 선수 2명(단식) 또는 4명(복식)을 선택합니다.</li>
+  <li>2️⃣ A팀/B팀이 자동 배정되며, <b>A팀 승</b> 또는 <b>B팀 승</b> 버튼을 눌러 결과를 바로 저장합니다.</li>
+  <li>3️⃣ 패드에서 먼저 <b>패드 전광판</b>을 누르면 대기합니다. 휴대폰에서 복식 4명을 선택하고 <b>경기 진행</b>을 누르는 순간 자동 연결됩니다.</li>
+  <li>4️⃣ 복식 경기 종료 후 돌아오면 결과 확인창이 자동으로 열리고, 승자를 성적에 저장할 수 있습니다.</li>
+  <li>5️⃣ 중간에 취소한 복식 진행 데이터는 즉시 삭제되며, 비정상 종료로 남은 임시 데이터는 24시간 후 자동 정리됩니다.</li>
+  <li>6️⃣ 최근 경기결과는 화면 하단에서 확인·삭제할 수 있습니다.</li>
+  <li>7️⃣ <b>통합 전적</b> : 월별 경기수, 승/패, 승률 등 단식+복식 전체 기록을 확인할 수 있습니다.</li>
+  <li>8️⃣ <b>🏆 ELO 랭킹</b> : 단식 경기마다 점수가 자동으로 오르내리며, 강한 선수를 이길수록 더 많은 점수를 획득합니다.</li>
+  <li>9️⃣ <b>개인 상세 페이지(선수 클릭)</b> : 월별 성적, 상대/파트너 TOP, 그래프 등이 표시됩니다.</li>
+</ul>
+    <button id="closeModal" class="btn ok" style="margin-top:10px;">닫기</button>
+  </div>
+</div>
+
+<div id="liveResultModal" class="modal">
+  <div class="modal-content">
+    <h2>🏓 복식 경기 결과 입력</h2>
+    <div id="liveResultSummary" class="result-summary"></div>
+    <div class="result-actions">
+      <button id="saveLiveResult" class="btn ok">경기결과 저장</button>
+      <button id="closeLiveResult" class="btn">저장없이 닫기</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  // ✅ pingpong_main/firebase.js 사용 (이 파일이 /pingpong_main/index.html 이면 "./firebase.js")
+  import { db } from "../firebase.js";
+
+  console.log("✅ projectId =", db.app?.options?.projectId);
+console.log("✅ databaseURL =", db.app?.options?.databaseURL);
+console.log("✅ authDomain =", db.app?.options?.authDomain);
+
+  import {
+    ref, onValue, push, remove, get, set, update,
+    query, orderByChild, equalTo, runTransaction
+  } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+
+  import {
+  getAuth, onAuthStateChanged, signInAnonymously
+} from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+
+// ✅ 익명 로그인 "완료"까지 보장(삭제/저장 Permission denied 방지)
+const auth = getAuth();
+
+let _authReadyPromise = null;
+function ensureAuthReady(){
+  if (_authReadyPromise) return _authReadyPromise;
+
+  _authReadyPromise = new Promise((resolve) => {
+    const unsub = onAuthStateChanged(auth, (user)=>{
+      if (user) { unsub(); resolve(user); }
+    });
+  });
+
+  // 아직 로그인 시작 전이면 여기서 시작
+  if (!auth.currentUser) {
+    signInAnonymously(auth).catch(console.error);
+  }
+  return _authReadyPromise;
+}
+
+// 페이지 로드 시 미리 로그인 시작(체감 속도 ↑)
+ensureAuthReady();
+
+  const $ = s => document.querySelector(s);
+  const toast = (msg="저장되었습니다")=>{
+    const t=$("#toast"); t.textContent=msg; t.classList.add("show");
+    clearTimeout(toast._t);
+    toast._t=setTimeout(()=>t.classList.remove("show"),1500);
+  };
+
+  // ✅ KST 기준 monthKey
+  function getMonthKey(ts=Date.now()){
+    const d=new Date(new Date(ts).toLocaleString("en-US",{timeZone:"Asia/Seoul"}));
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+  }
+
+  function initialEloByBu(bu){
+  const n = Number(bu);
+  if (!Number.isFinite(n)) return 1500;
+  return 2000 - (n * 100);
+}
+
+function expectedScore(ratingA, ratingB){
+  return 1 / (1 + Math.pow(10, (ratingB - ratingA) / 400));
+}
+
+function getK(games){
+  return games < 10 ? 40 : 24;
+}
+
+function getHandicapCompensation(playerLevel, opponentLevel) {
+  const gap = Math.abs(
+    Number(playerLevel) - Number(opponentLevel)
+  );
+
+  const table = {
+    0: 0,
+    1: 70,
+    2: 130,
+    3: 190,
+    4: 250,
+    5: 300,
+    6: 340
+  };
+
+  return table[Math.min(gap, 6)];
+}
+
+function getPlayerLevel(name){
+  const p = players.find(x => x.name === name);
+  return p ? p.level : 5;
+}
+
+async function getPlayerElo(name){
+  const snap = await get(ref(db, `eloRatings/${name}`));
+
+  if(snap.exists()){
+    return snap.val();
+  }
+
+  return {
+    name,
+    elo: initialEloByBu(getPlayerLevel(name)),
+    games: 0,
+    wins: 0,
+    losses: 0
+  };
+}
+
+// ELO와 경기 원본을 동일한 잠금 아래 원자적으로 기록합니다.
+// 다른 사용자가 동시에 경기 입력/취소할 때 기존 점수를 덮어쓰지 않도록 보호합니다.
+const DELETE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const ELO_LOCK_TTL_MS = 30000;
+const eloLockRef = ref(db, "config/eloWriteLock");
+
+async function withEloLock(work){
+  const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const result = await runTransaction(eloLockRef, current => {
+    if(current && Number(current.expiresAt || 0) > Date.now()) return;
+    return {token, expiresAt: Date.now() + ELO_LOCK_TTL_MS};
+  }, {applyLocally:false});
+  if(!result.committed || result.snapshot.val()?.token !== token){
+    throw new Error("다른 경기 결과를 처리 중입니다. 잠시 후 다시 시도해 주세요.");
+  }
+  try { return await work(); }
+  finally {
+    try {
+      await runTransaction(eloLockRef, current =>
+        current?.token === token ? null : undefined,
+        {applyLocally:false}
+      );
+    } catch(e) { console.warn("ELO 잠금 해제 실패 (자동 만료 예정):", e); }
+  }
+}
+
+async function saveEloForSingleMatch(matchId, match){
+  const pA = match.namesA?.[0];
+  const pB = match.namesB?.[0];
+  if(!pA || !pB || pA === pB) throw new Error("단식 선수 정보가 올바르지 않습니다.");
+
+  const a = await getPlayerElo(pA);
+  const b = await getPlayerElo(pB);
+  const beforeA = Number(a.elo ?? initialEloByBu(getPlayerLevel(pA)));
+  const beforeB = Number(b.elo ?? initialEloByBu(getPlayerLevel(pB)));
+  const levelA = getPlayerLevel(pA);
+  const levelB = getPlayerLevel(pB);
+  const handicapCompensation = getHandicapCompensation(levelA, levelB);
+  let calcA = beforeA;
+  let calcB = beforeB;
+  if(levelA < levelB) calcA -= handicapCompensation;
+  else if(levelB < levelA) calcB -= handicapCompensation;
+
+  const gamesA = Number(a.games || 0);
+  const gamesB = Number(b.games || 0);
+  const scoreA = match.winnerSide === "A" ? 1 : 0;
+  const k = Math.min(getK(gamesA), getK(gamesB));
+  const changeA = Math.round(k * (scoreA - expectedScore(calcA, calcB)));
+  const changeB = -changeA;
+  const afterA = beforeA + changeA;
+  const afterB = beforeB + changeB;
+  const now = Date.now();
+
+  // 한 번의 다중 경로 update로 경기, ELO, 로그를 함께 반영합니다.
+  const writes = {};
+  writes[`matches/${matchId}`] = match;
+  writes[`eloRatings/${pA}`] = {
+    name:pA, elo:afterA, games:gamesA+1,
+    wins:Number(a.wins || 0) + (scoreA === 1 ? 1 : 0),
+    losses:Number(a.losses || 0) + (scoreA === 0 ? 1 : 0), updatedAt:now
+  };
+  writes[`eloRatings/${pB}`] = {
+    name:pB, elo:afterB, games:gamesB+1,
+    wins:Number(b.wins || 0) + (scoreA === 0 ? 1 : 0),
+    losses:Number(b.losses || 0) + (scoreA === 1 ? 1 : 0), updatedAt:now
+  };
+  writes[`eloLogs/${matchId}`] = {
+    matchId, mode:"single", pA, pB,
+    winner:scoreA === 1 ? pA : pB,
+    loser:scoreA === 1 ? pB : pA,
+    beforeA, beforeB, afterA, afterB,
+    changeA, changeB,
+    winnerChange:scoreA === 1 ? changeA : changeB,
+    loserChange:scoreA === 1 ? changeB : changeA,
+    createdAt:match.createdAt, monthKey:match.monthKey
+  };
+  await update(ref(db), writes);
+}
+
+// 기존 rebuildAllElo() 제거: 오래된 원본 경기가 정리된 뒤 재계산하면
+// 선수별 누적 ELO 및 경기 수가 소실되는 문제를 막습니다.
+async function safelyDeleteMatch(id){
+  const matchSnap = await get(ref(db, `matches/${id}`));
+  if(!matchSnap.exists()) throw new Error("이미 삭제되었거나 존재하지 않는 경기입니다.");
+  const match = matchSnap.val();
+  const ts = Number(match.createdAt || 0);
+  if(!ts || Date.now()-ts > DELETE_WINDOW_MS || ts > Date.now()+60000){
+    throw new Error("경기 입력 후 7일이 지나 삭제할 수 없습니다.");
+  }
+  if(match.mode !== "single"){
+    await remove(ref(db, `matches/${id}`));
+    return;
+  }
+
+  const logSnap = await get(ref(db, `eloLogs/${id}`));
+  if(!logSnap.exists()) throw new Error("이 경기의 ELO 로그가 없어 안전한 복구가 불가능합니다.");
+  const log = logSnap.val();
+  const pA = match.namesA?.[0];
+  const pB = match.namesB?.[0];
+  if(log.mode !== "single" || log.pA !== pA || log.pB !== pB ||
+     log.winner !== (match.winnerSide === "A" ? pA : pB) ||
+     Number(log.createdAt) !== ts){
+    throw new Error("경기 기록과 ELO 로그가 일치하지 않아 삭제를 중단합니다.");
+  }
+
+  const [aSnap,bSnap,logsSnap] = await Promise.all([
+    get(ref(db, `eloRatings/${pA}`)),
+    get(ref(db, `eloRatings/${pB}`)),
+    get(ref(db, "eloLogs"))
+  ]);
+  if(!aSnap.exists() || !bSnap.exists()) throw new Error("선수 ELO 정보를 찾지 못했습니다.");
+  const a=aSnap.val(), b=bSnap.val();
+  const logs=logsSnap.val() || {};
+  const lastFor = name => Object.entries(logs)
+    .filter(([,entry]) => entry?.mode === "single" && (entry.pA === name || entry.pB === name))
+    .sort((x,y) => Number(y[1].createdAt || 0)-Number(x[1].createdAt || 0) || y[0].localeCompare(x[0]))[0]?.[0];
+  if(lastFor(pA) !== id || lastFor(pB) !== id){
+    throw new Error("두 선수 중 한 명이라도 이후 단식 경기를 진행하여 이 경기는 삭제할 수 없습니다.");
+  }
+  if(Number(a.elo) !== Number(log.afterA) || Number(b.elo) !== Number(log.afterB)){
+    throw new Error("현재 ELO와 경기 종료 점수가 달라 삭제를 중단합니다.");
+  }
+  const winA = log.winner === pA;
+  const nextA = {name:pA,elo:Number(log.beforeA),games:Number(a.games)-1,
+    wins:Number(a.wins)-(winA?1:0),losses:Number(a.losses)-(winA?0:1),updatedAt:Date.now()};
+  const nextB = {name:pB,elo:Number(log.beforeB),games:Number(b.games)-1,
+    wins:Number(b.wins)-(winA?0:1),losses:Number(b.losses)-(winA?1:0),updatedAt:Date.now()};
+  if([nextA,nextB].some(x=>[x.games,x.wins,x.losses,x.elo].some(v=>!Number.isFinite(v)||v<0))){
+    throw new Error("기존 ELO 누적 자료가 일치하지 않아 삭제를 중단합니다.");
+  }
+  await update(ref(db), {
+    [`matches/${id}`]:null,
+    [`eloLogs/${id}`]:null,
+    [`eloRatings/${pA}`]:nextA,
+    [`eloRatings/${pB}`]:nextB
+  });
+}
+
+// ===== 제목 캐시 + 업데이트 =====
+const titleRef = ref(db, "config/title");
+const cachedTitle = localStorage.getItem("siteTitle");
+
+if (cachedTitle) {
+  document.title = `🏓 ${cachedTitle} 경기 결과입력`;
+  $("#pageTitle").textContent = `🏓 ${cachedTitle} 경기 결과입력`;
+}
+
+
+
+get(titleRef).then(snap => {
+  const val = snap.val() ?? "KOEN 탁구동호회";
+  localStorage.setItem("siteTitle", val);
+  document.title = `🏓 ${val} 경기 결과입력`;
+  $("#pageTitle").textContent = `🏓 ${val} 경기 결과입력`;
+});
+
+  // ===== 데이터 참조 =====
+  const matchRef    = ref(db, "matches");     // ✅ 저장은 계속 전체 누적
+  const playerRef   = ref(db, "members");     // members 사용
+  const deletePwRef = ref(db, "config/deletePassword");
+
+  // ✅ "이번달" 읽기/표시 전용 쿼리
+  const THIS_MONTH_KEY = getMonthKey();
+  const monthMatchQ = query(matchRef, orderByChild("monthKey"), equalTo(THIS_MONTH_KEY));
+
+  let players = [];
+  let sel = [];
+  const pageParams = new URLSearchParams(location.search);
+  const pendingLiveRoomRaw = (pageParams.get("liveRoom") || "").trim();
+  const pendingLiveRoom = /^\d{6}$/.test(pendingLiveRoomRaw) ? pendingLiveRoomRaw : "";
+  let liveResultHandled = false;
+  let pendingLiveState = null;
+  const ABANDONED_LIVE_MATCH_MS = 10 * 60 * 1000;
+  const FINISHED_LIVE_MATCH_MS = 24 * 60 * 60 * 1000;
+  const ACTIVE_LIVE_STATUSES = new Set(["setup","playing","awaiting_end"]);
+
+  function isStaleLiveMatch(state,now=Date.now()){
+    const timestamp=Math.max(
+      Number(state?.lastRefereeSeenAt||0),
+      Number(state?.updatedAt||0),
+      Number(state?.createdAt||0)
+    );
+    if(!timestamp) return true;
+    const ttl=ACTIVE_LIVE_STATUSES.has(state?.status)
+      ? ABANDONED_LIVE_MATCH_MS
+      : FINISHED_LIVE_MATCH_MS;
+    return now-timestamp>ttl;
+  }
+
+  async function cleanupStaleLiveMatches(){
+    try{
+      await ensureAuthReady();
+      const [roomsSnap,currentSnap]=await Promise.all([
+        get(ref(db,"team_live_matches")),
+        get(ref(db,"config/currentDoubleRoom"))
+      ]);
+      const rooms=roomsSnap.val() || {};
+      const now=Date.now();
+      const writes={};
+
+      Object.entries(rooms).forEach(([room,state])=>{
+        if(isStaleLiveMatch(state,now)){
+          writes[`team_live_matches/${room}`]=null;
+        }
+      });
+
+      const current=currentSnap.val() || {};
+      const currentRoom=String(current.room || "");
+      const currentState=rooms[currentRoom];
+      if(currentRoom && (!currentState || isStaleLiveMatch(currentState,now))){
+        writes["config/currentDoubleRoom"]=null;
+      }
+
+      if(Object.keys(writes).length){
+        await update(ref(db),writes);
+        console.log(`✅ 오래된 복식 임시경기 ${Object.keys(writes).filter(key=>key.startsWith("team_live_matches/")).length}건 정리`);
+      }
+    }catch(e){
+      console.warn("⚠️ 복식 임시경기 자동 정리 실패:",e);
+    }
+  }
+
+  cleanupStaleLiveMatches();
+
+  window.deleteMatch = async (id) => {
+    try {
+      await ensureAuthReady();
+      const snap=await get(ref(db, `matches/${id}`));
+      if(!snap.exists()) return toast("이미 삭제된 경기입니다");
+      const when=Number(snap.val()?.createdAt || 0);
+      if(!when || Date.now()-when>DELETE_WINDOW_MS){
+        return alert("입력 후 7일이 지난 경기는 삭제할 수 없습니다.");
+      }
+      const pwSnap=await get(deletePwRef);
+      const pw=pwSnap.exists()?String(pwSnap.val()).trim():"";
+      const input=prompt("삭제 비밀번호 4자리를 입력하세요.");
+      if(input===null) return;
+      if(String(input).trim()!==pw) return toast("비밀번호가 올바르지 않습니다");
+      if(!confirm("이 경기를 취소하시겠습니까?\n단식은 두 선수의 후속 경기가 없을 때만 ELO를 복구합니다.")) return;
+      await withEloLock(()=>safelyDeleteMatch(id));
+      toast("경기 취소 완료 / 누적 ELO 보존");
+    } catch(e){
+      console.error("❌ deleteMatch error:",e);
+      alert("삭제 불가: " + (e?.message || String(e)));
+    }
+  };
+
+  // ✅ 부수별 색상
+  const LEVEL_COLORS = {
+    1: "#ef4444", 2: "#f97316", 3: "#f59e0b", 4: "#84cc16",
+    5: "#10b981", 6: "#06b6d4", 7: "#8b5cf6", 8: "#22c55e",
+    9: "#3b82f6", 10:"#d946ef", 11:"#ec4899", 12:"#f43f5e",
+    13:"#a855f7", 14:"#6366f1",
+  };
+  const colorList = Object.values(LEVEL_COLORS);
+
+  // ✅ 선수 목록 표시
+  onValue(playerRef, snap => {
+    const data = snap.val() || {};
+    players = Object.values(data)
+      .map(p => ({ name: p.name, level: Number(p.bu ?? 99) }))
+      .filter(p => p.name)
+      .sort((a,b)=>(a.level-b.level) || a.name.localeCompare(b.name,"ko"));
+
+    renderChips();
+    restoreLiveMatchResult();
+  });
+
+  // ✅ 칩 렌더링
+  function renderChips(){
+    const box = $("#chips");
+    box.innerHTML = "";
+    players.forEach(p=>{
+      const btn = document.createElement("button");
+      btn.className = "chip";
+      const c = colorList[p.level % colorList.length];
+      btn.style.borderColor = c;
+      btn.style.background = c + "22";
+      btn.textContent = `${p.name}(${p.level})`;
+
+      if (sel.some(x=>x.name===p.name)){
+        btn.classList.add("selected");
+        btn.style.background="#fff";
+        btn.style.outline=`2px solid ${c}`;
+      }
+
+      btn.onclick=()=>{
+        const idx = sel.findIndex(x=>x.name===p.name);
+        if(idx>=0) sel.splice(idx,1);
+        else{
+          if(sel.length>=4){ toast("최대 4명까지 선택 가능합니다"); return; }
+          sel.push(p);
+        }
+        renderChips(); updateTeams();
+      };
+
+      box.appendChild(btn);
+    });
+  }
+
+  // ✅ 팀 업데이트
+  function updateTeams(){
+    const disp=$("#teamDisplay");
+    const btns=$("#matchButtons");
+    const startDouble=$("#startDouble");
+
+    if(sel.length>0){
+      const half=Math.floor(sel.length/2);
+      const a=sel.slice(0,half).map(p=>p.name).join("/");
+      const b=sel.slice(half).map(p=>p.name).join("/");
+      disp.innerHTML=`<b>A팀:</b> ${a||"-"}　|　<b>B팀:</b> ${b||"-"}`;
+    } else {
+      disp.innerHTML="";
+    }
+    btns.style.display = (sel.length===2 || sel.length===4) ? "flex" : "none";
+    startDouble.style.display = sel.length===4 ? "inline-flex" : "none";
+  }
+
+  // ✅ 경기 저장 (저장은 계속 matches 전체 누적)
+  $("#winA").onclick=()=>saveMatch("A");
+  $("#winB").onclick=()=>saveMatch("B");
+  $("#startDouble").onclick=startDoubleMatch;
+
+  async function saveMatch(winner, extra={}){
+    try{
+      await ensureAuthReady();
+      if(!(sel.length===2 || sel.length===4)){toast("2명 또는 4명을 선택하세요");return;}
+      const mode=(sel.length===2)?"single":"double";
+      const a=sel.slice(0,sel.length/2).map(p=>p.name);
+      const b=sel.slice(sel.length/2).map(p=>p.name);
+      const obj={mode,monthKey:getMonthKey(),namesA:a,namesB:b,
+        winnerSide:winner,createdAt:Date.now(),...extra};
+      const newRef=push(matchRef);
+      if(mode==="single"){
+        await withEloLock(()=>saveEloForSingleMatch(newRef.key,obj));
+      } else {
+        await set(newRef,obj);
+      }
+      toast("경기결과 저장 완료");
+      sel=[]; renderChips(); updateTeams();
+      return newRef.key;
+    }catch(e){
+      console.error("❌ saveMatch error:",e);
+      alert("경기 저장 실패: " + (e?.message || String(e)));
+    }
+  }
+
+  function randomRoomCode(){
+    const bytes = new Uint32Array(1);
+    crypto.getRandomValues(bytes);
+    return String(100000 + (bytes[0] % 900000));
+  }
+
+  async function createAvailableRoomCode(){
+    for(let i=0; i<8; i++){
+      const code=randomRoomCode();
+      const snap=await get(ref(db, `team_live_matches/${code}`));
+      if(!snap.exists()) return code;
+    }
+    return `${Date.now()}`.slice(-6);
+  }
+
+  async function startDoubleMatch(){
+    if(sel.length!==4){ toast("복식 선수 4명을 선택하세요"); return; }
+
+    try{
+      await ensureAuthReady();
+      const room=await createAvailableRoomCode();
+      const teamAPlayers=sel.slice(0,2);
+      const teamBPlayers=sel.slice(2,4);
+      const namesA=teamAPlayers.map(p=>p.name);
+      const namesB=teamBPlayers.map(p=>p.name);
+      const levelsA=teamAPlayers.map(p=>Number(p.level));
+      const levelsB=teamBPlayers.map(p=>Number(p.level));
+      const levelsValid=[...levelsA,...levelsB].every(level=>Number.isFinite(level) && level>0 && level<99);
+      const sumA=levelsValid ? levelsA.reduce((sum,level)=>sum+level,0) : 0;
+      const sumB=levelsValid ? levelsB.reduce((sum,level)=>sum+level,0) : 0;
+      const handicapPoints=levelsValid ? Math.min(4,Math.abs(sumA-sumB)) : 0;
+      const handicapSide=handicapPoints>0 ? (sumA>sumB ? "A" : "B") : "";
+      const handicap={
+        side:handicapSide,
+        points:handicapPoints,
+        sumA,
+        sumB,
+        levelsValid
+      };
+
+      const roomState={
+        room,
+        mode:"double",
+        teams:{ A:namesA, B:namesB },
+        teamLevels:{ A:levelsA, B:levelsB },
+        handicap,
+        bestOf:5,
+        gamesToWin:3,
+        status:"setup",
+        scoreA:handicapSide==="A" ? handicapPoints : 0,
+        scoreB:handicapSide==="B" ? handicapPoints : 0,
+        setWinsA:0,
+        setWinsB:0,
+        setNumber:1,
+        setScores:[],
+        history:[],
+        sidesSwapped:false,
+        createdAt:Date.now(),
+        updatedAt:Date.now(),
+        lastRefereeSeenAt:Date.now()
+      };
+      const writes={};
+      writes[`team_live_matches/${room}`]=roomState;
+      writes["config/currentDoubleRoom"]={
+        room,
+        teams:{ A:namesA, B:namesB },
+        handicap,
+        createdAt:roomState.createdAt,
+        updatedAt:roomState.updatedAt
+      };
+      await update(ref(db),writes);
+
+      location.href=`./doubles-match.html?room=${encodeURIComponent(room)}&role=referee`;
+    }catch(e){
+      console.error("❌ startDoubleMatch error:",e);
+      alert("복식 경기 화면을 열지 못했습니다: " + (e?.message || e));
+    }
+  }
+
+  function cleanLiveRoomParam(){
+    const url=new URL(location.href);
+    url.searchParams.delete("liveRoom");
+    history.replaceState({},"",url.pathname + url.search + url.hash);
+  }
+
+  function escapeHtml(value){
+    return String(value ?? "")
+      .replaceAll("&","&amp;")
+      .replaceAll("<","&lt;")
+      .replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;")
+      .replaceAll("'","&#039;");
+  }
+
+  async function restoreLiveMatchResult(){
+    if(liveResultHandled || !pendingLiveRoom || players.length===0) return;
+    liveResultHandled=true;
+
+    try{
+      await ensureAuthReady();
+      const snap=await get(ref(db, `team_live_matches/${pendingLiveRoom}`));
+      if(!snap.exists()){
+        toast("복식 경기 기록을 찾을 수 없습니다");
+        cleanLiveRoomParam();
+        return;
+      }
+
+      const state=snap.val() || {};
+      if(state.status!=="finished" || !["A","B"].includes(state.winnerSide)){
+        toast("아직 종료되지 않은 복식 경기입니다");
+        cleanLiveRoomParam();
+        return;
+      }
+      if(state.recordedMatchId){
+        toast("이미 성적에 저장된 경기입니다");
+        cleanLiveRoomParam();
+        return;
+      }
+
+      const namesA=state.teams?.A || [];
+      const namesB=state.teams?.B || [];
+      const ordered=[...namesA,...namesB];
+      const restored=ordered.map(name=>players.find(p=>p.name===name)).filter(Boolean);
+      if(restored.length!==4){
+        toast("선수 명단을 복원하지 못했습니다");
+        cleanLiveRoomParam();
+        return;
+      }
+
+      sel=restored;
+      pendingLiveState=state;
+      renderChips();
+      updateTeams();
+
+      const winnerNames=state.winnerSide==="A" ? namesA : namesB;
+      const setRows=(state.setScores || [])
+        .map((s,i)=>`${i+1}세트 ${Number(s.a||0)} : ${Number(s.b||0)}`)
+        .join(" · ");
+
+      $("#liveResultSummary").innerHTML=`
+        <div><b>${escapeHtml(namesA.join(" / "))}</b> 대 <b>${escapeHtml(namesB.join(" / "))}</b></div>
+        <div style="font-size:28px;font-weight:800;margin:6px 0;">${Number(state.setWinsA||0)} : ${Number(state.setWinsB||0)}</div>
+        <div class="winner">승자 ${escapeHtml(winnerNames.join(" / "))}</div>
+        <div style="font-size:13px;color:#64748b;margin-top:8px;">${escapeHtml(setRows)}</div>
+      `;
+      $("#liveResultModal").style.display="flex";
+    }catch(e){
+      console.error("❌ restoreLiveMatchResult error:",e);
+      toast("복식 결과를 불러오지 못했습니다");
+      cleanLiveRoomParam();
+    }
+  }
+
+  $("#saveLiveResult").onclick=async()=>{
+    if(!pendingLiveState) return;
+    const btn=$("#saveLiveResult");
+    btn.disabled=true;
+
+    try{
+      const [latestSnap,currentRoomSnap]=await Promise.all([
+        get(ref(db, `team_live_matches/${pendingLiveRoom}`)),
+        get(ref(db, "config/currentDoubleRoom"))
+      ]);
+      const latest=latestSnap.val() || {};
+      if(!latestSnap.exists()){
+        toast("이미 정리되었거나 찾을 수 없는 경기입니다");
+        $("#liveResultModal").style.display="none";
+        pendingLiveState=null;
+        cleanLiveRoomParam();
+        return;
+      }
+      if(latest.recordedMatchId){
+        toast("이미 성적에 저장된 경기입니다");
+      }else{
+        const namesA=pendingLiveState.teams?.A || [];
+        const namesB=pendingLiveState.teams?.B || [];
+        const matchId=push(matchRef).key;
+        const matchObj={
+          mode:"double",
+          monthKey:getMonthKey(),
+          namesA,
+          namesB,
+          winnerSide:pendingLiveState.winnerSide,
+          createdAt:Date.now(),
+          liveRoomId:pendingLiveRoom,
+          setWinsA:Number(pendingLiveState.setWinsA||0),
+          setWinsB:Number(pendingLiveState.setWinsB||0),
+          setScores:pendingLiveState.setScores || [],
+          handicapSide:pendingLiveState.handicap?.side || "",
+          handicapPoints:Number(pendingLiveState.handicap?.points||0),
+          levelSumA:Number(pendingLiveState.handicap?.sumA||0),
+          levelSumB:Number(pendingLiveState.handicap?.sumB||0)
+        };
+        const writes={};
+        writes[`matches/${matchId}`]=matchObj;
+        writes[`team_live_matches/${pendingLiveRoom}`]=null;
+        if(currentRoomSnap.val()?.room===pendingLiveRoom){
+          writes["config/currentDoubleRoom"]=null;
+        }
+        await update(ref(db),writes);
+        toast("복식 경기결과 저장 완료");
+        sel=[];
+        renderChips();
+        updateTeams();
+      }
+      $("#liveResultModal").style.display="none";
+      pendingLiveState=null;
+      cleanLiveRoomParam();
+    }catch(e){
+      console.error("❌ saveLiveResult error:",e);
+      alert("복식 결과 저장 실패: " + (e?.message || e));
+      btn.disabled=false;
+    }
+  };
+
+  $("#closeLiveResult").onclick=()=>{
+    $("#liveResultModal").style.display="none";
+    cleanLiveRoomParam();
+  };
+
+  // ✅ 경기 로그 표시 (이번달만 읽기/표시)
+  onValue(monthMatchQ, snap=>{
+    const data=snap.val()||{};
+    const arr=Object.entries(data).map(([id,m])=>({...m,id}))
+      .sort((a,b)=>b.createdAt-a.createdAt);
+    renderLogs(arr);
+  });
+
+  function renderLogs(arr){
+    const logs = $("#logs");
+    logs.innerHTML = "";
+
+    if (!arr.length) {
+      logs.innerHTML = '<div style="text-align:center;color:#999">이번달 최근 경기 없음</div>';
+      return;
+    }
+
+    arr.forEach(m => {
+      const d = new Date(m.createdAt);
+      const kst = new Date(d.toLocaleString("en-US", { timeZone:"Asia/Seoul" }));
+      const time =
+        `${kst.getFullYear()}-${String(kst.getMonth()+1).padStart(2,"0")}-${String(kst.getDate()).padStart(2,"0")} ` +
+        `${String(kst.getHours()).padStart(2,"0")}:${String(kst.getMinutes()).padStart(2,"0")}`;
+
+      const winA = m.winnerSide === "A";
+      const a = (m.namesA||[]).join("/");
+      const b = (m.namesB||[]).join("/");
+
+      const aHtml = winA
+        ? `<span class="log-win">${a} <span style="color:#ef4444;font-weight:700;">(승)</span></span>`
+        : `<span>${a}</span>`;
+
+      const bHtml = !winA
+        ? `<span class="log-win">${b} <span style="color:#ef4444;font-weight:700;">(승)</span></span>`
+        : `<span>${b}</span>`;
+
+      const deletable = Number(m.createdAt) > 0 && Date.now()-Number(m.createdAt) <= DELETE_WINDOW_MS;
+      logs.insertAdjacentHTML("beforeend", `
+        <div class="log-item">
+          <span class="log-time">${time} [${m.mode==="double" ? "복식" : "단식"}]</span>
+          <div class="log-match">
+            ${aHtml}  vs  ${bHtml}
+          </div>
+          ${deletable ? `<button class="delete-btn" onclick="deleteMatch('${m.id}')" title="7일 이내 경기 취소">🗑️</button>` : ""}
+        </div>
+      `);
+    });
+  }
+
+  
+  // ✅ 사용법 모달
+  const helpBtn = document.getElementById("helpBtn");
+  const modal = document.getElementById("helpModal");
+  const closeModal = document.getElementById("closeModal");
+
+  helpBtn.addEventListener("click", () => { modal.style.display = "flex"; });
+  closeModal.addEventListener("click", () => { modal.style.display = "none"; });
+  window.addEventListener("click", (e) => { if (e.target === modal) modal.style.display = "none"; });
+
+  // ✅ 오늘의 전적 (이번달 데이터만 기준으로 집계)
+  let todayVisible = false;
+
+  async function buildTodayHtml() {
+  // ✅ 이번 달 경기와 ELO 변동 로그를 함께 읽음
+  const [matchSnap, eloLogSnap] = await Promise.all([
+    get(monthMatchQ),
+    get(ref(db, "eloLogs"))
+  ]);
+
+  if (!matchSnap.exists()) return null;
+
+  const data = Object.values(matchSnap.val() || {});
+  const eloLogs = Object.values(eloLogSnap.val() || {});
+
+  const today = new Date().toLocaleDateString("ko-KR", {
+    timeZone: "Asia/Seoul"
+  });
+
+  // ✅ 오늘 경기만 추출
+  const todayMatches = data.filter(m => {
+    const d = new Date(Number(m.createdAt || 0));
+
+    return d.toLocaleDateString("ko-KR", {
+      timeZone: "Asia/Seoul"
+    }) === today;
+  });
+
+  if (!todayMatches.length) {
+    return "오늘 경기 기록이 없습니다";
+  }
+
+  // ✅ 오늘 생성된 ELO 로그만 추출
+  const todayEloLogs = eloLogs.filter(log => {
+    const d = new Date(Number(log.createdAt || 0));
+
+    return d.toLocaleDateString("ko-KR", {
+      timeZone: "Asia/Seoul"
+    }) === today;
+  });
+
+  // ✅ 선수별 오늘 ELO 증감 합계
+  const eloChanges = {};
+
+  todayEloLogs.forEach(log => {
+    const pA = log.pA;
+    const pB = log.pB;
+
+    if (pA) {
+      eloChanges[pA] =
+        Number(eloChanges[pA] || 0) +
+        Number(log.changeA || 0);
+    }
+
+    if (pB) {
+      eloChanges[pB] =
+        Number(eloChanges[pB] || 0) +
+        Number(log.changeB || 0);
+    }
+  });
+
+  // ✅ 오늘 승패 집계
+  const stats = {};
+
+  todayMatches.forEach(m => {
+    const winners =
+      m.winnerSide === "A" ? m.namesA : m.namesB;
+
+    const losers =
+      m.winnerSide === "A" ? m.namesB : m.namesA;
+
+    (winners || []).forEach(name => {
+      if (!stats[name]) {
+        stats[name] = { win: 0, lose: 0 };
+      }
+
+      stats[name].win++;
+    });
+
+    (losers || []).forEach(name => {
+      if (!stats[name]) {
+        stats[name] = { win: 0, lose: 0 };
+      }
+
+      stats[name].lose++;
+    });
+  });
+
+  const sorted = Object.entries(stats)
+    .map(([name, { win, lose }]) => {
+      const player = players.find(v => v.name === name);
+      const level = player ? player.level : 99;
+      const score = win * 2 - lose;
+
+      return {
+        name,
+        win,
+        lose,
+        level,
+        score,
+        eloChange: Number(eloChanges[name] || 0)
+      };
+    })
+    .sort((a, b) =>
+      b.score - a.score ||
+      b.eloChange - a.eloChange ||
+      a.level - b.level ||
+      a.name.localeCompare(b.name, "ko")
+    );
+
+  const maxWin = Math.max(...sorted.map(p => p.win));
+
+  let html = "";
+
+  sorted.forEach((p, i) => {
+    const isTop = p.win === maxWin;
+    const color = p.win > p.lose ? "#1e40af" : "#111";
+
+    // ✅ ELO 증감 색상과 + 기호
+    let eloColor = "#64748b";
+
+    if (p.eloChange > 0) {
+      eloColor = "#2563eb";
+    } else if (p.eloChange < 0) {
+      eloColor = "#ef4444";
+    }
+
+    const eloText =
+      p.eloChange > 0
+        ? `+${p.eloChange}`
+        : `${p.eloChange}`;
+
+    const text = `
+      ${p.name}(${p.level}) ${p.win}승${p.lose}패
+      <span style="
+        display:block;
+        font-size:13px;
+        color:${eloColor};
+        margin-top:1px;
+        font-weight:700;
+      ">
+        ELO ${eloText}
+      </span>
+    `;
+
+    html += `
+      <span style="
+        color:${color};
+        display:inline-block;
+        width:48%;
+        text-align:center;
+        margin:6px 0;
+        vertical-align:top;
+      ">
+        ${isTop ? `<b>${text}</b>` : text}
+      </span>
+    `;
+
+    if ((i + 1) % 2 === 0) {
+      html += "<br>";
+    }
+  });
+
+  return html;
+}
+
+  document.getElementById("todayBtn").addEventListener("click", async () => {
+    const box = document.getElementById("todayResults");
+    const list = document.getElementById("todayList");
+
+    if (todayVisible) {
+      box.style.display = "none";
+      todayVisible = false;
+      return;
+    }
+
+    const html = await buildTodayHtml();
+    if (html === null) { toast("기록이 없습니다"); return; }
+    if (html === "오늘 경기 기록이 없습니다") { toast(html); box.style.display = "none"; todayVisible = false; return; }
+
+    list.innerHTML = html;
+    box.style.display = "block";
+    todayVisible = true;
+  });
+
+  document.getElementById("closeToday").addEventListener("click", () => {
+    document.getElementById("todayResults").style.display = "none";
+    todayVisible = false;
+  });
+
+  // ✅ 홈화면 추가 안내
+  function showHomeInstallGuide() {
+    const url = "https://sensational-tulumba-65e97e.netlify.app/pingpong/pingpong_rank/koen_rank/";
+
+    navigator.clipboard.writeText(url)
+      .then(() => {
+        const ua = navigator.userAgent.toLowerCase();
+
+        if (ua.includes("kakaotalk")) {
+          alert(
+            "✅ 주소가 복사되었습니다.\n\n" +
+            "1️⃣ 오른쪽 위 점 3개(⋮) → ‘기본 브라우저에서 열기’\n" +
+            "2️⃣ Chrome/Safari 에서 주소창 길게 눌러 붙여넣기\n" +
+            "3️⃣ 홈 화면에 추가 실행\n\n" +
+            "📌 복사된 주소:\n" + url
+          );
+          return;
+        }
+
+        if (/iphone|ipad|ipod/.test(ua)) {
+          alert(
+            "✅ 주소가 복사되었습니다!\n\n" +
+            "Safari → 주소창 붙여넣기 → 공유(□↑) → ‘홈 화면에 추가’ 선택\n\n" +
+            "📌 주소:\n" + url
+          );
+          return;
+        }
+
+        if (/android/.test(ua)) {
+          alert(
+            "✅ 주소가 복사되었습니다!\n\n" +
+            "Chrome → 주소창 붙여넣기 → 메뉴(⋮) → ‘홈 화면에 추가’ 선택\n\n" +
+            "📌 주소:\n" + url
+          );
+          return;
+        }
+
+        alert(
+          "✅ 주소가 복사되었습니다.\n" +
+          "모바일 브라우저에서 ‘홈 화면에 추가’ 기능을 사용하세요.\n\n📌 " + url
+        );
+      })
+      .catch(() => {
+        alert("❗ 자동 복사가 되지 않았습니다.\n아래 주소를 직접 복사하세요:\n" + url);
+      });
+  }
+  document.getElementById("homeBtn").addEventListener("click", showHomeInstallGuide);
+</script>
+</body>
+</html>

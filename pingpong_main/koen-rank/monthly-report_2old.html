@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🏆 단식 Elo 랭킹</title>
+<style>
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+:root{
+  --ink:#0f172a; --muted:#64748b; --bg:#f5f7fb;
+  --accent:#2563eb; --ok:#16a34a; --danger:#ef4444;
+  --shadow:0 8px 28px rgba(0,0,0,.08); --card:#fff;
+}
+body{margin:0;font-family:"Pretendard","Noto Sans KR",sans-serif;background:var(--bg);color:var(--ink);font-weight:600;}
+header{background:#fff;border-bottom:1px solid #e5e7eb;text-align:center;padding:14px 0;position:sticky;top:0;z-index:10;}
+h1{margin:4px 0 10px;color:var(--accent);font-size:clamp(18px,4vw,24px);font-weight:700;}
+.btn{border:1px solid #d1d5db;border-radius:8px;padding:6px 10px;font-size:14px;background:#fff;cursor:pointer;font-weight:600;}
+.btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+main{max-width:900px;margin:0 auto;padding:10px 10px 60px;}
+table{width:100%;border-collapse:collapse;background:var(--card);box-shadow:var(--shadow);border-radius:12px;overflow:hidden;font-size:15px;}
+thead th{background:#f1f5f9;border-bottom:1px solid #e2e8f0;padding:10px 6px;text-align:center;color:#334155;font-weight:700;}
+tbody td{border-bottom:1px solid #f1f5f9;padding:10px 6px;text-align:center;}
+tbody tr:hover{background:#f9fafb}
+.win{color:var(--ok);font-weight:800;}
+.lose{color:var(--danger);font-weight:800;}
+.totalNote{text-align:center;margin-top:12px;font-size:17px;font-weight:800;color:#0d47a1;background:#e3f2fd;display:inline-block;padding:6px 14px;border-radius:10px;box-shadow:0 2px 5px rgba(0,0,0,0.08);}
+.ruleNote{text-align:center;font-size:14px;color:#475569;margin-top:8px;margin-bottom:20px;}
+.prevWrap{margin-top:16px;display:flex;flex-direction:column;gap:16px;}
+.prevTitle{text-align:center;font-size:16px;color:#334155;font-weight:900;margin:18px 0 10px;}
+.monthCard{background:#fff;border:1px solid #e5e7eb;border-radius:14px;box-shadow:0 6px 18px rgba(2,6,23,.06);overflow:hidden;}
+.monthCard .bar{background:#f8fafc;border-bottom:1px solid #e5e7eb;padding:10px 12px;font-weight:900;color:#1e3a8a;text-align:center;}
+.monthCard .inner{padding:10px 10px 14px;}
+@media(max-width:640px){
+  table{font-size:13px;} thead th, tbody td{padding:7px 1px;}
+  .totalNote{font-size:15px;padding:5px 10px;}
+}
+
+.helpBtn{
+  border:0;
+  background:#dbeafe;
+  color:#1e40af;
+  font-size:13px;
+  font-weight:900;
+  border-radius:999px;
+  padding:5px 9px;
+  cursor:pointer;
+  vertical-align:middle;
+  margin-left:6px;
+}
+.helpBox{
+  display:none;
+  background:#fff;
+  border:1px solid #dbeafe;
+  border-radius:14px;
+  box-shadow:0 6px 18px rgba(2,6,23,.08);
+  padding:14px;
+  margin:0 0 14px;
+  color:#334155;
+  font-size:14px;
+  line-height:1.6;
+}
+.helpBox.show{display:block;}
+.helpBox b{color:#1e3a8a;}
+.helpBox ul{margin:8px 0 0 18px;padding:0;}
+
+.nameBtn{
+  border:0;
+  background:transparent;
+  color:#1d4ed8;
+  font-weight:900;
+  font-size:inherit;
+  cursor:pointer;
+  padding:4px 6px;
+  border-radius:8px;
+}
+.nameBtn:hover{
+  background:#dbeafe;
+  text-decoration:underline;
+}
+
+</style>
+</head>
+<body>
+<header>
+  <div style="display:flex;justify-content:center;align-items:center;gap:8px;">
+  <h1 id="pageHeader" style="margin:0;">🏆 단식 ELO 랭킹</h1>
+  <button class="helpBtn" onclick="toggleHelp('eloHelp')">설명</button>
+</div>
+ <div style="display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:10px;">
+    <a href="index.html" class="btn primary">🏓 경기결과 입력</a>
+
+    <a href="monthly-report.html" class="btn primary">통합 전적</a>
+
+    <button class="btn primary" onclick="copyAIAnalysisData()">
+        🤖 AI 분석
+    </button>
+</div>
+</header>
+
+<main>
+  <section id="singleSection"></section>
+</main>
+
+<script type="module">
+import { db } from "../firebase.js";
+import { ref, onValue, get } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+
+const SHOW_RECENT_MATCHES = 15;
+
+const titleRef = ref(db, "config/title");
+get(titleRef).then(snap=>{
+  const title = snap.exists() ? snap.val() : "KOEN";
+  document.getElementById("pageHeader").textContent = `🏆 ${title} 단식 ELO(엘로) 랭킹`;
+});
+
+let playerLevels = {};
+let ratingsData = {};
+let logsData = {};
+let membersLoaded = false;
+
+onValue(ref(db, "members"), (snap)=>{
+  const data = snap.val() || {};
+  const map = {};
+
+  Object.values(data).forEach(p=>{
+    if(!p || !p.name) return;
+    map[p.name] = Number(p.bu ?? 5);
+  });
+
+  playerLevels = map;
+  membersLoaded = true;
+  renderEloPage();
+});
+
+onValue(ref(db, "eloRatings"), (snap)=>{
+  ratingsData = snap.val() || {};
+  renderEloPage();
+});
+
+onValue(ref(db, "eloLogs"), (snap)=>{
+  logsData = snap.val() || {};
+  renderEloPage();
+});
+
+function formatChange(n){
+  if(n > 0) return `<span class="win">▲ +${n}</span>`;
+  if(n < 0) return `<span class="lose">▼ ${n}</span>`;
+  return `<span style="color:#64748b;">0</span>`;
+}
+
+function rankIcon(i){
+  if(i === 0) return "🥇";
+  if(i === 1) return "🥈";
+  if(i === 2) return "🥉";
+  return i + 1;
+}
+
+function monthKeyOf(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+
+window.toggleHelp = function(id){
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.classList.toggle("show");
+};
+
+function getThisMonthChange(name, currentElo){
+  const thisMonth = monthKeyOf(new Date());
+
+  const monthLogs = Object.values(logsData)
+    .filter(l => l && l.monthKey === thisMonth)
+    .filter(l => l.pA === name || l.pB === name)
+    .sort((a,b)=>Number(a.createdAt || 0) - Number(b.createdAt || 0));
+
+  if(monthLogs.length === 0) return 0;
+
+  const first = monthLogs[0];
+  const startElo = first.pA === name ? Number(first.beforeA) : Number(first.beforeB);
+
+  return Math.round(currentElo - startElo);
+}
+
+window.copyAIAnalysisData = function () {
+  showInfoBox();
+};
+
+function showInfoBox() {
+  const old = document.getElementById("aiInfoBox");
+  if (old) old.remove();
+
+  const box = document.createElement("div");
+  box.id = "aiInfoBox";
+  box.style.position = "fixed";
+  box.style.inset = "0";
+  box.style.background = "rgba(0,0,0,.45)";
+  box.style.zIndex = "99999";
+  box.style.padding = "20px";
+
+  box.innerHTML = `
+    <div style="background:#fff;border-radius:16px;padding:18px;max-width:420px;margin:80px auto;color:#0f172a;">
+      <div style="font-size:18px;font-weight:900;margin-bottom:12px;">🤖 AI 선수 분석</div>
+      <div style="font-size:15px;line-height:1.7;">
+        ✅ 선수 이름을 누르세요.<br><br>
+        • 지난달/이번달 통합전적<br>
+        • 현재 ELO 랭킹<br>
+        • 상대전적 및 경기기록<br><br>
+        • 위 자료가 자동으로 복사됩니다.<br><br>
+
+        ✅ Gemini에 붙여넣어 분석하세요.
+      </div>
+      <button onclick="document.getElementById('aiInfoBox').remove()"
+        style="margin-top:16px;width:100%;padding:12px;border:0;border-radius:10px;background:#2563eb;color:#fff;font-weight:900;">
+        확인
+      </button>
+    </div>
+  `;
+
+  document.body.appendChild(box);
+}
+
+function initialEloByBu(bu){
+  const n = Number(bu);
+  if (!Number.isFinite(n)) return 1500;
+  return 2000 - (n * 100);
+}
+
+function renderEloPage(){
+  if(!membersLoaded) return;
+
+  const arr = Object.values(ratingsData)
+    .filter(r => r && r.name)
+    .filter(r => playerLevels[r.name] !== undefined)
+    .filter(r => Number(r.games || 0) > 0)
+    .map(r=>{
+      const current = Math.round(Number(r.elo || 0));
+      return {
+  name: r.name,
+  bu: playerLevels[r.name] ?? "-",
+  initialElo: initialEloByBu(playerLevels[r.name] ?? 5),
+  elo: current,
+  change: getThisMonthChange(r.name, current),
+  games: Number(r.games || 0),
+  win: Number(r.wins || 0),
+  lose: Number(r.losses || 0)
+};
+    })
+    .sort((a,b)=> b.elo - a.elo || b.games - a.games || a.name.localeCompare(b.name, "ko"));
+
+  const recent = Object.values(logsData)
+    .filter(l => l && l.mode === "single")
+    .sort((a,b)=> Number(a.createdAt || 0) - Number(b.createdAt || 0));
+
+  renderTable(arr, recent.length, recent);
+}
+
+function renderTable(arr, totalSingleMatches, recent){
+  const sec = document.getElementById("singleSection");
+
+  const recentRows = recent
+    .slice(-SHOW_RECENT_MATCHES)
+    .reverse()
+    .map(r=>`
+      <tr>
+        <td>${r.winner}</td>
+        <td><span class="win">+${r.winnerChange}</span></td>
+        <td>${r.loser}</td>
+        <td><span class="lose">${r.loserChange}</span></td>
+      </tr>
+    `).join("");
+
+  sec.innerHTML = `
+    
+
+    <div id="eloHelp" class="helpBox">
+     <b>🏆 단식 ELO 랭킹이란?</b>
+<ul>
+  <li><b>ELO(엘로)</b>는 체스, 탁구, 바둑, e스포츠 등 세계적으로 사용되는 실력 평가 시스템으로, 경기 결과를 통해 선수의 현재 실력을 점수로 나타냅니다.</li>
+
+  <li>점수가 높을수록 현재 실력이 높은 선수이며, 순위는 현재 ELO 점수 순으로 결정됩니다.</li>
+
+  <li>승리하면 점수가 오르고, 패배하면 점수가 내려갑니다.</li>
+
+  <li>강한 선수를 이기면 점수가 크게 오르고, 약한 선수에게 지면 점수가 크게 내려갑니다.</li>
+
+  <li>초기 ELO는 부수별로 <b>1부 1900점부터 14부 600점까지 100점 간격</b>으로 시작합니다.</li>
+
+  <li>부수 차이에 따라 실제 경기에서 <b>1부수당 1점 핸디</b>를 주는 경우, ELO 계산에서도 <b>1부수당 30점</b>을 반영하여 기대승률을 보정합니다.</li>
+
+  <li>신규 선수와 <b>10경기 미만 선수</b>는 실제 실력을 빠르게 반영하기 위해 점수 변동폭이 조금 더 크게 적용됩니다.</li>
+
+  <li>부수가 변경되어도 <b>현재 ELO는 그대로 유지</b>되며, 이후 경기부터 새로운 부수를 기준으로 계산됩니다.</li>
+
+  <li>0경기 선수와 탈퇴 선수는 랭킹에서 제외됩니다.</li>
+
+  <li><b>이번달 변화</b>는 이번 달 첫 경기 직전 ELO와 현재 ELO의 차이를 의미하며, ▲는 상승, ▼는 하락을 나타냅니다.</li>
+
+  <li>💡 <b>예시</b><br>
+      5부 선수(초기 1500점)가 3부 선수(초기 1700점)를 이기면 큰 폭으로 점수가 상승합니다.<br>
+      반대로 3부 선수가 5부 선수에게 지면 큰 폭으로 점수가 하락합니다.<br>
+      <b>실제 변동폭은 현재 ELO, 경기 수, 부수 차이에 따라 달라집니다.</b>
+  </li>
+</ul>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+         <th>순위</th>
+<th>이름(부수)</th>
+<th>초기 ELO</th>
+<th>현재 ELO</th>
+<th>이번달 변화</th>
+<th>경기</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${arr.length === 0 ? `
+          <tr><td colspan="5" style="padding:14px;color:#64748b;">선수 기록이 없습니다.</td></tr>
+        ` : arr.map((p,i)=>`
+          <tr style="${i < 3 ? 'background:#e0f2fe' : 'background:#f9fafb'}">
+            <td>${rankIcon(i)}</td>
+<td>
+  <button class="nameBtn" onclick="copyPlayerAIAnalysis('${p.name}')">
+    ${p.name}(${p.bu})
+  </button>
+</td>
+<td style="color:#64748b;">${p.initialElo}</td>
+<td><b>${p.elo}</b></td>
+<td>${formatChange(p.change)}</td>
+<td>${p.games}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+
+    <div style="text-align:center;">
+      <span class="totalNote">🔹 단식 Elo 반영 경기 수: <b>${totalSingleMatches} 경기</b></span>
+    </div>
+
+    
+    <div class="prevWrap">
+      <div class="prevTitle">
+        최근 Elo 변동
+        <button class="helpBtn" onclick="toggleHelp('recentHelp')">설명</button>
+      </div>
+
+      <div id="recentHelp" class="helpBox">
+        <b>📈 최근 15경기 ELO 변동이란?</b>
+        <ul>
+          <li>가장 최근에 저장된 단식 경기 15개의 점수 변화를 보여줍니다.</li>
+          <li>승자는 보통 점수가 오르고, 패자는 점수가 내려갑니다.</li>
+          <li>상대보다 약한 선수가 이기면 더 큰 점수를 얻습니다.</li>
+          <li>상대보다 강한 선수가 이기면 점수는 조금만 오릅니다.</li>
+          <li>이 표는 최근 경기 흐름을 빠르게 확인하기 위한 참고용입니다.</li>
+        </ul>
+      </div>
+
+      <div class="monthCard">
+        <div class="bar">📈 최근 ${SHOW_RECENT_MATCHES}경기</div>
+        <div class="inner">
+          <table>
+            <thead>
+              <tr>
+                <th>승자</th>
+                <th>변동</th>
+                <th>패자</th>
+                <th>변동</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${recentRows || `<tr><td colspan="4" style="padding:14px;color:#64748b;">최근 단식 경기가 없습니다.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function isIOS() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+function showCopyBox(text) {
+  const old = document.getElementById("copyBoxOverlay");
+  if (old) old.remove();
+
+  const box = document.createElement("div");
+  box.id = "copyBoxOverlay";
+  box.style.position = "fixed";
+  box.style.inset = "0";
+  box.style.background = "rgba(0,0,0,.55)";
+  box.style.zIndex = "99999";
+  box.style.padding = "14px";
+
+  box.innerHTML = `
+    <div style="background:#fff;border-radius:14px;padding:14px;max-width:700px;margin:20px auto;">
+      <div style="font-weight:900;font-size:18px;margin-bottom:8px;color:#1e3a8a;">
+        📋 AI 분석자료 직접 복사
+      </div>
+
+      <div style="font-size:14px;color:#475569;margin-bottom:10px;line-height:1.5;">
+        iPhone Safari에서는 자동 복사가 막힐 수 있습니다.<br>
+        아래 내용을 길게 눌러 <b>전체 선택 → 복사</b> 해주세요.
+      </div>
+
+      <textarea id="manualCopyText"
+        readonly
+        style="width:100%;height:55vh;font-size:13px;line-height:1.5;padding:10px;border:1px solid #cbd5e1;border-radius:10px;"
+      ></textarea>
+
+      <button id="closeCopyBox"
+        style="margin-top:10px;width:100%;padding:12px;border:0;border-radius:10px;background:#2563eb;color:#fff;font-weight:900;">
+        닫기
+      </button>
+    </div>
+  `;
+
+  document.body.appendChild(box);
+
+  const ta = document.getElementById("manualCopyText");
+  ta.value = text;
+
+  document.getElementById("closeCopyBox").onclick = function() {
+    box.remove();
+  };
+}
+
+async function copyText(text) {
+
+  // iPhone / iPad Safari는 자동복사 시도하지 않고 직접복사창 표시
+  if (isIOS()) {
+    showCopyBox(text);
+    return false;
+  }
+
+  // 그 외 브라우저만 자동 복사 시도
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) {
+      console.log("Clipboard API 실패:", e);
+    }
+  }
+
+  showCopyBox(text);
+  return false;
+}
+
+
+window.copyPlayerAIAnalysis = async function(playerName){
+  const now = new Date();
+  const thisMonthKey = monthKeyOf(now);
+
+  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const prevMonthKey = monthKeyOf(prev);
+
+  const currentRatings = Object.values(ratingsData)
+    .filter(r => r && r.name)
+    .filter(r => playerLevels[r.name] !== undefined)
+    .filter(r => Number(r.games || 0) > 0)
+    .map(r => {
+      const current = Math.round(Number(r.elo || 0));
+      return {
+        name: r.name,
+        bu: playerLevels[r.name] ?? "-",
+        initialElo: initialEloByBu(playerLevels[r.name] ?? 5),
+        elo: current,
+        change: getThisMonthChange(r.name, current),
+        games: Number(r.games || 0),
+        wins: Number(r.wins || 0),
+        losses: Number(r.losses || 0)
+      };
+    })
+    .sort((a,b)=> b.elo - a.elo || b.games - a.games || a.name.localeCompare(b.name, "ko"));
+
+  const playerElo = currentRatings.find(p => p.name === playerName);
+
+  let playerProfileText = "";
+
+  try {
+    const membersSnap = await get(ref(db, "members"));
+    const membersData = membersSnap.val() || {};
+
+    const memberKey = Object.keys(membersData).find(key => {
+      return membersData[key] && membersData[key].name === playerName;
+    });
+
+    if (memberKey) {
+      const profileSnap = await get(ref(db, `playerProfiles/${memberKey}`));
+
+      if (profileSnap.exists()) {
+        const profile = profileSnap.val() || {};
+
+        const rows = [
+          profile.grip ? `- 라켓 타입: ${profile.grip}` : "",
+          profile.playType ? `- 플레이 스타일: ${profile.playType}` : "",
+          profile.weapon ? `- 주무기: ${profile.weapon}` : "",
+          profile.weakness ? `- 약점: ${profile.weakness}` : "",
+          profile.serveReceive ? `- 서브/리시브 특징: ${profile.serveReceive}` : "",
+          profile.memo ? `- 메모: ${profile.memo}` : ""
+        ].filter(Boolean);
+
+        if (rows.length > 0) {
+          playerProfileText = `
+========================
+[${playerName} 선수 프로파일]
+${rows.join("\n")}
+`;
+        }
+      }
+    }
+  } catch (e) {
+    console.log("선수 프로파일 조회 오류:", e);
+  }
+
+  const allLogs = Object.values(logsData)
+    .filter(l => l && l.mode === "single")
+    .sort((a,b)=> Number(a.createdAt || 0) - Number(b.createdAt || 0));
+
+  const playerLogs = allLogs.filter(l => l.pA === playerName || l.pB === playerName);
+
+  const recentPlayerLogs = playerLogs.slice(-20).reverse();
+
+  const relationMap = {};
+
+  playerLogs.forEach(l => {
+    const opponent = l.pA === playerName ? l.pB : l.pA;
+    if(!opponent) return;
+
+    if(!relationMap[opponent]){
+      relationMap[opponent] = { wins:0, losses:0, eloChange:0, games:0 };
+    }
+
+    const isWin = l.winner === playerName;
+    relationMap[opponent].games += 1;
+
+    if(isWin) relationMap[opponent].wins += 1;
+    else relationMap[opponent].losses += 1;
+
+    const change = l.pA === playerName ? Number(l.changeA || 0) : Number(l.changeB || 0);
+    relationMap[opponent].eloChange += change;
+  });
+
+  const relationText = Object.entries(relationMap)
+    .sort((a,b)=> b[1].games - a[1].games)
+    .map(([op, r]) => {
+      return `- ${op}: ${r.wins}승 ${r.losses}패 / ${r.games}경기 / ELO합계 ${r.eloChange >= 0 ? "+" : ""}${r.eloChange}`;
+    })
+    .join("\n") || "상대전적 데이터 없음";
+
+  let prevMonthData = "지난달 통합데이터를 불러오지 못했습니다.";
+  let thisMonthData = "이번달 통합데이터를 불러오지 못했습니다.";
+
+  try{
+    const prevSnap = await get(ref(db, `monthlyReports/${prevMonthKey}`));
+    prevMonthData = prevSnap.exists()
+      ? JSON.stringify(prevSnap.val(), null, 2)
+      : `${prevMonthKey} 통합데이터 없음`;
+  }catch(e){
+    prevMonthData = "지난달 통합데이터 조회 오류";
+  }
+
+  try{
+    const thisSnap = await get(ref(db, `monthlyReports/${thisMonthKey}`));
+    thisMonthData = thisSnap.exists()
+      ? JSON.stringify(thisSnap.val(), null, 2)
+      : `${thisMonthKey} 통합데이터 없음`;
+  }catch(e){
+    thisMonthData = "이번달 통합데이터 조회 오류";
+  }
+
+  const rankingText = currentRatings.map((p, i) => {
+    return `${i+1}위 ${p.name}(${p.bu}) / 현재ELO ${p.elo} / 초기ELO ${p.initialElo} / 이번달변화 ${p.change >= 0 ? "+" : ""}${p.change} / ${p.games}경기 ${p.wins}승 ${p.losses}패`;
+  }).join("\n");
+
+  const recentText = recentPlayerLogs.map(l => {
+    const result = l.winner === playerName ? "승" : "패";
+    const opponent = l.pA === playerName ? l.pB : l.pA;
+    const change = l.pA === playerName ? l.changeA : l.changeB;
+    return `- ${result} vs ${opponent} / ELO변동 ${change >= 0 ? "+" : ""}${change}`;
+  }).join("\n") || "최근 경기 없음";
+
+  const prompt = `
+아래 자료를 바탕으로 "${playerName}" 선수의 탁구 경기력을 위트 있고 날카롭게 분석해 주세요. 
+참고로 지난달 통합데이터는 단식+복식이고 ELO는 단식 기준입니다
+[세부 분석 항목]
+세부 분석 항목
+1. ELO가 말해주는 현재 우리 방에서의 위치는? (현재 실력 수준)
+2. 지난달과 비교하면 지금 폼은 어떨까? (흐름 변화)
+3. 최근 20경기로 본 현재 경기 흐름은? (상승세·하락세)
+4. 자주 만나는 상대들과의 상성은 어떨까? (주요 상성)
+5. 누구에게 강하고, 누구에게 약할까? (강약 상대 분석)
+6. 현재 ELO는 실제 실력을 얼마나 잘 반영하고 있을까? (ELO 신뢰도)
+7. 이 선수의 가장 큰 강점은 무엇일까? (핵심 무기)
+8. 경기에서 반복적으로 드러나는 가장 큰 약점은 무엇일까? (보완 포인트)
+9. 상대가 약점을 공략할 때 어떻게 흐름을 되찾을 수 있을까? (경기 운영 전략)
+10. 멘탈이 흔들릴 때 나타나는 플레이 패턴은? (심리적 특징)
+11. 점수보다 더 중요한 흐름 장악력은 어느 정도일까? (연속 득점·역전 능력)
+12. 승률을 높이기 위해 가장 먼저 연습해야 할 것은 무엇일까? (맞춤 훈련법)
+13. 지금 컨디션이라면 언제 믿고 응원할 수 있을까? (컨디션 예측)
+14. 앞으로 3개월 뒤 어느 정도까지 성장할 수 있을까? (성장 가능성)
+15. 이 선수를 한 문장으로 표현한다면? (위트 있는 한 줄 총평)
+
+* 분석할 때 전형이나 프로필 내용을 직접 언급하지 말고, 경기 중 묻어나오는 플레이 스타일과 상대 체감 난이도로 부드럽고 유쾌하게 풀어줘!
+* "또한 프로필에 적힌" 처럼 프로필 자체도 언급하지 말아줘
+========================
+[분석 대상 선수]
+${playerName}
+
+[현재 선수 ELO 정보]
+${playerElo ? JSON.stringify(playerElo, null, 2) : "ELO 정보 없음"}
+
+${playerProfileText}
+
+========================
+[현재 전체 ELO 랭킹]
+${rankingText}
+
+========================
+[${prevMonthKey} 지난달 통합데이터]
+${prevMonthData}
+
+========================
+[${thisMonthKey} 이번달 현재까지 통합데이터]
+${thisMonthData}
+
+========================
+[${playerName} 선수 상대전적 관계]
+${relationText}
+
+========================
+[${playerName} 선수 최근 단식 ELO 경기]
+${recentText}
+
+========================
+위 자료를 바탕으로 ${playerName} 선수의 탁구 경기 분석을 해주세요.
+`;
+
+try {
+  if (await copyText(prompt.trim())) {
+    showCopyComplete(playerName);
+  }
+} catch (e) {
+  console.error(e);
+  showCopyFail();
+}
+};
+
+function showCopyComplete(playerName) {
+
+  const old = document.getElementById("copyResultBox");
+  if (old) old.remove();
+
+  const box = document.createElement("div");
+  box.id = "copyResultBox";
+  box.style.position = "fixed";
+  box.style.inset = "0";
+  box.style.background = "rgba(0,0,0,.45)";
+  box.style.zIndex = "99999";
+  box.style.display = "flex";
+  box.style.alignItems = "center";
+  box.style.justifyContent = "center";
+
+  box.innerHTML = `
+  <div style="background:#fff;border-radius:16px;padding:20px;max-width:360px;width:90%;text-align:center;position:relative;">
+
+    <button
+      onclick="document.getElementById('copyResultBox').remove()"
+      style="
+        position:absolute;
+        top:10px;
+        right:10px;
+        width:32px;
+        height:32px;
+        border:0;
+        border-radius:50%;
+        background:#e5e7eb;
+        color:#475569;
+        font-size:18px;
+        font-weight:900;
+        cursor:pointer;">
+      ✕
+    </button>
+
+    <div style="font-size:48px;">✅</div>
+
+    <div style="font-size:18px;font-weight:900;margin:12px 0;">
+      ${playerName} 선수 AI 분석자료
+    </div>
+
+    <div style="line-height:1.6;color:#475569;">
+      클립보드에 복사되었습니다.<br><br>
+     <b>Gemini</b>에 붙여넣어 분석해 보세요.
+    </div>
+
+     <button
+      onclick="document.getElementById('copyResultBox').remove()"
+      style="margin-top:10px;width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;color:#475569;font-weight:900;">
+      닫기
+    </button>
+
+  </div>
+`;
+
+  document.body.appendChild(box);
+}
+
+function showCopyFail() {
+
+  const old = document.getElementById("copyResultBox");
+  if (old) old.remove();
+
+  const box = document.createElement("div");
+  box.id = "copyResultBox";
+  box.style.position = "fixed";
+  box.style.inset = "0";
+  box.style.background = "rgba(0,0,0,.45)";
+  box.style.zIndex = "99999";
+  box.style.display = "flex";
+  box.style.alignItems = "center";
+  box.style.justifyContent = "center";
+
+  box.innerHTML = `
+    <div style="background:#fff;border-radius:16px;padding:20px;max-width:360px;width:90%;text-align:center;">
+      <div style="font-size:48px;">⚠️</div>
+      <div style="font-size:18px;font-weight:900;margin:12px 0;">
+        복사 실패
+      </div>
+      <div style="line-height:1.6;color:#475569;">
+        클립보드 복사에 실패했습니다.<br>
+        브라우저 권한을 확인해 주세요.
+      </div>
+
+      <button onclick="document.getElementById('copyResultBox').remove()"
+        style="margin-top:18px;width:100%;padding:12px;border:0;border-radius:10px;background:#2563eb;color:#fff;font-weight:900;">
+        확인
+      </button>
+    </div>
+  `;
+
+  document.body.appendChild(box);
+}
+</script>
+
+</body>
+</html>
