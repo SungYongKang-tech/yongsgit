@@ -158,7 +158,7 @@ function seedRoute(d,g,r){
   const other=first.a===token?first.b:first.a;
   const otherLabel=other.startsWith('@')?`${ms.findIndex(m=>m.id===other.slice(1))+1}경기 승자`:(()=>{const [gg,rr]=other.split('-');return `${gg}조 ${rr}위`})();
   const otherObj=other.startsWith('@')?null:resolveSlot(d,other,{});
-  const otherText=otherObj?`${otherLabel} ${otherObj.name}`:otherLabel;
+  const otherText=otherObj?`${otherLabel} ${otherObj.name}(${orgLabel(otherObj.org)})`:otherLabel;
   return `${first.stage} · ${otherText}와 대결${first.stage==='준결승'?' (상위 라운드 직행)':''}`;
 }
 function setRankTarget(g,r){
@@ -235,6 +235,23 @@ function routeCompact(d,g,r){
 }
 // 실제 대진 연결 구조를 재귀적으로 따라가며 모바일 세로형 트리로 표시.
 // 최하위 경기 → 진출선 → 상위 경기 → 결승 순서로 이어진다.
+// 경기 참가자의 소속기관을 휴대폰 화면용 약칭으로 표시합니다.
+const ORG_LABELS={
+  '한국토지주택공사':'LH',
+  '한국남동발전':'남동',
+  '국방기술진흥연구소':'국방기술',
+  '한국세라믹기술원':'세라믹',
+  '한국저작권위원회':'저작권',
+  '중앙관세분석소':'관세분석',
+  '중소벤처기업진흥공단':'중진공',
+  '주택관리공단':'주택관리',
+  '한국산업기술시험원':'KTL',
+  '한국승강기안전공단':'승강기'
+};
+function orgLabel(org){return ORG_LABELS[org]||org||'';}
+function playerNameOrg(name,org){
+  return `<span class="player-identity"><strong>${safe(name)}</strong>${org?`<small>(${safe(orgLabel(org))})</small>`:''}</span>`;
+}
 function renderVerticalBracket(d,matches){
   const byId=Object.fromEntries(matches.map(m=>[m.id,m]));
   const defs=Object.fromEntries(TENNIS_MATCHES[d].map(m=>[m.id,m]));
@@ -248,7 +265,7 @@ function renderVerticalBracket(d,matches){
       const label=ref.startsWith('@')?'이전 경기 승자':`${ref.split('-')[0]}조 ${ref.split('-')[1]}위`;
       const picked=!!(p&&m.win&&p.id===m.win.id);
       const disabled=!tennisEditing||!tennisOnline||!tennisLoaded||tennisBusy||!m.a||!m.b;
-      out+=`<button type="button" class="vb-player ${picked?'vb-win':''}" onclick="chooseWinner('${id}','${side}')" ${disabled?'disabled':''}><span class="vb-player-tag">${safe(label)}</span><strong>${p?safe(p.name):'—'}</strong><span class="vb-winmark">${picked?'✓ 승자':p?'선택':'대기'}</span></button>`;
+      out+=`<button type="button" class="vb-player ${picked?'vb-win':''}" onclick="chooseWinner('${id}','${side}')" ${disabled?'disabled':''}><span class="vb-player-tag">${safe(label)}</span>${p?playerNameOrg(p.name,p.org):'<span class="player-identity"><strong>—</strong></span>'}<span class="vb-winmark">${picked?'✓ 승자':p?'선택':'대기'}</span></button>`;
     }
     return out+'</div></article>';
   }
@@ -289,11 +306,11 @@ function renderTennisPanel(){
     for(let r=0;r<group.length;r++){
       const pi=assigned[r],p=Number.isInteger(pi)?group[pi]:null;
       const open=expandedRankPicker===`${d}:${g}:${r}`&&tennisEditing;
-      out+=`<button type="button" class="compact-rank ${open?'is-open':''}" onclick="toggleRankPicker(${g},${r})"><span class="compact-medal">${r+1}위</span><strong>${p?safe(p.n):'<span class="rank-empty">—</span>'}</strong><span class="compact-edit">${tennisEditing?'▾':''}</span></button>`;
+      out+=`<button type="button" class="compact-rank ${open?'is-open':''}" onclick="toggleRankPicker(${g},${r})"><span class="compact-medal">${r+1}위</span>${p?playerNameOrg(p.n,p.org):'<span class="player-identity"><strong class="rank-empty">—</strong></span>'}<span class="compact-edit">${tennisEditing?'▾':''}</span></button>`;
       if(open){
         out+=`<div class="compact-picker"><div class="compact-picker-title">${g+1}조 ${r+1}위에 넣을 선수를 누르세요</div><div class="compact-picker-buttons">`;
         for(let i=0;i<group.length;i++){
-          out+=`<button type="button" onclick="selectRankPlayer(${g},${i})" ${!tennisOnline||!tennisLoaded||tennisBusy?'disabled':''} aria-label="${safe(group[i].n)} 선수 선택"><strong>${safe(group[i].n)}</strong></button>`;
+          out+=`<button type="button" onclick="selectRankPlayer(${g},${i})" ${!tennisOnline||!tennisLoaded||tennisBusy?'disabled':''} aria-label="${safe(group[i].n)} 선수 선택">${playerNameOrg(group[i].n,group[i].org)}</button>`;
         }
         out+=`</div><div class="compact-route">본선: ${safe(routeCompact(d,g,r))}</div></div>`;
       }
@@ -303,7 +320,7 @@ function renderTennisPanel(){
   out+='</section>';
   out+=`<section class="tennis-section"><div class="tennis-section-heading"><h3>② 본선 토너먼트</h3><span>${matches.filter(m=>m.win).length}/${matches.length} 완료</span></div><p class="compact-note">아래에서 위로 진출하지 않고, <b>위에서 아래로 결승까지</b> 연결됩니다. ${tennisEditing?'승리한 선수를 터치하면 다음 경기로 올라갑니다.':'승리 선수는 녹색으로 표시됩니다.'}</p>`;
   out+=renderVerticalBracket(d,matches);
-  out+=`<div class="champion"><small>🏆 ${safe(entry.title)} 우승</small>${champion?safe(champion.name)+' <span style="font-size:12px;color:#e5e0c7">('+safe(champion.org)+')</span>':'결승 결과 대기 중'}</div></section>`;
+  out+=`<div class="champion"><small>🏆 ${safe(entry.title)} 우승</small>${champion?playerNameOrg(champion.name,champion.org):'결승 결과 대기 중'}</div></section>`;
   out+=`<details class="rec-details"><summary>⚙️ 테스트 · 백업 · 초기화</summary><div class="rec-tools"><button ${!tennisEditing||!tennisOnline||!tennisLoaded||tennisBusy?'disabled':''} onclick="fillTestTennis()">🧪 테스트 데이터</button><button onclick="validateTennis()">✓ 입력 확인</button><button onclick="downloadTennisBackup()">⬇ 기록 백업</button><button ${!tennisEditing||!tennisOnline||!tennisLoaded||tennisBusy?'disabled':''} onclick="document.getElementById('tennisImport').click()">⬆ 기록 복원</button><button class="danger" ${!tennisEditing||!tennisOnline||!tennisLoaded||tennisBusy?'disabled':''} onclick="resetTennis()">↺ 현재 종목 초기화</button><button class="danger" ${!tennisOnline||!tennisLoaded||tennisBusy?'disabled':''} onclick="resetAllTennis()">🗑 전체 기록 완전 초기화</button></div><input id="tennisImport" type="file" accept="application/json,.json" style="display:none" onchange="importTennisBackup(this)"><p class="rec-note">테스트와 초기화는 모든 이용자에게 실시간 반영됩니다. 실제 경기 전에는 테스트 데이터를 초기화하세요.</p><div class="rec-status" id="tennisValidationStatus">${matches.filter(m=>m.win).length}/${matches.length}경기 승자 선택</div></details>`;
   panel.innerHTML=out;
 }
