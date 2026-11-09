@@ -51,6 +51,7 @@ const TENNIS_MATCHES={
 };
 // 행사 임시 운영용 PIN (클라이언트 소스에 공개됨: 보안용 아님)
 const EDIT_PIN='1111';
+const FULL_RESET_PIN='0000';
 const FIREBASE_CONFIG={
   apiKey:'AIzaSyBosv5NNmC5Xzw12u5pjLoGL3TpoBWs9s4',
   authDomain:'hyucksin-48e4c.firebaseapp.com',
@@ -247,7 +248,7 @@ function renderVerticalBracket(d,matches){
       const label=ref.startsWith('@')?'이전 경기 승자':`${ref.split('-')[0]}조 ${ref.split('-')[1]}위`;
       const picked=!!(p&&m.win&&p.id===m.win.id);
       const disabled=!tennisEditing||!tennisOnline||!tennisLoaded||tennisBusy||!m.a||!m.b;
-      out+=`<button type="button" class="vb-player ${picked?'vb-win':''}" onclick="chooseWinner('${id}','${side}')" ${disabled?'disabled':''}><span class="vb-player-tag">${safe(label)}</span><strong>${p?safe(p.name):'미정'}</strong><span class="vb-winmark">${picked?'✓ 승자':p?'선택':'대기'}</span></button>`;
+      out+=`<button type="button" class="vb-player ${picked?'vb-win':''}" onclick="chooseWinner('${id}','${side}')" ${disabled?'disabled':''}><span class="vb-player-tag">${safe(label)}</span><strong>${p?safe(p.name):'—'}</strong><span class="vb-winmark">${picked?'✓ 승자':p?'선택':'대기'}</span></button>`;
     }
     return out+'</div></article>';
   }
@@ -281,14 +282,14 @@ function renderTennisPanel(){
   out+=`<div class="firebase-state" role="status">${safe(tennisStatus())}</div>`;
   out+=`<div class="adminbar"><button class="${tennisEditing?'unlocked':''}" onclick="unlockTennis()">${tennisEditing?'🔓 수정 모드 종료':'🔒 결과 입력·수정'}</button><span class="adminhint">${tennisEditing?'수정 모드 활성화':'누구나 실시간 조회 가능'}</span></div>`;
   out+=`<div class="tennis-disciplines">${Object.keys(TENNIS_DATA).map(k=>`<button class="discipline-btn ${k===d?'active':''}" onclick="selectTennisDiscipline('${k}')">${safe(TENNIS_DATA[k].title)}</button>`).join('')}</div>`;
-  out+=`<section class="tennis-section tennis-compact"><div class="tennis-section-heading"><h3>① 예선 조별 순위</h3><span>${state.ranks.flat().filter(Number.isInteger).length}/${entry.groups.reduce((n,g)=>n+g.length,0)} 입력</span></div><p class="compact-note">${tennisEditing?'순위 칸을 누른 다음 선수 이름을 선택하세요.':'1~3위 명단을 한눈에 확인하세요.'}</p>`;
+  out+=`<section class="tennis-section tennis-compact"><div class="tennis-section-heading"><h3>① 예선 조별 순위</h3><span>${state.ranks.flat().filter(Number.isInteger).length}/${entry.groups.reduce((n,g)=>n+g.length,0)} 입력</span></div><p class="compact-note">${tennisEditing?'비어 있는 순위 칸을 누른 뒤 선수를 선택하세요.':'입력한 순위만 표시됩니다. 빈칸은 미확정입니다.'}</p>`;
   for(let g=0;g<entry.groups.length;g++){
     const group=entry.groups[g],assigned=state.ranks[g]||[];
     out+=`<div class="compact-group"><div class="compact-group-label"><strong>${g+1}조</strong><small>${assigned.filter(Number.isInteger).length}/${group.length} 지정</small></div><div class="compact-ranks">`;
     for(let r=0;r<group.length;r++){
       const pi=assigned[r],p=Number.isInteger(pi)?group[pi]:null;
       const open=expandedRankPicker===`${d}:${g}:${r}`&&tennisEditing;
-      out+=`<button type="button" class="compact-rank ${open?'is-open':''}" onclick="toggleRankPicker(${g},${r})"><span class="compact-medal">${r+1}위</span><strong>${p?safe(p.n):'선택 전'}</strong><span class="compact-edit">${tennisEditing?'▾':''}</span></button>`;
+      out+=`<button type="button" class="compact-rank ${open?'is-open':''}" onclick="toggleRankPicker(${g},${r})"><span class="compact-medal">${r+1}위</span><strong>${p?safe(p.n):'<span class="rank-empty">—</span>'}</strong><span class="compact-edit">${tennisEditing?'▾':''}</span></button>`;
       if(open){
         out+=`<div class="compact-picker"><div class="compact-picker-title">${g+1}조 ${r+1}위에 넣을 선수를 누르세요</div><div class="compact-picker-buttons">`;
         for(let i=0;i<group.length;i++){
@@ -303,7 +304,7 @@ function renderTennisPanel(){
   out+=`<section class="tennis-section"><div class="tennis-section-heading"><h3>② 본선 토너먼트</h3><span>${matches.filter(m=>m.win).length}/${matches.length} 완료</span></div><p class="compact-note">아래에서 위로 진출하지 않고, <b>위에서 아래로 결승까지</b> 연결됩니다. ${tennisEditing?'승리한 선수를 터치하면 다음 경기로 올라갑니다.':'승리 선수는 녹색으로 표시됩니다.'}</p>`;
   out+=renderVerticalBracket(d,matches);
   out+=`<div class="champion"><small>🏆 ${safe(entry.title)} 우승</small>${champion?safe(champion.name)+' <span style="font-size:12px;color:#e5e0c7">('+safe(champion.org)+')</span>':'결승 결과 대기 중'}</div></section>`;
-  out+=`<details class="rec-details"><summary>⚙️ 테스트 · 백업 · 초기화</summary><div class="rec-tools"><button ${!tennisEditing||!tennisOnline||!tennisLoaded||tennisBusy?'disabled':''} onclick="fillTestTennis()">🧪 테스트 데이터</button><button onclick="validateTennis()">✓ 입력 확인</button><button onclick="downloadTennisBackup()">⬇ 기록 백업</button><button ${!tennisEditing||!tennisOnline||!tennisLoaded||tennisBusy?'disabled':''} onclick="document.getElementById('tennisImport').click()">⬆ 기록 복원</button><button class="danger" ${!tennisEditing||!tennisOnline||!tennisLoaded||tennisBusy?'disabled':''} onclick="resetTennis()">↺ 현재 종목 초기화</button></div><input id="tennisImport" type="file" accept="application/json,.json" style="display:none" onchange="importTennisBackup(this)"><p class="rec-note">테스트와 초기화는 모든 이용자에게 실시간 반영됩니다. 실제 경기 전에는 테스트 데이터를 초기화하세요.</p><div class="rec-status" id="tennisValidationStatus">${matches.filter(m=>m.win).length}/${matches.length}경기 승자 선택</div></details>`;
+  out+=`<details class="rec-details"><summary>⚙️ 테스트 · 백업 · 초기화</summary><div class="rec-tools"><button ${!tennisEditing||!tennisOnline||!tennisLoaded||tennisBusy?'disabled':''} onclick="fillTestTennis()">🧪 테스트 데이터</button><button onclick="validateTennis()">✓ 입력 확인</button><button onclick="downloadTennisBackup()">⬇ 기록 백업</button><button ${!tennisEditing||!tennisOnline||!tennisLoaded||tennisBusy?'disabled':''} onclick="document.getElementById('tennisImport').click()">⬆ 기록 복원</button><button class="danger" ${!tennisEditing||!tennisOnline||!tennisLoaded||tennisBusy?'disabled':''} onclick="resetTennis()">↺ 현재 종목 초기화</button><button class="danger" ${!tennisOnline||!tennisLoaded||tennisBusy?'disabled':''} onclick="resetAllTennis()">🗑 전체 기록 완전 초기화</button></div><input id="tennisImport" type="file" accept="application/json,.json" style="display:none" onchange="importTennisBackup(this)"><p class="rec-note">테스트와 초기화는 모든 이용자에게 실시간 반영됩니다. 실제 경기 전에는 테스트 데이터를 초기화하세요.</p><div class="rec-status" id="tennisValidationStatus">${matches.filter(m=>m.win).length}/${matches.length}경기 승자 선택</div></details>`;
   panel.innerHTML=out;
 }
 function selectTennisDiscipline(d){tennisDiscipline=d;expandedRankPicker=null;renderTennisPanel()}
@@ -324,6 +325,26 @@ function resetTennis(){
   if(!confirm(`${TENNIS_DATA[tennisDiscipline].title} 예선 순위와 본선 승자를 공용 데이터베이스에서 모두 삭제할까요?`))return;
   const d=tennisDiscipline;
   pushTennisChange(state=>{state[d]={ranks:TENNIS_DATA[d].groups.map(()=>[]),wins:{}}});
+}
+// 전체 기록 초기화는 별도 PIN으로, 편집 모드와 관계없이 실행할 수 있습니다.
+// 경고: 이 PIN은 JavaScript 안에 있으므로 실제 보안 인증은 아닙니다.
+async function resetAllTennis(){
+  if(!tennisRef||!tennisLoaded||!tennisOnline||tennisBusy){toast('Firebase 연결 후 초기화할 수 있습니다.');return;}
+  const pin=prompt('모든 종목의 예선 순위와 토너먼트 결과를 삭제하려면 초기화 비밀번호를 입력하세요.');
+  if(pin===null)return;
+  if(pin!==FULL_RESET_PIN){alert('초기화 비밀번호가 올바르지 않습니다.');return;}
+  if(!confirm('남자단식·여자단식·복식의 예선 순위와 본선 결과가 모두 삭제됩니다. 모든 이용자의 화면에도 반영됩니다. 정말 초기화할까요?'))return;
+  tennisBusy=true;renderTennisPanel();
+  try{
+    // 지정된 탁구경기 경로만 지웁니다. 다른 행사나 데이터는 변경하지 않습니다.
+    await tennisRef.remove();
+    tennisState=blankTennisState();
+    expandedRankPicker=null;
+    rankTarget={};
+    tennisError='';
+    toast('전체 기록이 초기화되었습니다. 모든 순위와 본선 결과가 빈칸입니다.');
+  }catch(e){tennisError=e.message||String(e);toast('전체 초기화 실패: '+tennisError);}
+  finally{tennisBusy=false;renderTennisPanel();}
 }
 function validateTennis(){
   const d=tennisDiscipline,s=tennisState[d],{matches,champion}=calculateBracket(d),notFilled=[];
