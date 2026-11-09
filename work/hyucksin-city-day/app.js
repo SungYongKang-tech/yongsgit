@@ -290,10 +290,9 @@ function renderTennisPanel(){
       const open=expandedRankPicker===`${d}:${g}:${r}`&&tennisEditing;
       out+=`<button type="button" class="compact-rank ${open?'is-open':''}" onclick="toggleRankPicker(${g},${r})"><span class="compact-medal">${r+1}위</span><strong>${p?safe(p.n):'선택 전'}</strong><span class="compact-edit">${tennisEditing?'▾':''}</span></button>`;
       if(open){
-        out+=`<div class="compact-picker"><div class="compact-picker-title">${g+1}조 ${r+1}위 선수 선택</div><div class="compact-picker-buttons">`;
+        out+=`<div class="compact-picker"><div class="compact-picker-title">${g+1}조 ${r+1}위에 넣을 선수를 누르세요</div><div class="compact-picker-buttons">`;
         for(let i=0;i<group.length;i++){
-          const otherRank=assigned.findIndex(v=>v===i);
-          out+=`<button type="button" onclick="selectRankPlayer(${g},${i})" ${!tennisOnline||!tennisLoaded||tennisBusy?'disabled':''}><strong>${safe(group[i].n)}</strong><small>${otherRank>=0?`${otherRank+1}위`:'선택'}</small></button>`;
+          out+=`<button type="button" onclick="selectRankPlayer(${g},${i})" ${!tennisOnline||!tennisLoaded||tennisBusy?'disabled':''} aria-label="${safe(group[i].n)} 선수 선택"><strong>${safe(group[i].n)}</strong></button>`;
         }
         out+=`</div><div class="compact-route">본선: ${safe(routeCompact(d,g,r))}</div></div>`;
       }
