@@ -1,0 +1,362 @@
+const APP_DATA={"tabs":[{"key":"타임테이블","label":"본행사","range":"본행사 · 17:50 ~ 21:00","meta":["2026 경남 진주 혁신도시의 날","장소: 한국남동발전 대강당 · 2026.11.11.(수)","1부 개회식: 임소정 아나운서 / 2부 장기자랑·축하공연: 양해동 MC","최종 기관송부 엑셀 반영 · LH 댄스 20:01 시작, KOEN VIBE 20:11 시작","탁구경기는 11월 10일(화) 별도 탭"],"items":[{"kind":"schedule","n":"1","start":"17:50","end":"18:20","duration":"30","category":"식전공연","headline":"B.A.M 밴드","body":"식전 공연","sequenceText":"최종본 순번 1 · 8행","details":[{"label":"운영 큐(안)","value":"원본 공란"},{"label":"확인사항","value":"공연 후 드럼(렌탈) 무대에서 철거"}]},{"kind":"schedule","n":"2","start":"18:20","end":"18:30","duration":"10","category":"장내정리","headline":"-","body":"무대 정리","sequenceText":"최종본 순번 2 · 9행","details":[{"label":"운영 큐(안)","value":"원본 공란"},{"label":"확인사항","value":"원본 공란"}]},{"kind":"schedule","n":"3","start":"18:30","end":"19:00","duration":"30","category":"전환","headline":"개회식","body":"개회선언, 내빈소개, 축사, 격려사 등","sequenceText":"최종본 순번 3 · 10행","details":[{"label":"운영 큐(안)","value":"무대 전환"},{"label":"확인사항","value":"전환 시간 확인 필요 (프롬프터 설치)"}]},{"kind":"schedule","n":"4","start":"19:00","end":"19:32","duration":"32","category":"축하공연","headline":"마술사 최현우","body":"마술공연 / interview 포함","sequenceText":"최종본 순번 4 · 11행","details":[{"label":"운영 큐(안)","value":"테크라이더 확인"},{"label":"확인사항","value":"시작·종료 시간 확인 필요"}]},{"kind":"schedule","n":"5","start":"19:32","end":"19:35","duration":"3","category":"장내정리","headline":"-","body":"장기자랑 준비","sequenceText":"최종본 순번 5 · 12행","details":[{"label":"운영 큐(안)","value":"LH 열린합창단 피아노 설치(야마하 렌탈)"},{"label":"확인사항","value":"-"}]},{"kind":"schedule","n":"6","start":"19:35","end":"19:41","duration":"6","category":"장기자랑","headline":"한국토지주택공사(LH) / LH열린합창단","body":"[합창] 김동률 - 다시 사랑한다 말할까","sequenceText":"최종본 순번 6 · 13행","details":[{"label":"운영 큐(안)","value":"참가자 MC 멘트로 소개"},{"label":"확인사항","value":"총 13명/ 야마하 피아노 설치(렌탈)"}]},{"kind":"schedule","n":"7","start":"19:41","end":"19:46","duration":"5","category":"장기자랑","headline":"한국승강기안전공단 / 정채식(1명)","body":"[노래] 진성 - 못난놈","sequenceText":"최종본 순번 7 · 14행","details":[{"label":"운영 큐(안)","value":"참가자 MC 멘트로 소개"},{"label":"확인사항","value":"-"}]},{"kind":"schedule","n":"8","start":"19:46","end":"19:51","duration":"5","category":"장기자랑","headline":"한국세라믹기술원 / 손경식(1명)","body":"[팬플롯 연주] 인순이 - 거위의 꿈","sequenceText":"최종본 순번 8 · 15행","details":[{"label":"운영 큐(안)","value":"참가자 MC 멘트로 소개"},{"label":"확인사항","value":"-"}]},{"kind":"schedule","n":"9","start":"19:51","end":"20:01","duration":"10","category":"장기자랑","headline":"진주시 충무공동 / 이동열 외 7명","body":"[색소폰 연주] 체리핑크맘보, 트로트메들리","sequenceText":"최종본 순번 9 · 16행","details":[{"label":"운영 큐(안)","value":"참가자 MC 멘트로 소개"},{"label":"확인사항","value":"총 8명"}]},{"kind":"schedule","n":"10","start":"20:01","end":"20:11","duration":"10","category":"장기자랑","headline":"한국토지주택공사(LH) / LH댄스동호회","body":"[댄스]  k-pop 메들리 (리센느_러브어택 등)","sequenceText":"최종본 순번 10 · 17행","details":[{"label":"운영 큐(안)","value":"참가자 MC 멘트로 소개 /  interview"},{"label":"확인사항","value":"총 9명 / LH댄스동호회 인터뷰 中 한국남동발전 밴드팀 악기 설치"}]},{"kind":"schedule","n":"11","start":"20:11","end":"20:16","duration":"5","category":"장기자랑","headline":"한국남동발전 / KOEN VIBE 밴드","body":"[노래] because of you(1절) / 박혜경_안녕","sequenceText":"최종본 순번 11 · 18행","details":[{"label":"운영 큐(안)","value":"참가자 MC 멘트로 소개"},{"label":"확인사항","value":"총 5명 / 밴드팀 악기 철거 (행사 종료 후)"}]},{"kind":"schedule","n":"12","start":"20:16","end":"20:20","duration":"4","category":"축하공연","headline":"가수 황가람","body":"(1) 거꾸로 강을 거슬러 오르는 저 힘찬 연어들처럼","sequenceText":"최종본 순번 12 · 19행","details":[{"label":"운영 큐(안)","value":"MC 멘트로 소개/ 반주 시작 후 등장"},{"label":"확인사항","value":"프롬프터"}]},{"kind":"schedule","n":"13","start":"20:20","end":"20:25","duration":"5","category":"","headline":"가수 황가람","body":"(2) 사랑 그 놈","sequenceText":"최종본 순번 13 · 20행","details":[{"label":"운영 큐(안)","value":"-"},{"label":"확인사항","value":"프롬프터"}]},{"kind":"schedule","n":"14","start":"20:25","end":"20:28","duration":"3","category":"","headline":"가수 황가람 및 MC","body":"interview","sequenceText":"최종본 순번 14 · 21행","details":[{"label":"운영 큐(안)","value":"-"},{"label":"확인사항","value":"-"}]},{"kind":"schedule","n":"15","start":"20:28","end":"20:33","duration":"5","category":"","headline":"가수 황가람","body":"(3) 사랑과 우정사이","sequenceText":"최종본 순번 15 · 22행","details":[{"label":"운영 큐(안)","value":"-"},{"label":"확인사항","value":"프롬프터"}]},{"kind":"schedule","n":"16","start":"20:33","end":"20:39","duration":"6","category":"","headline":"가수 황가람","body":"(4) 미치게 그리워서 / 가수 MENT","sequenceText":"최종본 순번 16 · 23행","details":[{"label":"운영 큐(안)","value":"-"},{"label":"확인사항","value":"프롬프터"}]},{"kind":"schedule","n":"17","start":"20:39","end":"20:44","duration":"5","category":"","headline":"가수 황가람","body":"[앵콜] 나는 반딧불","sequenceText":"최종본 순번 17 · 24행","details":[{"label":"운영 큐(안)","value":"MC 멘트 (앵콜 유도)"},{"label":"확인사항","value":"프롬프터"}]},{"kind":"schedule","n":"18","start":"20:44","end":"20:59","duration":"15","category":"시상식","headline":"장기자랑 참가자 전원","body":"장기자랑 시상","sequenceText":"최종본 순번 18 · 25행","details":[{"label":"운영 큐(안)","value":"화면(LED) 행사 타이틀"},{"label":"확인사항","value":"원본 공란"}]},{"kind":"schedule","n":"19","start":"20:59","end":"21:00","duration":"1","category":"폐회","headline":"MC 양해동","body":"폐회 선언 및 장내 정리","sequenceText":"최종본 순번 19 · 26행","details":[{"label":"운영 큐(안)","value":"종료 안내 → 관객 퇴장 유도"},{"label":"확인사항","value":"원본 공란"}]},{"kind":"schedule","n":"20","start":"21:00","end":"","duration":"","category":"종료","headline":"출연팀 / 구성 미기재","body":"행사 종료","sequenceText":"최종본 순번 20 · 27행","details":[{"label":"운영 큐(안)","value":"관객 퇴장 → 음향·조명 OUT → 종료 큐 확인"},{"label":"확인사항","value":"원본 공란"}]}]},{"key":"리허설","label":"리허설","range":"리허설 · 15:00 ~ 17:30 (종료 항목 포함)","meta":["리허설 일정 · 2026.11.11.(수)","장소: 한국남동발전 대강당","15:30~15:35 휴식시간 추가 · LH댄스 15:35~15:40 · KOEN VIBE 15:40~15:50","최종 기관송부 엑셀 반영 (폐회·종료 항목 원본 유지)"],"items":[{"kind":"schedule","n":"1","start":"15:00","end":"15:10","duration":"10","category":"합창","headline":"한국토지주택공사(LH) / LH열린합창단","body":"음향 및 동선 체크","sequenceText":"최종본 순번 1 · 8행","details":[{"label":"운영 큐(안)","value":"원본 공란"},{"label":"확인사항","value":"13명 / 마이크스탠드 4EA"}]},{"kind":"schedule","n":"2","start":"15:10","end":"15:15","duration":"5","category":"노래","headline":"한국승강기안전공단 / 정채식(1명)","body":"음향 및 동선 체크","sequenceText":"최종본 순번 2 · 9행","details":[{"label":"운영 큐(안)","value":"원본 공란"},{"label":"확인사항","value":"1명"}]},{"kind":"schedule","n":"3","start":"15:15","end":"15:20","duration":"5","category":"팬플롯 연주","headline":"한국세라믹기술원 / 손경식(1명)","body":"음향 및 동선 체크","sequenceText":"최종본 순번 3 · 10행","details":[{"label":"운영 큐(안)","value":"원본 공란"},{"label":"확인사항","value":"1명 / 마이크스탠드 1EA"}]},{"kind":"schedule","n":"4","start":"15:20","end":"15:30","duration":"10","category":"색소폰 연주","headline":"진주시 충무공동 / 이동열 외 7명","body":"음향 및 동선 체크","sequenceText":"최종본 순번 4 · 11행","details":[{"label":"운영 큐(안)","value":"원본 공란"},{"label":"확인사항","value":"8명"}]},{"kind":"schedule","n":"휴식","start":"15:30","end":"15:35","duration":"5","category":"휴식시간","headline":"휴식시간","body":"공연 준비 및 휴식 (5분)","sequenceText":"최종본 공백을 휴식시간으로 명시","details":[{"label":"운영 안내","value":"색소폰 리허설 종료 후, LH 댄스 리허설 전 휴식"}]},{"kind":"schedule","n":"5","start":"15:35","end":"15:40","duration":"5","category":"댄스","headline":"한국토지주택공사(LH) / LH댄스동호회","body":"음향 및 동선 체크","sequenceText":"최종본 순번 5 · 12행","details":[{"label":"운영 큐(안)","value":"원본 공란"},{"label":"확인사항","value":"8명"}]},{"kind":"schedule","n":"6","start":"15:40","end":"15:50","duration":"10","category":"노래","headline":"한국남동발전 / KOEN VIBE 밴드","body":"음향 및 동선 체크","sequenceText":"최종본 순번 6 · 13행","details":[{"label":"운영 큐(안)","value":"원본 공란"},{"label":"확인사항","value":"5명/ 테크니컬라이더 확인"}]},{"kind":"schedule","n":"7","start":"15:50","end":"16:10","duration":"20","category":"축하공연","headline":"마술사 최현우","body":"테크팀 자체 리허설(아티스트 X)","sequenceText":"최종본 순번 7 · 14행","details":[{"label":"운영 큐(안)","value":"원본 공란"},{"label":"확인사항","value":"테크니컬라이더 확인"}]},{"kind":"schedule","n":"8","start":"16:10","end":"17:00","duration":"50","category":"개회식","headline":"개막식 리허설(퍼포먼스, 내빈소개 등)","body":"영상, 조명, 음향 체크 등","sequenceText":"최종본 순번 8 · 15행","details":[{"label":"운영 큐(안)","value":"원본 공란"},{"label":"확인사항","value":"-"}]},{"kind":"schedule","n":"9","start":"17:00","end":"17:30","duration":"30","category":"식전공연","headline":"B.A.M 밴드","body":"장비 세팅 및 음향 체크","sequenceText":"최종본 순번 9 · 16행","details":[{"label":"운영 큐(안)","value":"원본 공란"},{"label":"확인사항","value":"8명 / 테크니컬라이더 확인"}]},{"kind":"schedule","n":"16","start":"20:59","end":"21:00","duration":"1","category":"폐회","headline":"MC","body":"폐회 선언 및 장내 정리","sequenceText":"최종본 순번 16 · 25행","details":[{"label":"운영 큐(안)","value":"종료 안내 → 관객 퇴장 유도"},{"label":"확인사항","value":"원본 공란"}]},{"kind":"schedule","n":"17","start":"21:00","end":"","duration":"","category":"종료","headline":"출연팀 / 구성 미기재","body":"행사 종료","sequenceText":"최종본 순번 17 · 26행","details":[{"label":"운영 큐(안)","value":"관객 퇴장 → 음향·조명 OUT → 종료 큐 확인"},{"label":"확인사항","value":"원본 공란"}]}]},{"key":"탁구경기","label":"탁구경기","range":"탁구경기 · 09:00 ~ 15:40","meta":["2026 경남 진주 혁신도시의 날 · 탁구경기","날짜: 2026.11.10.(화)","본행사 하루 전 부대행사","정리 내용: 경기 일정, 예선 조편성, 남자단식 본선 대진, 여자단식·혼합복식 본선 대진","예선 조편성: 상생과 협력의 혁신도시 탁구대회 예선리그조 PDF 기준 최신화"],"items":[{"kind":"info","n":"1","start":"11월 10일(화)","end":"09:00 ~ 15:40","duration":"혁신도시의 날 부대행사","category":"탁구경기 안내","headline":"2026 경남 진주 혁신도시의 날 · 탁구경기","body":"본행사 하루 전 진행되는 탁구경기 일정입니다.\n남자 개인단식, 여자 개인단식, 복식 경기를 휴대폰 세로화면에 맞춰 정리했습니다.","sequenceText":"탁구경기 안내 · 1/5","details":[{"label":"진행 종목","value":"남자 개인단식 예선·본선\n여자 개인단식 예선·본선\n복식 예선·본선"},{"label":"한눈에 보기","value":"다음 일정에서는 경기 일정표, 예선 조편성, 남자단식 본선 대진, 여자단식·혼합복식 본선 대진을 차례로 확인할 수 있습니다."}]},{"kind":"info","n":"2","start":"09:00","end":"15:40","duration":"총 9개 진행","category":"탁구 경기 일정","headline":"11월 10일(화) 세부 일정","body":"• 09:00~10:00 (60분)  대회장소 집결 및 몸풀기 연습게임\n• 10:00~11:00 (60분)  예선리그전 1차전\n• 11:00~11:06 (6분)  개회선언, 경기 규칙 및 대진표 안내\n• 11:06~11:09 (3분)  대회 환영사\n• 11:09~11:12 (3분)  대회 축사 및 단체사진촬영\n• 11:12~12:00 (48분)  선수선서 및 예선리그전 2차전\n• 12:00~13:00 (60분)  점심시간\n• 13:00~15:30 (150분)  남녀 단식·복식 예선 본선 및 결승전\n• 15:30~15:40 (10분)  기관별 점수 집계 및 폐회식","sequenceText":"탁구경기 일정 · 2/5","details":[{"label":"비고","value":"• 11:00~11:06  사회: 탁구협회 이사\n• 11:06~11:09  부시장님\n• 11:09~11:12  탁구협회 회장\n• 11:12~12:00  선서: 남여 선수 1명"},{"label":"진행 메모","value":"11월 10일(화) 진행 · 예선리그전 후 남녀 단식 및 복식 본선·결승 진행"}]},{"kind":"info","n":"3","start":"예선 리그전","end":"조편성","duration":"남자·여자·복식","category":"예선 조편성","headline":"탁구대회 예선리그 최신 조편성","body":"최신 예선리그 조편성 PDF 기준으로 정리했습니다. 실제 순위와 본선 승자를 기록하려면 위의 “🏆 경기결과 입력”을 이용하세요.","sequenceText":"예선 조편성 · 3/5","details":[{"label":"남자 개인단식 예선","value":"1조\n• 신현관(한국토지주택공사)\n• 최규호(한국남동발전)\n• 모종근(국방기술진흥연구소)\n\n2조\n• 한승현(한국세라믹기술원)\n• 박인기(한국저작권위원회)\n• 김승우(중앙관세분석소)\n\n3조\n• 제서환(중소벤처기업진흥공단)\n• 김원봉(주택관리공단)\n\n4조\n• 송경호(한국산업기술시험원)\n• 이종민(한국승강기안전공단)"},{"label":"여자 개인단식 예선","value":"1조\n• 김예나(한국산업기술시험원)\n• 키타미유카(한국승강기안전공단)\n• 장석은(주택관리공단)\n\n2조\n• 채승희(한국토지주택공사)\n• 김현미(한국저작권위원회)\n\n3조\n• 조보미(한국남동발전)\n• 강정희(중앙관세분석소)"},{"label":"복식 예선","value":"1조\n• 김태호·최호선(한국토지주택공사)\n• 이종민·키타미유카(한국승강기안전공단)\n• 장동미·김수철(주택관리공단)\n\n2조\n• 김희영·강성용(한국남동발전)\n• 임기현·임덕기(한국저작권위원회)\n\n3조\n• 박상우·정치영(한국산업기술시험원)\n• 곽재석·양승준(중앙관세분석소)"}]},{"kind":"info","n":"4","start":"본선","end":"남자단식","duration":"대진표 정리본","category":"남자단식 본선 대진","headline":"남자단식 본선 대진표","body":"본선 대진 구조는 첨부된 토너먼트 대진표를 따릅니다.\n\n상단 “🏆 경기결과 입력”에서 조별 순위를 선택하면 이 대진의 실제 참가자 이름이 자동으로 들어갑니다. 승자를 선택하면 결승 및 우승 결과까지 자동으로 연결됩니다.","sequenceText":"남자단식 본선 · 4/5","details":[{"label":"사용법","value":"경기결과 입력 → 1111 입력(수정자) → 종목 선택 → 예선 순위 입력 → 본선 승자 선택. 결과는 Firebase에 저장되어 모든 방문자에게 실시간 공유됩니다."}]},{"kind":"info","n":"5","start":"본선","end":"여자단식·혼합복식","duration":"대진표 정리본","category":"여자단식·혼합복식 본선 대진","headline":"여자단식·혼합복식 본선 대진표","body":"본선 대진 구조는 첨부된 토너먼트 대진표를 따릅니다.\n\n상단 “🏆 경기결과 입력”에서 조별 순위를 선택하면 이 대진의 실제 참가자 이름이 자동으로 들어갑니다. 승자를 선택하면 결승 및 우승 결과까지 자동으로 연결됩니다.","sequenceText":"여자단식·혼합복식 본선 · 5/5","details":[{"label":"사용법","value":"경기결과 입력 → 1111 입력(수정자) → 종목 선택 → 예선 순위 입력 → 본선 승자 선택. 결과는 Firebase에 저장되어 모든 방문자에게 실시간 공유됩니다."}]}]}]};
+
+// 탁구 실시간 기록: Firebase Realtime Database 연동. 비밀번호는 UI 잠금만 제공.
+const TENNIS_DATA={
+  men:{title:'남자단식',groups:[
+    [{n:'신현관',org:'한국토지주택공사'},{n:'최규호',org:'한국남동발전'},{n:'모종근',org:'국방기술진흥연구소'}],
+    [{n:'한승현',org:'한국세라믹기술원'},{n:'박인기',org:'한국저작권위원회'},{n:'김승우',org:'중앙관세분석소'}],
+    [{n:'제서환',org:'중소벤처기업진흥공단'},{n:'김원봉',org:'주택관리공단'}],
+    [{n:'송경호',org:'한국산업기술시험원'},{n:'이종민',org:'한국승강기안전공단'}]
+  ]},
+  women:{title:'여자단식',groups:[
+    [{n:'김예나',org:'한국산업기술시험원'},{n:'키타미유카',org:'한국승강기안전공단'},{n:'장석은',org:'주택관리공단'}],
+    [{n:'채승희',org:'한국토지주택공사'},{n:'김현미',org:'한국저작권위원회'}],
+    [{n:'조보미',org:'한국남동발전'},{n:'강정희',org:'중앙관세분석소'}]
+  ]},
+  doubles:{title:'복식',groups:[
+    [{n:'김태호·최호선',org:'한국토지주택공사'},{n:'이종민·키타미유카',org:'한국승강기안전공단'},{n:'장동미·김수철',org:'주택관리공단'}],
+    [{n:'김희영·강성용',org:'한국남동발전'},{n:'임기현·임덕기',org:'한국저작권위원회'}],
+    [{n:'박상우·정치영',org:'한국산업기술시험원'},{n:'곽재석·양승준',org:'중앙관세분석소'}]
+  ]}
+};
+// winner 노드는 서로 상호 참조 없이 왼쪽에서 오른쪽으로 처리. 남자단식 대진은 제공된 그림의 10인 구조.
+const TENNIS_MATCHES={
+  men:[
+    {id:'m1',stage:'1회전',title:'1조 1위 / 2조 2위',a:'1-1',b:'2-2'},
+    {id:'m2',stage:'1회전',title:'3조 2위 / 2조 3위',a:'3-2',b:'2-3'},
+    {id:'m3',stage:'1회전',title:'3조 1위 / 1조 3위',a:'3-1',b:'1-3'},
+    {id:'m4',stage:'1회전',title:'1조 2위 / 2조 1위',a:'1-2',b:'2-1'},
+    {id:'m5',stage:'준준결승',title:'2경기 승자 / 4조 1위',a:'@m2',b:'4-1'},
+    {id:'m6',stage:'준준결승',title:'4조 2위 / 3경기 승자',a:'4-2',b:'@m3'},
+    {id:'m7',stage:'준결승',title:'왼쪽 대진',a:'@m1',b:'@m5'},
+    {id:'m8',stage:'준결승',title:'오른쪽 대진',a:'@m6',b:'@m4'},
+    {id:'m9',stage:'결승',title:'최종 결승전',a:'@m7',b:'@m8'}
+  ],
+  women:[
+    {id:'m1',stage:'1회전',title:'3조 2위 / 2조 2위',a:'3-2',b:'2-2'},
+    {id:'m2',stage:'1회전',title:'3조 1위 / 1조 2위',a:'3-1',b:'1-2'},
+    {id:'m3',stage:'1회전',title:'1조 3위 / 2조 1위',a:'1-3',b:'2-1'},
+    {id:'m4',stage:'준결승',title:'1조 1위 부전승 / 1경기 승자',a:'1-1',b:'@m1'},
+    {id:'m5',stage:'준결승',title:'2경기 승자 / 3경기 승자',a:'@m2',b:'@m3'},
+    {id:'m6',stage:'결승',title:'최종 결승전',a:'@m4',b:'@m5'}
+  ],
+  doubles:[
+    {id:'m1',stage:'1회전',title:'3조 2위 / 2조 2위',a:'3-2',b:'2-2'},
+    {id:'m2',stage:'1회전',title:'3조 1위 / 1조 2위',a:'3-1',b:'1-2'},
+    {id:'m3',stage:'1회전',title:'1조 3위 / 2조 1위',a:'1-3',b:'2-1'},
+    {id:'m4',stage:'준결승',title:'1조 1위 부전승 / 1경기 승자',a:'1-1',b:'@m1'},
+    {id:'m5',stage:'준결승',title:'2경기 승자 / 3경기 승자',a:'@m2',b:'@m3'},
+    {id:'m6',stage:'결승',title:'최종 결승전',a:'@m4',b:'@m5'}
+  ]
+};
+// 행사 임시 운영용 PIN (클라이언트 소스에 공개됨: 보안용 아님)
+const EDIT_PIN='1111';
+const FIREBASE_CONFIG={
+  apiKey:'AIzaSyBosv5NNmC5Xzw12u5pjLoGL3TpoBWs9s4',
+  authDomain:'hyucksin-48e4c.firebaseapp.com',
+  databaseURL:'https://hyucksin-48e4c-default-rtdb.asia-southeast1.firebasedatabase.app',
+  projectId:'hyucksin-48e4c',
+  storageBucket:'hyucksin-48e4c.firebasestorage.app',
+  messagingSenderId:'932670161296',
+  appId:'1:932670161296:web:e5e47e903f639d60f23315'
+};
+const TENNIS_DB_PATH='events/jinju-innovation-2026/tabletennis';
+let tennisView='info',tennisDiscipline='men',tennisState={};
+let tennisRef=null,tennisLoaded=false,tennisOnline=false,tennisError='';
+let tennisEditing=false,tennisBusy=false;
+function blankTennisState(){return Object.fromEntries(Object.keys(TENNIS_DATA).map(k=>[k,{ranks:TENNIS_DATA[k].groups.map(()=>[]),wins:{}}]));}
+function normalizeTennisState(raw){
+  const output=blankTennisState();
+  if(!raw||typeof raw!=='object')return output;
+  for(const d of Object.keys(TENNIS_DATA)){
+    const src=raw[d];if(!src||typeof src!=='object')continue;
+    for(let g=0;g<TENNIS_DATA[d].groups.length;g++){
+      const list=Array.isArray(src.ranks?.[g])?src.ranks[g]:[];
+      output[d].ranks[g]=TENNIS_DATA[d].groups[g].map((_,r)=>Number.isInteger(list[r])&&list[r]>=0&&list[r]<TENNIS_DATA[d].groups[g].length?list[r]:null);
+    }
+    output[d].wins=src.wins&&typeof src.wins==='object'&&!Array.isArray(src.wins)?{...src.wins}:{};
+  }
+  return output;
+}
+tennisState=blankTennisState();
+function tennisStatus(){
+  if(tennisError)return '⚠️ 연결 오류: '+tennisError;
+  if(!tennisLoaded)return '⏳ Firebase 경기결과 불러오는 중…';
+  if(!tennisOnline)return '⚠️ 오프라인: 조회된 결과만 표시됩니다. 입력은 연결 후 가능합니다.';
+  return tennisBusy?'⏳ 변경사항 저장 중…':'🟢 Firebase 실시간 연결 · 모든 방문자에게 동일한 결과 표시';
+}
+function unlockTennis(){
+  if(tennisEditing){tennisEditing=false;renderTennisPanel();return;}
+  const pin=prompt('경기결과 입력·수정 비밀번호를 입력하세요.');
+  if(pin===null)return;
+  if(pin!==EDIT_PIN){alert('비밀번호가 올바르지 않습니다.');return;}
+  tennisEditing=true;renderTennisPanel();toast('입력·수정 모드가 열렸습니다.');
+}
+async function pushTennisChange(mutator){
+  if(!tennisEditing){toast('입력·수정하려면 비밀번호를 입력해 잠금을 해제하세요.');return;}
+  if(!tennisRef||!tennisLoaded||!tennisOnline){toast('Firebase에 연결된 뒤 다시 시도해 주세요.');return;}
+  if(tennisBusy)return;
+  tennisBusy=true;renderTennisPanel();
+  let failure=null;
+  try{
+    const outcome=await tennisRef.transaction(server=>{
+      const oldState=tennisState;
+      const working=normalizeTennisState(server);
+      tennisState=working;
+      try{mutator(working);for(const d of Object.keys(TENNIS_DATA))reconcileWins(d)}
+      catch(e){failure=e;return;}
+      finally{tennisState=oldState;}
+      return working;
+    },undefined,false);
+    if(failure)throw failure;
+    if(!outcome.committed)throw Error('저장이 취소되었습니다. 다시 시도해 주세요.');
+    tennisState=normalizeTennisState(outcome.snapshot.val());
+    toast('Firebase에 저장되었습니다.');
+  }catch(e){tennisError=e.message||String(e);toast('저장 실패: '+tennisError);}
+  finally{tennisBusy=false;renderTennisPanel();}
+}
+function connectFirebase(){
+  try{
+    if(typeof firebase==='undefined')throw Error('Firebase 스크립트를 불러오지 못했습니다.');
+    if(!firebase.apps.length)firebase.initializeApp(FIREBASE_CONFIG);
+    const db=firebase.database();
+    tennisRef=db.ref(TENNIS_DB_PATH);
+    db.ref('.info/connected').on('value',snap=>{tennisOnline=snap.val()===true;if(current==='탁구경기'&&tennisView==='record')renderTennisPanel()});
+    tennisRef.on('value',snapshot=>{
+      tennisLoaded=true;tennisError='';tennisState=normalizeTennisState(snapshot.val());
+      if(current==='탁구경기'&&tennisView==='record')renderTennisPanel();
+    },err=>{tennisLoaded=false;tennisError=(err&&err.message)||'데이터 읽기 권한을 확인하세요.';if(current==='탁구경기'&&tennisView==='record')renderTennisPanel()});
+  }catch(e){tennisError=e.message||String(e);if(current==='탁구경기'&&tennisView==='record')renderTennisPanel()}
+}
+function resolveSlot(d,slot,winners){
+  if(slot.startsWith('@'))return winners[slot.slice(1)]||null;
+  const [g,r]=slot.split('-').map(Number);
+  const playerIdx=tennisState[d].ranks[g-1]?.[r-1];
+  if(!Number.isInteger(playerIdx)||playerIdx<0)return null;
+  const player=TENNIS_DATA[d].groups[g-1]?.[playerIdx];
+  return player?{id:`${d}:${g-1}:${playerIdx}`,name:player.n,org:player.org}:null;
+}
+function calculateBracket(d){
+  const winners={},matches=[];
+  for(const m of TENNIS_MATCHES[d]){
+    const a=resolveSlot(d,m.a,winners),b=resolveSlot(d,m.b,winners);
+    const picked=tennisState[d].wins[m.id];
+    const win=a&&b&&(a.id===picked?a:b.id===picked?b:null);
+    winners[m.id]=win||null;
+    matches.push({...m,a,b,win});
+  }
+  return {matches,champion:winners[TENNIS_MATCHES[d].at(-1).id]};
+}
+function updateRank(g,r,val){
+  pushTennisChange(state=>{
+    const d=tennisDiscipline,group=TENNIS_DATA[d].groups[g];
+    const rankArr=state[d].ranks[g];
+    const index=val===''?null:Number(val);
+    if(index!==null&&(!Number.isInteger(index)||index<0||index>=group.length))return;
+    for(let i=0;i<rankArr.length;i++)if(i!==r&&rankArr[i]===index&&index!==null)rankArr[i]=null;
+    rankArr[r]=index;
+  });
+}
+function reconcileWins(d){
+  const prev={...tennisState[d].wins};
+  const next={};
+  tennisState[d].wins=next;
+  for(const m of TENNIS_MATCHES[d]){
+    const {matches}=calculateBracket(d);
+    const a=resolveSlot(d,m.a,Object.fromEntries(matches.map(x=>[x.id,x.win])));
+    const b=resolveSlot(d,m.b,Object.fromEntries(matches.map(x=>[x.id,x.win])));
+    const val=prev[m.id];
+    if(a&&b&&(val===a.id||val===b.id))next[m.id]=val;
+  }
+}
+function chooseWinner(mid,who){
+  const d=tennisDiscipline;
+  pushTennisChange(state=>{
+    const match=calculateBracket(d).matches.find(x=>x.id===mid);
+    if(!match||!match.a||!match.b)return;
+    const pick=who==='a'?match.a:match.b;
+    const wins=state[d].wins;
+    if(wins[mid]===pick.id)delete wins[mid];else wins[mid]=pick.id;
+  });
+}
+function renderTennisPanel(){
+  const panel=el('tennisPanel'),d=tennisDiscipline,entry=TENNIS_DATA[d],state=tennisState[d];
+  const {matches,champion}=calculateBracket(d);
+  let out=`<div class="tennis-head"><h2>🏓 탁구 경기결과 관리</h2><p>① 예선 조별 순위를 선택하면 본선에 참가자 이름이 자동 배정됩니다.<br>② 본선 경기에서 이긴 선수를 누르면 다음 라운드로 자동 진출합니다.<br>③ 모든 결과는 Firebase에 실시간 공유됩니다. 누구나 볼 수 있지만 입력·수정은 비밀번호 확인 후 가능합니다.</p></div>`;
+  out+=`<div class="firebase-state" role="status">${safe(tennisStatus())}</div>`;
+  out+=`<div class="adminbar"><button class="${tennisEditing?'unlocked':''}" onclick="unlockTennis()">${tennisEditing?'🔓 수정 모드 종료':'🔒 입력·수정 잠금 해제'}</button><span class="adminhint">${tennisEditing?'관리 모드 · 1111 확인됨':'조회 전용 · 기록은 실시간 공유'}</span></div>`;
+  out+=`<div class="tennis-disciplines">${Object.keys(TENNIS_DATA).map(k=>`<button class="discipline-btn ${k===d?'active':''}" onclick="selectTennisDiscipline('${k}')">${safe(TENNIS_DATA[k].title)}</button>`).join('')}</div>`;
+  out+=`<section class="tennis-section"><h3>① ${safe(entry.title)} 예선 순위 입력</h3><p>각 조의 1·2·3위를 지정하세요. 같은 선수를 중복 선택하면 앞서 지정한 순위가 자동 해제됩니다.</p>`;
+  for(let g=0;g<entry.groups.length;g++){
+    const group=entry.groups[g];
+    out+=`<div class="group-card"><h4>${g+1}조 · ${group.length}명(팀)</h4><div class="group-players">${group.map(p=>safe(p.n)+' ('+safe(p.org)+')').join(' · ')}</div>`;
+    for(let r=0;r<group.length;r++){
+      const val=state.ranks[g]?.[r];
+      out+=`<div class="rankrow"><label for="rank-${d}-${g}-${r}">${r+1}위</label><select id="rank-${d}-${g}-${r}" onchange="updateRank(${g},${r},this.value)" ${!tennisEditing||!tennisOnline||!tennisLoaded||tennisBusy?'disabled':''}><option value="">미선정</option>${group.map((p,i)=>`<option value="${i}" ${val===i?'selected':''}>${safe(p.n)}</option>`).join('')}</select></div>`;
+    }
+    out+='</div>';
+  }
+  out+='</section>';
+  out+=`<section class="tennis-section"><h3>② ${safe(entry.title)} 본선 토너먼트</h3><p>조별 순위 입력 시 자동으로 선수가 나타납니다. 승자를 누르면 녹색으로 표시되고 다음 대진에 반영됩니다. 선택한 승자를 다시 누르면 취소할 수 있습니다.</p>`;
+  let stage='';
+  for(const m of matches){
+    if(stage!==m.stage){stage=m.stage;out+=`<div class="stage-title">${safe(stage)}</div>`;}
+    out+=`<div class="match ${m.stage==='결승'?'final':''}"><div class="match-top">${safe(m.title)}</div>`;
+    for(const side of ['a','b']){
+      const player=m[side],src=m[side];
+      const slot=m[side] ? m[side].org : (m[side==='a'?'a':'b']?'':null);
+      const slotLabel=m[side]?(m[side].org): m[side==='a'?'a':'b'];
+      const raw=m[side==='a'?'a':'b'];
+      const fallback=m[side]?'':(m[side]==null?(m[side==='a'?'a':'b']):'');
+      const source=m[side==='a'?'a':'b'];
+      const sourceDef=TENNIS_MATCHES[d].find(x=>x.id===m.id)?.[side]||'';
+      const waiting=sourceDef.startsWith('@')?'앞 경기 결과 대기':`${sourceDef.split('-')[0]}조 ${sourceDef.split('-')[1]}위 대기`;
+      const selected=player&&m.win&&player.id===m.win.id;
+      out+=`<button class="contender ${selected?'winner':''}" ${!m.a||!m.b||!tennisEditing||!tennisLoaded||!tennisOnline||tennisBusy?'disabled':''} onclick="chooseWinner('${m.id}','${side}')"><span>${player?safe(player.name):'미정 · '+safe(waiting)}</span><span class="slot">${selected?'✓ 승리':player?safe(player.org):''}</span></button>`;
+    }
+    out+='</div>';
+  }
+  out+=`<div class="champion"><small>🏆 ${safe(entry.title)} 우승</small>${champion?safe(champion.name)+' <span style="font-size:12px;color:#e5e0c7">('+safe(champion.org)+')</span>':'결승 결과를 선택하면 우승자가 표시됩니다.'}</div></section>`;
+  out+=`<section class="tennis-section"><h3>③ 테스트 · 수정 · 백업</h3><div class="rec-tools"><button ${!tennisEditing||!tennisOnline||!tennisLoaded||tennisBusy?'disabled':''} onclick="fillTestTennis()">🧪 테스트 데이터 넣기</button><button onclick="validateTennis()">✓ 입력 상태 확인</button><button onclick="downloadTennisBackup()">⬇ 기록 백업</button><button ${!tennisEditing||!tennisOnline||!tennisLoaded||tennisBusy?'disabled':''} onclick="document.getElementById('tennisImport').click()">⬆ 기록 복원</button><button class="danger" ${!tennisEditing||!tennisOnline||!tennisLoaded||tennisBusy?'disabled':''} onclick="resetTennis()">↺ 현재 종목 초기화</button></div><input id="tennisImport" type="file" accept="application/json,.json" style="display:none" onchange="importTennisBackup(this)"><p class="rec-note">테스트를 누르면 현재 종목의 순위·승부 결과를 예시로 채웁니다. 실제 대회 전에 초기화하세요. 테스트 입력과 초기화도 Firebase에 실시간 반영되어 모든 방문자에게 보입니다. 실제 경기 시작 전 테스트 결과를 반드시 초기화하세요.</p><div class="rec-status" id="tennisValidationStatus">${entry.groups.every((g,i)=>g.every((_,r)=>Number.isInteger(state.ranks[i]?.[r])))?'예선 순위 입력 완료':'예선 순위 입력 중'} · ${matches.filter(x=>x.win).length}/${matches.length}경기 승자 선택</div></section>`;
+  panel.innerHTML=out;
+}
+function selectTennisDiscipline(d){tennisDiscipline=d;renderTennisPanel()}
+function fillTestTennis(){
+  if(!tennisEditing){toast('먼저 비밀번호를 입력하세요.');return;}
+  if(!confirm('실제 공유 데이터를 테스트 결과로 덮어씁니다. 모든 방문자에게 보입니다. 계속할까요?'))return;
+  const d=tennisDiscipline;
+  pushTennisChange(state=>{
+    state[d]={ranks:TENNIS_DATA[d].groups.map(g=>g.map((_,i)=>i)),wins:{}};
+    for(const m of TENNIS_MATCHES[d]){
+      const row=calculateBracket(d).matches.find(x=>x.id===m.id);
+      if(row.a&&row.b)state[d].wins[m.id]=row.a.id;
+    }
+  });
+}
+function resetTennis(){
+  if(!tennisEditing){toast('먼저 비밀번호를 입력하세요.');return;}
+  if(!confirm(`${TENNIS_DATA[tennisDiscipline].title} 예선 순위와 본선 승자를 공용 데이터베이스에서 모두 삭제할까요?`))return;
+  const d=tennisDiscipline;
+  pushTennisChange(state=>{state[d]={ranks:TENNIS_DATA[d].groups.map(()=>[]),wins:{}}});
+}
+function validateTennis(){
+  const d=tennisDiscipline,s=tennisState[d],{matches,champion}=calculateBracket(d),notFilled=[];
+  for(let i=0;i<TENNIS_DATA[d].groups.length;i++){
+    const group=TENNIS_DATA[d].groups[i],ranks=s.ranks[i]||[];
+    for(let r=0;r<group.length;r++)if(!Number.isInteger(ranks[r]))notFilled.push(`${i+1}조 ${r+1}위`);
+    const chosen=ranks.filter(Number.isInteger);if(new Set(chosen).size!==chosen.length)notFilled.push(`${i+1}조 중복 선수`);
+  }
+  const incomplete=matches.filter(x=>!x.win).length;
+  let msg=`${TENNIS_DATA[d].title} 상태 확인\n미입력 예선: ${notFilled.length}개${notFilled.length?' ('+notFilled.slice(0,5).join(', ')+(notFilled.length>5?' 외':'')+')':''}\n미확정 본선: ${incomplete}경기\n우승자: ${champion?champion.name:'미정'}`;
+  alert(msg);
+}
+function downloadTennisBackup(){
+  const blob=new Blob([JSON.stringify({type:'jinju-tennis-record',version:1,record:tennisState},null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='진주혁신도시_탁구결과_백업.json';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
+async function importTennisBackup(input){
+  const f=input.files?.[0];if(!f)return;
+  try{const obj=JSON.parse(await f.text());if(obj.type!=='jinju-tennis-record'||obj.version!==1||!obj.record)throw Error('올바른 백업 파일이 아닙니다.');
+    if(!tennisEditing)throw Error('비밀번호를 입력해 수정 모드를 열어주세요.');
+    if(!confirm('Firebase의 전체 종목 결과를 백업 파일로 덮어쓸까요?'))return;
+    const data=obj.record;for(const d of Object.keys(TENNIS_DATA)){
+      if(!data[d]||!Array.isArray(data[d].ranks)||!data[d].wins)throw Error('종목 기록이 부족합니다.');
+    }
+    // rank validation first
+    for(const d of Object.keys(TENNIS_DATA)){
+      for(let i=0;i<TENNIS_DATA[d].groups.length;i++){
+        const rows=data[d].ranks[i];if(!Array.isArray(rows))throw Error('조별 기록 형식이 올바르지 않습니다.');
+        const good=rows.filter(x=>x!==null&&x!==undefined);
+        if(good.some(x=>!Number.isInteger(x)||x<0||x>=TENNIS_DATA[d].groups[i].length)||new Set(good).size!==good.length)throw Error('예선 순위 값이 올바르지 않습니다.');
+      }
+    }
+    await pushTennisChange(state=>{const next=normalizeTennisState(data);for(const d of Object.keys(TENNIS_DATA))state[d]=next[d];});
+  }catch(e){alert('복원 실패: '+e.message)}finally{input.value='';}
+}
+
+const SHARE_TITLE='🎉 2026 경남 진주 혁신도시의 날';
+const SHARE_TEXT='📅 11.10.(화) 탁구경기 / 11.11.(수) 본행사·리허설\n📍 한국남동발전 대강당\n👈 왼쪽으로 밀면 다음 · 오른쪽으로 밀면 이전';
+const tabs=APP_DATA.tabs;
+const tabMap=Object.fromEntries(tabs.map(t=>[t.key,t]));
+const tabKeys=tabs.map(t=>t.key);
+let current=tabKeys[0];
+let indices=Object.fromEntries(tabKeys.map(k=>[k,0]));
+let toastTimer;
+const el=id=>document.getElementById(id);
+const safe=s=>String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function toast(msg){const box=el('shareToast');box.textContent=msg;box.classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>box.classList.remove('visible'),4500)}
+function buildTabs(){el('tabs').innerHTML=tabs.map(t=>`<button class="tab ${t.key===current?'active':''}" onclick="changeTab('${t.key}')">${t.label}</button>`).join('')}
+function render(){
+  buildTabs();
+  const inTennis = current === '탁구경기';
+  el('tennisSwitch').classList.toggle('show',inTennis);
+  const inRecord = inTennis && tennisView==='record';
+  ['scheduleBar','scheduleProgress','scheduleCardWrap','scheduleControls','scheduleHint','scheduleFooter'].forEach(id=>{el(id).style.display=inRecord?'none':''});
+  el('tennisPanel').classList.toggle('show',inRecord);
+  el('tennisInfoBtn').classList.toggle('active',tennisView==='info');
+  el('tennisRecordBtn').classList.toggle('active',tennisView==='record');
+  if(inRecord){renderTennisPanel();return;}
+  const tab=tabMap[current];
+  const rows=tab.items;
+  const idx=indices[current];
+  const r=rows[idx];
+  el('position').innerHTML=`<strong>${idx+1}</strong> / ${rows.length} 항목`;
+  el('range').textContent=tab.range;
+  el('progress').style.width=`${(idx+1)/rows.length*100}%`;
+  el('category').textContent=r.category||'미분류';
+  el('sequence').textContent=r.sequenceText||`${idx+1} / ${rows.length}`;
+  el('time').innerHTML=`${safe(r.start||'시간 미정')} <span>→</span> ${safe(r.end||'종료 미정')}`;
+  el('duration').textContent=r.duration?`진행 정보  ${r.duration}`:'진행 정보 미기재';
+  el('team').textContent=r.headline||'제목 없음';
+  el('content').textContent=r.body||'내용 미기재';
+  const details=(r.details||[]).map(d=>`<div class="detail"><div class="label">${safe(d.label||'상세')}</div><div class="value ${(!d.value||String(d.value).trim()==='')?'muted':''}">${safe(d.value||'원본 공란')}</div></div>`).join('');
+  el('details').innerHTML=details;
+  el('prev').disabled=idx===0;
+  el('next').disabled=idx===rows.length-1;
+  window.scrollTo({top:0,behavior:'instant'});
+  try{localStorage.setItem('jinju-schedule-position',JSON.stringify({current,indices}));}catch(e){}
+}
+function move(delta){const rows=tabMap[current].items;const n=indices[current]+delta;if(n<0||n>=rows.length)return;indices[current]=n;render()}
+function changeTab(tabKey){current=tabKey;el('info').classList.remove('open');render()}
+function switchTennisView(view){tennisView=view;render();window.scrollTo(0,0)}
+function toggleInfo(){const box=el('info');box.classList.toggle('open');box.innerHTML=tabMap[current].meta.map(x=>`<p>${safe(x)}</p>`).join('')}
+function showList(){const tab=tabMap[current], rows=tab.items;el('listTitle').textContent=tab.label+' 전체 보기';el('listItems').innerHTML=rows.map((r,i)=>`<button class="listitem" data-i="${i}"><small>${i+1}/${rows.length} · ${safe(r.start||'미정')} ~ ${safe(r.end||'미정')} · ${safe(r.category||'구분없음')}</small>${safe(r.headline||r.body||'항목')}</button>`).join('');el('list').classList.add('open');el('listItems').querySelectorAll('button').forEach(b=>b.onclick=()=>{indices[current]=Number(b.dataset.i);hideList();render()})}
+function hideList(){el('list').classList.remove('open')}
+function jumpCurrent(){const rows=tabMap[current].items;if(current==='탁구경기'){toast('탁구경기는 시간 순으로 직접 넘기며 확인해 주세요.');return}const now=new Date(),hm=now.toTimeString().slice(0,5);let target=rows.findIndex(r=>r.start&&r.end&&r.start<=hm&&hm<r.end);if(target<0)target=rows.findIndex(r=>r.start&&r.start>=hm);if(target<0)target=rows.length-1;indices[current]=target;render()}
+async function shareKakao(){
+  const isWeb=/^https?:$/.test(location.protocol);
+  if(!isWeb){toast('웹에 게시한 뒤 공유 기능을 사용할 수 있습니다.');return}
+  const url='https://sensational-tulumba-65e97e.netlify.app/work/hyucksin-city-day/';
+  const payload={title:SHARE_TITLE,text:SHARE_TEXT,url};
+  if(navigator.share){try{await navigator.share(payload);return}catch(err){if(err&&err.name==='AbortError')return}}
+  try{await navigator.clipboard.writeText(`${SHARE_TITLE}
+${SHARE_TEXT}
+${url}`);toast('공유 문구와 링크를 복사했어요. 카카오톡에 붙여넣으세요.');return}catch(e){}
+  toast('공유가 열리지 않으면 주소창의 링크를 복사해 사용해 주세요.');
+}
+// 좌우 스와이프만 일정 이동에 사용합니다. 세로 스크롤은 브라우저 기본 동작을 유지합니다.
+let touchStartX=0,touchStartY=0,touchActive=false;
+const card=el('card');
+card.addEventListener('touchstart',e=>{
+  if(e.touches.length!==1){touchActive=false;return;}
+  touchStartX=e.touches[0].clientX;
+  touchStartY=e.touches[0].clientY;
+  touchActive=true;
+},{passive:true});
+card.addEventListener('touchcancel',()=>{touchActive=false;},{passive:true});
+card.addEventListener('touchend',e=>{
+  if(!touchActive||e.changedTouches.length!==1)return;
+  touchActive=false;
+  const dx=e.changedTouches[0].clientX-touchStartX;
+  const dy=e.changedTouches[0].clientY-touchStartY;
+  if(Math.abs(dx)>=65&&Math.abs(dx)>Math.abs(dy)*1.25){move(dx<0?1:-1);}
+},{passive:true});
+document.addEventListener('keydown',e=>{
+  if(el('list').classList.contains('open')){if(e.key==='Escape')hideList();return;}
+  if(e.key==='ArrowRight')move(1);
+  if(e.key==='ArrowLeft')move(-1);
+});
+try{const s=JSON.parse(localStorage.getItem('jinju-schedule-position'));if(s&&tabKeys.includes(s.current)){current=s.current;for(const k of tabKeys){if(Number.isInteger(s.indices?.[k])&&s.indices[k]>=0&&s.indices[k]<tabMap[k].items.length)indices[k]=s.indices[k]}}}catch(e){}
+render();
+
+connectFirebase();
