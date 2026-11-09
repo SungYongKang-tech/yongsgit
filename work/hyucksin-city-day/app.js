@@ -64,6 +64,7 @@ const TENNIS_DB_PATH='events/jinju-innovation-2026/tabletennis';
 let tennisView='info',tennisDiscipline='men',tennisState={};
 let tennisRef=null,tennisLoaded=false,tennisOnline=false,tennisError='';
 let tennisEditing=false,tennisBusy=false;
+let rankTarget={}; // 화면에서 선택 중인 조별 순위 (저장 데이터와 별도)
 function blankTennisState(){return Object.fromEntries(Object.keys(TENNIS_DATA).map(k=>[k,{ranks:TENNIS_DATA[k].groups.map(()=>[]),wins:{}}]));}
 function normalizeTennisState(raw){
   const output=blankTennisState();
@@ -147,6 +148,44 @@ function calculateBracket(d){
   }
   return {matches,champion:winners[TENNIS_MATCHES[d].at(-1).id]};
 }
+// 조별 순위를 터치로 지정할 때 본선 진출 경로를 즉시 설명합니다.
+function seedRoute(d,g,r){
+  const token=`${g+1}-${r+1}`;
+  const ms=TENNIS_MATCHES[d];
+  const first=ms.find(m=>m.a===token||m.b===token);
+  if(!first)return '본선 대진 없음';
+  const other=first.a===token?first.b:first.a;
+  const otherLabel=other.startsWith('@')?`${ms.findIndex(m=>m.id===other.slice(1))+1}경기 승자`:(()=>{const [gg,rr]=other.split('-');return `${gg}조 ${rr}위`})();
+  const otherObj=other.startsWith('@')?null:resolveSlot(d,other,{});
+  const otherText=otherObj?`${otherLabel} ${otherObj.name}`:otherLabel;
+  return `${first.stage} · ${otherText}와 대결${first.stage==='준결승'?' (상위 라운드 직행)':''}`;
+}
+function setRankTarget(g,r){
+  rankTarget[tennisDiscipline]={g,r};
+  renderTennisPanel();
+}
+function selectRankPlayer(g,idx){
+  const d=tennisDiscipline;
+  if(!tennisEditing||!tennisLoaded||!tennisOnline||tennisBusy){toast('비밀번호로 수정 잠금을 해제한 후 선택하세요.');return;}
+  const group=TENNIS_DATA[d].groups[g];
+  const chosen=tennisState[d].ranks[g]||[];
+  let r=rankTarget[d]?.g===g?rankTarget[d].r:chosen.findIndex((x,i)=>i<group.length&&!Number.isInteger(x));
+  if(r<0||r>=group.length)r=0;
+  const current=chosen[r];
+  const newIdx=current===idx?null:idx;
+  pushTennisChange(state=>{
+    const array=state[d].ranks[g];
+    // 이미 다른 등수에 있으면 해당 등수의 선수와 자리 교환: 선수 손실 방지
+    const previousRank=array.findIndex((x,i)=>i!==r&&x===newIdx);
+    if(previousRank>=0)array[previousRank]=Number.isInteger(array[r])?array[r]:null;
+    array[r]=newIdx;
+  }).then(()=>{
+    const updated=tennisState[d].ranks[g]||[];
+    const missing=updated.findIndex(x=>!Number.isInteger(x));
+    rankTarget[d]={g,r:missing>=0?missing:r};
+    if(current==='탁구경기'&&tennisView==='record')renderTennisPanel();
+  });
+}
 function updateRank(g,r,val){
   pushTennisChange(state=>{
     const d=tennisDiscipline,group=TENNIS_DATA[d].groups[g];
@@ -186,15 +225,28 @@ function renderTennisPanel(){
   out+=`<div class="firebase-state" role="status">${safe(tennisStatus())}</div>`;
   out+=`<div class="adminbar"><button class="${tennisEditing?'unlocked':''}" onclick="unlockTennis()">${tennisEditing?'🔓 수정 모드 종료':'🔒 입력·수정 잠금 해제'}</button><span class="adminhint">${tennisEditing?'관리 모드 · 1111 확인됨':'조회 전용 · 기록은 실시간 공유'}</span></div>`;
   out+=`<div class="tennis-disciplines">${Object.keys(TENNIS_DATA).map(k=>`<button class="discipline-btn ${k===d?'active':''}" onclick="selectTennisDiscipline('${k}')">${safe(TENNIS_DATA[k].title)}</button>`).join('')}</div>`;
-  out+=`<section class="tennis-section"><h3>① ${safe(entry.title)} 예선 순위 입력</h3><p>각 조의 1·2·3위를 지정하세요. 같은 선수를 중복 선택하면 앞서 지정한 순위가 자동 해제됩니다.</p>`;
+  out+=`<section class="tennis-section"><h3>① ${safe(entry.title)} 예선 순위 선택</h3><p><strong>1위 → 2위 → 3위 순서로 선수 이름을 터치</strong>하세요. 특정 순위를 수정하려면 해당 순위 칸을 먼저 누른 다음 선수를 선택합니다. 아래에 본선 상대와 진출 경로가 바로 표시됩니다.</p>`;
   for(let g=0;g<entry.groups.length;g++){
-    const group=entry.groups[g];
-    out+=`<div class="group-card"><h4>${g+1}조 · ${group.length}명(팀)</h4><div class="group-players">${group.map(p=>safe(p.n)+' ('+safe(p.org)+')').join(' · ')}</div>`;
+    const group=entry.groups[g],assigned=state.ranks[g]||[];
+    const firstMissing=assigned.findIndex(x=>!Number.isInteger(x));
+    const target=rankTarget[d]?.g===g?rankTarget[d].r:(firstMissing>=0?firstMissing:0);
+    out+=`<div class="group-card"><div class="group-title"><h4>${g+1}조</h4><span class="group-count">${assigned.filter(Number.isInteger).length}/${group.length}명(팀) 지정</span></div>`;
+    out+='<div class="rank-tiles">';
     for(let r=0;r<group.length;r++){
-      const val=state.ranks[g]?.[r];
-      out+=`<div class="rankrow"><label for="rank-${d}-${g}-${r}">${r+1}위</label><select id="rank-${d}-${g}-${r}" onchange="updateRank(${g},${r},this.value)" ${!tennisEditing||!tennisOnline||!tennisLoaded||tennisBusy?'disabled':''}><option value="">미선정</option>${group.map((p,i)=>`<option value="${i}" ${val===i?'selected':''}>${safe(p.n)}</option>`).join('')}</select></div>`;
+      const idx=assigned[r],player=Number.isInteger(idx)?group[idx]:null;
+      const route=seedRoute(d,g,r);
+      const active=target===r;
+      out+=`<button class="rank-tile ${active&&tennisEditing?'selected':''} ${player?'filled':''}" onclick="setRankTarget(${g},${r})" aria-pressed="${active&&tennisEditing}"><span class="rank-number">${r+1}위 ${active&&tennisEditing?'●':''}</span><strong>${player?safe(player.n):'선택 전'}</strong><small>${safe(route)}</small></button>`;
     }
     out+='</div>';
+    if(tennisEditing){out+=`<p class="rank-guide">${g+1}조 <b>${target+1}위</b>에 지정할 선수 카드를 눌러주세요. 같은 카드를 다시 누르면 선택 해제됩니다.</p>`;}
+    else{out+='<p class="rank-guide">순위를 바꾸려면 위의 🔒 입력·수정 잠금을 해제하세요.</p>';}
+    out+='<div class="player-picks">';
+    for(let i=0;i<group.length;i++){
+      const p=group[i],chosenRank=assigned.findIndex(x=>x===i);
+      out+=`<button class="player-pick ${chosenRank>=0?'assigned':''} ${chosenRank===target?'target-player':''}" onclick="selectRankPlayer(${g},${i})" ${!tennisEditing||!tennisLoaded||!tennisOnline||tennisBusy?'disabled':''}><span class="player-badge">${chosenRank>=0?`${chosenRank+1}위`:'선택'}</span><span class="player-info"><strong>${safe(p.n)}</strong><small>${safe(p.org)}</small></span><span class="player-check">${chosenRank>=0?'✓':'+'}</span></button>`;
+    }
+    out+='</div></div>';
   }
   out+='</section>';
   out+=`<section class="tennis-section"><h3>② ${safe(entry.title)} 본선 토너먼트</h3><p>조별 순위 입력 시 자동으로 선수가 나타납니다. 승자를 누르면 녹색으로 표시되고 다음 대진에 반영됩니다. 선택한 승자를 다시 누르면 취소할 수 있습니다.</p>`;
